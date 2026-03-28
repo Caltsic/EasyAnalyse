@@ -1,0 +1,9 @@
+node_modules/
+dist/
+target/
+target-release-check/
+*.log
+
+task_plan.md
+progress.md
+findings.md

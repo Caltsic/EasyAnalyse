@@ -1,0 +1,340 @@
+{
+  "schemaVersion": "1.0.0",
+  "document": {
+    "id": "doc.1774676768019",
+    "title": "减法器电路",
+    "createdAt": "2026-03-28T05:46:08.019556100+00:00",
+    "updatedAt": "2026-03-28T06:00:00.000000000+00:00",
+    "source": "human"
+  },
+  "canvas": {
+    "origin": { "x": 0.0, "y": 0.0 },
+    "width": 2400.0,
+    "height": 1600.0,
+    "units": "px",
+    "grid": { "enabled": true, "size": 40.0 }
+  },
+  "components": [
+    {
+      "id": "component.f4898e3c19f0",
+      "name": "运算放大器",
+      "geometry": {
+        "type": "triangle",
+        "vertices": [
+          { "x": 429.99999999999994, "y": 179.18749999999994 },
+          { "x": 526.0, "y": 339.18749999999994 },
+          { "x": 333.99999999999994, "y": 339.18749999999994 }
+        ]
+      },
+      "description": "",
+      "tags": [],
+      "extensions": { "easyanalyse": { "rotationDeg": 90 } }
+    },
+    {
+      "id": "component.r1",
+      "name": "R1",
+      "geometry": { "type": "rectangle", "x": 190.0, "y": 288.0, "width": 80.0, "height": 24.0 },
+      "description": "输入电阻 (信号A至同相输入端)",
+      "tags": ["resistor"],
+      "extensions": {}
+    },
+    {
+      "id": "component.r2",
+      "name": "R2",
+      "geometry": { "type": "rectangle", "x": 190.0, "y": 215.0, "width": 80.0, "height": 24.0 },
+      "description": "输入电阻 (信号B至反相输入端)",
+      "tags": ["resistor"],
+      "extensions": {}
+    },
+    {
+      "id": "component.rf",
+      "name": "Rf",
+      "geometry": { "type": "rectangle", "x": 380.0, "y": 88.0, "width": 120.0, "height": 24.0 },
+      "description": "反馈电阻 (反相输入端至输出)",
+      "tags": ["resistor"],
+      "extensions": {}
+    },
+    {
+      "id": "component.rg",
+      "name": "Rg",
+      "geometry": { "type": "rectangle", "x": 323.0, "y": 360.0, "width": 24.0, "height": 80.0 },
+      "description": "接地电阻 (同相输入端至地)",
+      "tags": ["resistor"],
+      "extensions": {}
+    }
+  ],
+  "ports": [
+    {
+      "id": "port.3ed645c580a8",
+      "componentId": "component.f4898e3c19f0",
+      "name": "-",
+      "direction": "input",
+      "anchor": { "kind": "triangle-edge", "edgeIndex": 1, "offset": 0.7763020833333328 },
+      "description": ""
+    },
+    {
+      "id": "port.d145fff59db4",
+      "componentId": "component.f4898e3c19f0",
+      "name": "+",
+      "direction": "input",
+      "anchor": { "kind": "triangle-edge", "edgeIndex": 1, "offset": 0.3021874999999999 },
+      "description": ""
+    },
+    {
+      "id": "port.da94345f1df1",
+      "componentId": "component.f4898e3c19f0",
+      "name": "OUT_1",
+      "direction": "output",
+      "anchor": { "kind": "triangle-edge", "edgeIndex": 0, "offset": 0.0071691176470582985 },
+      "description": ""
+    },
+    {
+      "id": "port.r1_in",
+      "componentId": "component.r1",
+      "name": "IN",
+      "direction": "input",
+      "anchor": { "kind": "rectangle-edge", "edgeIndex": 3, "offset": 0.5 },
+      "description": ""
+    },
+    {
+      "id": "port.r1_out",
+      "componentId": "component.r1",
+      "name": "OUT",
+      "direction": "output",
+      "anchor": { "kind": "rectangle-edge", "edgeIndex": 1, "offset": 0.5 },
+      "description": ""
+    },
+    {
+      "id": "port.r2_in",
+      "componentId": "component.r2",
+      "name": "IN",
+      "direction": "input",
+      "anchor": { "kind": "rectangle-edge", "edgeIndex": 3, "offset": 0.5 },
+      "description": ""
+    },
+    {
+      "id": "port.r2_out",
+      "componentId": "component.r2",
+      "name": "OUT",
+      "direction": "output",
+      "anchor": { "kind": "rectangle-edge", "edgeIndex": 1, "offset": 0.5 },
+      "description": ""
+    },
+    {
+      "id": "port.rf_in",
+      "componentId": "component.rf",
+      "name": "IN",
+      "direction": "input",
+      "anchor": { "kind": "rectangle-edge", "edgeIndex": 3, "offset": 0.5 },
+      "description": ""
+    },
+    {
+      "id": "port.rf_out",
+      "componentId": "component.rf",
+      "name": "OUT",
+      "direction": "output",
+      "anchor": { "kind": "rectangle-edge", "edgeIndex": 1, "offset": 0.5 },
+      "description": ""
+    },
+    {
+      "id": "port.rg_in",
+      "componentId": "component.rg",
+      "name": "IN",
+      "direction": "input",
+      "anchor": { "kind": "rectangle-edge", "edgeIndex": 0, "offset": 0.5 },
+      "description": ""
+    },
+    {
+      "id": "port.rg_out",
+      "componentId": "component.rg",
+      "name": "OUT",
+      "direction": "output",
+      "anchor": { "kind": "rectangle-edge", "edgeIndex": 2, "offset": 0.5 },
+      "description": ""
+    }
+  ],
+  "nodes": [
+    {
+      "id": "node.signalA",
+      "position": { "x": 150.0, "y": 300.0 },
+      "connectedWireIds": ["wire.w8"],
+      "role": "junction",
+      "description": ""
+    },
+    {
+      "id": "node.signalB",
+      "position": { "x": 150.0, "y": 227.0 },
+      "connectedWireIds": ["wire.w1"],
+      "role": "junction",
+      "description": ""
+    },
+    {
+      "id": "node.signalC",
+      "position": { "x": 700.0, "y": 260.0 },
+      "connectedWireIds": ["wire.w7"],
+      "role": "junction",
+      "description": ""
+    },
+    {
+      "id": "node.gnd",
+      "position": { "x": 335.0, "y": 480.0 },
+      "connectedWireIds": ["wire.w12"],
+      "role": "junction",
+      "description": "接地"
+    },
+    {
+      "id": "node.inv",
+      "position": { "x": 310.0, "y": 227.0 },
+      "connectedWireIds": ["wire.w2", "wire.w3", "wire.w4"],
+      "role": "junction",
+      "description": ""
+    },
+    {
+      "id": "node.noninv",
+      "position": { "x": 310.0, "y": 300.0 },
+      "connectedWireIds": ["wire.w9", "wire.w10", "wire.w11"],
+      "role": "junction",
+      "description": ""
+    },
+    {
+      "id": "node.out",
+      "position": { "x": 540.0, "y": 180.0 },
+      "connectedWireIds": ["wire.w5", "wire.w6", "wire.w7"],
+      "role": "junction",
+      "description": ""
+    }
+  ],
+  "wires": [
+    {
+      "id": "wire.w1",
+      "serialNumber": "W1",
+      "source": { "entityType": "node", "refId": "node.signalB" },
+      "target": { "entityType": "port", "refId": "port.r2_in" },
+      "route": { "kind": "straight" },
+      "description": "信号B → R2"
+    },
+    {
+      "id": "wire.w2",
+      "serialNumber": "W2",
+      "source": { "entityType": "port", "refId": "port.r2_out" },
+      "target": { "entityType": "node", "refId": "node.inv" },
+      "route": { "kind": "straight" },
+      "description": "R2 → 反相输入节点"
+    },
+    {
+      "id": "wire.w3",
+      "serialNumber": "W3",
+      "source": { "entityType": "node", "refId": "node.inv" },
+      "target": { "entityType": "port", "refId": "port.3ed645c580a8" },
+      "route": { "kind": "straight" },
+      "description": "反相输入节点 → 运放(-)"
+    },
+    {
+      "id": "wire.w4",
+      "serialNumber": "W4",
+      "source": { "entityType": "node", "refId": "node.inv" },
+      "target": { "entityType": "port", "refId": "port.rf_in" },
+      "route": {
+        "kind": "polyline",
+        "bendPoints": [ { "x": 310.0, "y": 100.0 } ]
+      },
+      "description": "反相输入节点 → Rf"
+    },
+    {
+      "id": "wire.w5",
+      "serialNumber": "W5",
+      "source": { "entityType": "port", "refId": "port.rf_out" },
+      "target": { "entityType": "node", "refId": "node.out" },
+      "route": {
+        "kind": "polyline",
+        "bendPoints": [ { "x": 540.0, "y": 100.0 } ]
+      },
+      "description": "Rf → 输出节点"
+    },
+    {
+      "id": "wire.w6",
+      "serialNumber": "W6",
+      "source": { "entityType": "port", "refId": "port.da94345f1df1" },
+      "target": { "entityType": "node", "refId": "node.out" },
+      "route": { "kind": "straight" },
+      "description": "运放OUT → 输出节点"
+    },
+    {
+      "id": "wire.w7",
+      "serialNumber": "W7",
+      "source": { "entityType": "node", "refId": "node.out" },
+      "target": { "entityType": "node", "refId": "node.signalC" },
+      "route": { "kind": "straight" },
+      "description": "输出节点 → 信号C"
+    },
+    {
+      "id": "wire.w8",
+      "serialNumber": "W8",
+      "source": { "entityType": "node", "refId": "node.signalA" },
+      "target": { "entityType": "port", "refId": "port.r1_in" },
+      "route": { "kind": "straight" },
+      "description": "信号A → R1"
+    },
+    {
+      "id": "wire.w9",
+      "serialNumber": "W9",
+      "source": { "entityType": "port", "refId": "port.r1_out" },
+      "target": { "entityType": "node", "refId": "node.noninv" },
+      "route": { "kind": "straight" },
+      "description": "R1 → 同相输入节点"
+    },
+    {
+      "id": "wire.w10",
+      "serialNumber": "W10",
+      "source": { "entityType": "node", "refId": "node.noninv" },
+      "target": { "entityType": "port", "refId": "port.d145fff59db4" },
+      "route": { "kind": "straight" },
+      "description": "同相输入节点 → 运放(+)"
+    },
+    {
+      "id": "wire.w11",
+      "serialNumber": "W11",
+      "source": { "entityType": "node", "refId": "node.noninv" },
+      "target": { "entityType": "port", "refId": "port.rg_in" },
+      "route": {
+        "kind": "polyline",
+        "bendPoints": [ { "x": 335.0, "y": 300.0 } ]
+      },
+      "description": "同相输入节点 → Rg"
+    },
+    {
+      "id": "wire.w12",
+      "serialNumber": "W12",
+      "source": { "entityType": "port", "refId": "port.rg_out" },
+      "target": { "entityType": "node", "refId": "node.gnd" },
+      "route": { "kind": "straight" },
+      "description": "Rg → 接地"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "annotation.signalA",
+      "kind": "signal",
+      "target": { "entityType": "node", "refId": "node.signalA" },
+      "text": "输入信号A"
+    },
+    {
+      "id": "annotation.signalB",
+      "kind": "signal",
+      "target": { "entityType": "node", "refId": "node.signalB" },
+      "text": "输入信号B"
+    },
+    {
+      "id": "annotation.signalC",
+      "kind": "signal",
+      "target": { "entityType": "node", "refId": "node.signalC" },
+      "text": "输出信号C"
+    },
+    {
+      "id": "annotation.gnd",
+      "kind": "signal",
+      "target": { "entityType": "node", "refId": "node.gnd" },
+      "text": "GND"
+    }
+  ]
+}

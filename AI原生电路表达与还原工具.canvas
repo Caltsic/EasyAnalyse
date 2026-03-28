@@ -1,0 +1,27 @@
+{
+	"nodes":[
+		{"id":"p2-title","type":"text","text":"项目名\nAI 原生电路表达与还原工具","x":20,"y":20,"width":300,"height":100},
+		{"id":"p2-origin","type":"text","text":"有一种软件，可以自由准确的搭建出实践中的电路。用类似魔方简历的思路，proteus一样的界面转json，ai修改json来实现对电路的修改和认知。\n\n软件项目：，无需原理图，用户直接在一张有坐标的画布上放置任意器件，形状限定为矩形、圆、三角形，可以任意大小创造，可以保存器件，用户对该器件定义名字，可在器件的任意边界创建输入输出点，应当定义输入输出的引脚信息，然后可以将器件放在任意位置，进行任意但有向的连线（输入指向输出），可以放置节点让多线交汇或单线分出，线条有数字编号，用户也可以为线标注任意说明，用户无需说明输入输出具体是什么，但也可以选择加入输入和输出的具体情况，用户可以为某个输入输出点插入信号描述。随后是软件的重点，以上种种的信息都可以像开源项目魔方简历一样（魔方简历能将简历以json格式导出，可再以json格式完全还原简历，更可对json进行修改从而对简历做出高自由度而规范精准的修改），以一种合适的格式导出，这种格式应该便于ai查看，更应该便于ai理解并编辑。我觉得提供给AI的器件信息要包括：器件名称，能确定器件大小和位置的坐标（矩形四个坐标、圆是中心坐标加半径、三角形则是三个顶点坐标），输入和输出的定义以及输入输出点所处的位置；每条线的起始和终结点，只有直线和折线，要说明线条类型，用户定义的线条说明，若是折线则还要说明发生弯折的点；还有节点的位置，节点两边属于不同线条，节点可作为线条的起始点或终点，要说明节点连接了哪些线条；还有用户在任意端点插入的描述性信号。总之要经过周密严谨的应用内部处理将用户搭建的电路图转成能让AI理解并一比一复刻的电路图，AI可以按照此格式生成的合适的文件也可以被直接转成一套完整的电路。核心步骤在于作出一个能把实际电路抽象而不丢失信息地转换成ai能完全理解的文件的转换功能。这个软件的目的是打通人与AI在硬件电路沟通上的障碍，避免人描述不清楚电路而AI画不好电路，以此让AI帮助搭建电路或解决排查电路中的问题。因此针对该项目还需要制作一个能够说清转换逻辑的skill。","x":20,"y":150,"width":520,"height":940},
+		{"id":"p2-core","type":"text","text":"项目收敛\nAI 原生电路表达与还原工具\n\n本质不是“先画原理图”，而是把电路结构抽象成 AI 能读、能改、能还原的标准表达层","x":620,"y":170,"width":340,"height":170},
+		{"id":"p2-model","type":"text","text":"画布与器件规则\n- 以坐标画布为核心\n- 形状限定：矩形 / 圆 / 三角形\n- 器件可任意尺寸、任意位置摆放\n- 器件可保存复用","x":1040,"y":40,"width":320,"height":210},
+		{"id":"p2-flow","type":"text","text":"端点与连线规则\n- 用户定义器件名字\n- 任意边界创建输入/输出点\n- 定义引脚信息与端点位置\n- 连线必须有向\n- 节点支持汇合 / 分叉","x":1040,"y":320,"width":320,"height":230},
+		{"id":"p2-output","type":"text","text":"线条与信号描述\n- 每条线有数字编号\n- 线可附带任意说明\n- 线条类型仅直线 / 折线\n- 折线需要记录折点\n- 任意端点可插入信号描述","x":1040,"y":620,"width":320,"height":230},
+		{"id":"p2-mvp","type":"text","text":"AI 交换格式至少包含\n- 器件名称与几何坐标\n- 输入/输出定义及位置\n- 线的起终点、类型、折点、说明\n- 节点位置与连接线关系\n- 端点信号描述","x":1040,"y":930,"width":340,"height":240},
+		{"id":"p2-convert","type":"text","text":"核心转换功能\n把用户搭建结果经过严谨内部处理后，转换成不丢失信息的文件；\nAI 读这个文件可一比一复刻，AI 写同格式文件也能还原成完整电路","x":620,"y":1160,"width":340,"height":210},
+		{"id":"p2-value","type":"text","text":"项目价值\n- 打通人与 AI 在硬件电路沟通上的障碍\n- 避免“人说不清、AI 画不准”\n- 让 AI 参与搭建、修改、排查电路","x":620,"y":1450,"width":340,"height":190},
+		{"id":"p2-roadmap","type":"text","text":"首版落地路径\n1. 坐标画布 + 基础器件\n2. 输入输出点 + 有向连线 + 节点\n3. 导出可读可改的交换格式\n4. AI 编辑后可无损回显","x":620,"y":1710,"width":340,"height":200},
+		{"id":"p2-skill","type":"text","text":"配套产物\n需要再做一个专门说明“转换逻辑”的 skill\n用于解释字段语义、约束规则、还原原则","x":620,"y":1980,"width":340,"height":170}
+	],
+	"edges":[
+		{"id":"edge-p2-0","fromNode":"p2-title","fromSide":"bottom","toNode":"p2-origin","toSide":"top","label":"原始构想"},
+		{"id":"edge-p2-1","fromNode":"p2-origin","fromSide":"right","toNode":"p2-core","toSide":"left","label":"收敛成项目定义"},
+		{"id":"edge-p2-2","fromNode":"p2-core","fromSide":"right","toNode":"p2-model","toSide":"left","label":"先明确画布抽象"},
+		{"id":"edge-p2-3","fromNode":"p2-core","fromSide":"right","toNode":"p2-flow","toSide":"left","label":"定义端点与连线规则"},
+		{"id":"edge-p2-4","fromNode":"p2-core","fromSide":"right","toNode":"p2-output","toSide":"left","label":"补足线条与信号信息"},
+		{"id":"edge-p2-5","fromNode":"p2-core","fromSide":"right","toNode":"p2-mvp","toSide":"left","label":"抽成 AI 交换格式"},
+		{"id":"edge-p2-6","fromNode":"p2-core","fromSide":"bottom","toNode":"p2-convert","toSide":"top","label":"核心在转换能力"},
+		{"id":"edge-p2-7","fromNode":"p2-convert","fromSide":"bottom","toNode":"p2-value","toSide":"top","label":"对应项目价值"},
+		{"id":"edge-p2-8","fromNode":"p2-value","fromSide":"bottom","toNode":"p2-roadmap","toSide":"top","label":"落到首版路径"},
+		{"id":"edge-p2-9","fromNode":"p2-roadmap","fromSide":"bottom","toNode":"p2-skill","toSide":"top","label":"补上转换逻辑说明"}
+	]
+}

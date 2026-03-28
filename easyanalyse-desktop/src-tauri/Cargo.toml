@@ -1,0 +1,17 @@
+[package]
+name = "easyanalyse-desktop"
+version = "0.1.0"
+description = "AI Native Circuit Expression and Restoration desktop application"
+edition = "2024"
+
+[package.metadata]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+easyanalyse-core = { path = "crates/easyanalyse-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"

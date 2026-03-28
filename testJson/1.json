@@ -1,0 +1,201 @@
+{
+  "schemaVersion": "1.0.0",
+  "document": {
+    "id": "doc.1774676768019",
+    "title": "工作区草稿",
+    "createdAt": "2026-03-28T05:46:08.019556100+00:00",
+    "updatedAt": "2026-03-28T05:54:21.147641100+00:00",
+    "source": "human"
+  },
+  "canvas": {
+    "origin": {
+      "x": 0.0,
+      "y": 0.0
+    },
+    "width": 2400.0,
+    "height": 1600.0,
+    "units": "px",
+    "grid": {
+      "enabled": true,
+      "size": 40.0
+    }
+  },
+  "components": [
+    {
+      "id": "component.f4898e3c19f0",
+      "name": "运算放大器",
+      "geometry": {
+        "type": "triangle",
+        "vertices": [
+          {
+            "x": 429.99999999999994,
+            "y": 179.18749999999994
+          },
+          {
+            "x": 526.0,
+            "y": 339.18749999999994
+          },
+          {
+            "x": 333.99999999999994,
+            "y": 339.18749999999994
+          }
+        ]
+      },
+      "description": "",
+      "tags": [],
+      "extensions": {
+        "easyanalyse": {
+          "rotationDeg": 90
+        }
+      }
+    }
+  ],
+  "ports": [
+    {
+      "id": "port.3ed645c580a8",
+      "componentId": "component.f4898e3c19f0",
+      "name": "-",
+      "direction": "input",
+      "anchor": {
+        "kind": "triangle-edge",
+        "edgeIndex": 1,
+        "offset": 0.7763020833333328
+      },
+      "description": ""
+    },
+    {
+      "id": "port.d145fff59db4",
+      "componentId": "component.f4898e3c19f0",
+      "name": "+",
+      "direction": "input",
+      "anchor": {
+        "kind": "triangle-edge",
+        "edgeIndex": 1,
+        "offset": 0.3021874999999999
+      },
+      "description": ""
+    },
+    {
+      "id": "port.da94345f1df1",
+      "componentId": "component.f4898e3c19f0",
+      "name": "OUT_1",
+      "direction": "output",
+      "anchor": {
+        "kind": "triangle-edge",
+        "edgeIndex": 0,
+        "offset": 0.0071691176470582985
+      },
+      "description": ""
+    }
+  ],
+  "nodes": [
+    {
+      "id": "node.126a8d5d1c25",
+      "position": {
+        "x": 765.0,
+        "y": 305.9375
+      },
+      "connectedWireIds": [
+        "wire.ddf7907998aa"
+      ],
+      "role": "junction",
+      "description": ""
+    },
+    {
+      "id": "node.8715d31ed471",
+      "position": {
+        "x": 198.75,
+        "y": 299.6875
+      },
+      "connectedWireIds": [
+        "wire.7712d92576e4"
+      ],
+      "role": "junction",
+      "description": ""
+    }
+  ],
+  "wires": [
+    {
+      "id": "wire.70327db54d0b",
+      "serialNumber": "W1",
+      "source": {
+        "entityType": "port",
+        "refId": "port.da94345f1df1"
+      },
+      "target": {
+        "entityType": "port",
+        "refId": "port.3ed645c580a8"
+      },
+      "route": {
+        "kind": "polyline",
+        "bendPoints": [
+          {
+            "x": 536.25,
+            "y": 105.9375
+          },
+          {
+            "x": 332.5,
+            "y": 99.6875
+          },
+          {
+            "x": 331.25,
+            "y": 227.1875
+          }
+        ]
+      },
+      "description": ""
+    },
+    {
+      "id": "wire.7712d92576e4",
+      "serialNumber": "W2",
+      "source": {
+        "entityType": "node",
+        "refId": "node.8715d31ed471"
+      },
+      "target": {
+        "entityType": "port",
+        "refId": "port.d145fff59db4"
+      },
+      "route": {
+        "kind": "straight"
+      },
+      "description": ""
+    },
+    {
+      "id": "wire.ddf7907998aa",
+      "serialNumber": "W3",
+      "source": {
+        "entityType": "port",
+        "refId": "port.da94345f1df1"
+      },
+      "target": {
+        "entityType": "node",
+        "refId": "node.126a8d5d1c25"
+      },
+      "route": {
+        "kind": "straight"
+      },
+      "description": ""
+    }
+  ],
+  "annotations": [
+    {
+      "id": "annotation.4e6d8d0f1c28",
+      "kind": "signal",
+      "target": {
+        "entityType": "node",
+        "refId": "node.126a8d5d1c25"
+      },
+      "text": "输出信号B"
+    },
+    {
+      "id": "annotation.b3d6c672a99d",
+      "kind": "signal",
+      "target": {
+        "entityType": "node",
+        "refId": "node.8715d31ed471"
+      },
+      "text": "输入信号A"
+    }
+  ]
+}

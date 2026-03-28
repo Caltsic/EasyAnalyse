@@ -1,0 +1,633 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-native-circuit-exchange:schema:1.0.0",
+  "title": "AI Native Circuit Exchange Format",
+  "description": "Structured exchange format for the AI 原生电路表达与还原工具.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "document",
+    "canvas",
+    "components",
+    "ports",
+    "nodes",
+    "wires",
+    "annotations"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "document": {
+      "$ref": "#/$defs/documentMeta"
+    },
+    "canvas": {
+      "$ref": "#/$defs/canvas"
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/component"
+      }
+    },
+    "ports": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/port"
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    },
+    "wires": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/wire"
+      }
+    },
+    "annotations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/annotation"
+      }
+    },
+    "extensions": {
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "idString": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9._:-]{0,127}$"
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "coordinate": {
+      "type": "number"
+    },
+    "point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y"
+      ],
+      "properties": {
+        "x": {
+          "$ref": "#/$defs/coordinate"
+        },
+        "y": {
+          "$ref": "#/$defs/coordinate"
+        }
+      }
+    },
+    "documentMeta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/idString"
+        },
+        "title": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "description": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "human",
+            "ai",
+            "mixed",
+            "imported"
+          ]
+        },
+        "extensions": {
+          "type": "object"
+        }
+      }
+    },
+    "grid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "size"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "size": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "canvas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "origin",
+        "width",
+        "height",
+        "units"
+      ],
+      "properties": {
+        "origin": {
+          "$ref": "#/$defs/point"
+        },
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "height": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "units": {
+          "type": "string",
+          "enum": [
+            "px"
+          ]
+        },
+        "grid": {
+          "$ref": "#/$defs/grid"
+        },
+        "extensions": {
+          "type": "object"
+        }
+      }
+    },
+    "rectangleGeometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "type": {
+          "const": "rectangle"
+        },
+        "x": {
+          "$ref": "#/$defs/coordinate"
+        },
+        "y": {
+          "$ref": "#/$defs/coordinate"
+        },
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "height": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "circleGeometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "cx",
+        "cy",
+        "radius"
+      ],
+      "properties": {
+        "type": {
+          "const": "circle"
+        },
+        "cx": {
+          "$ref": "#/$defs/coordinate"
+        },
+        "cy": {
+          "$ref": "#/$defs/coordinate"
+        },
+        "radius": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "triangleGeometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "vertices"
+      ],
+      "properties": {
+        "type": {
+          "const": "triangle"
+        },
+        "vertices": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/point"
+          }
+        }
+      }
+    },
+    "componentGeometry": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/rectangleGeometry"
+        },
+        {
+          "$ref": "#/$defs/circleGeometry"
+        },
+        {
+          "$ref": "#/$defs/triangleGeometry"
+        }
+      ]
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "geometry"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/idString"
+        },
+        "name": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "geometry": {
+          "$ref": "#/$defs/componentGeometry"
+        },
+        "description": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          },
+          "uniqueItems": true
+        },
+        "extensions": {
+          "type": "object"
+        }
+      }
+    },
+    "pinInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "number": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "rectanglePortAnchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "side",
+        "offset"
+      ],
+      "properties": {
+        "kind": {
+          "const": "rectangle-side"
+        },
+        "side": {
+          "type": "string",
+          "enum": [
+            "top",
+            "right",
+            "bottom",
+            "left"
+          ]
+        },
+        "offset": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "circlePortAnchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "angleDeg"
+      ],
+      "properties": {
+        "kind": {
+          "const": "circle-angle"
+        },
+        "angleDeg": {
+          "type": "number"
+        }
+      }
+    },
+    "trianglePortAnchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "edgeIndex",
+        "offset"
+      ],
+      "properties": {
+        "kind": {
+          "const": "triangle-edge"
+        },
+        "edgeIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "offset": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "portAnchor": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/rectanglePortAnchor"
+        },
+        {
+          "$ref": "#/$defs/circlePortAnchor"
+        },
+        {
+          "$ref": "#/$defs/trianglePortAnchor"
+        }
+      ]
+    },
+    "port": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "componentId",
+        "name",
+        "direction",
+        "anchor"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/idString"
+        },
+        "componentId": {
+          "$ref": "#/$defs/idString"
+        },
+        "name": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "input",
+            "output"
+          ]
+        },
+        "pinInfo": {
+          "$ref": "#/$defs/pinInfo"
+        },
+        "anchor": {
+          "$ref": "#/$defs/portAnchor"
+        },
+        "description": {
+          "type": "string"
+        },
+        "extensions": {
+          "type": "object"
+        }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "position",
+        "connectedWireIds"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/idString"
+        },
+        "position": {
+          "$ref": "#/$defs/point"
+        },
+        "connectedWireIds": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/$defs/idString"
+          },
+          "uniqueItems": true
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "generic",
+            "junction",
+            "branch"
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "extensions": {
+          "type": "object"
+        }
+      }
+    },
+    "endpointRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entityType",
+        "refId"
+      ],
+      "properties": {
+        "entityType": {
+          "type": "string",
+          "enum": [
+            "port",
+            "node"
+          ]
+        },
+        "refId": {
+          "$ref": "#/$defs/idString"
+        }
+      }
+    },
+    "straightRoute": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "straight"
+        }
+      }
+    },
+    "polylineRoute": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "bendPoints"
+      ],
+      "properties": {
+        "kind": {
+          "const": "polyline"
+        },
+        "bendPoints": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/point"
+          }
+        }
+      }
+    },
+    "route": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/straightRoute"
+        },
+        {
+          "$ref": "#/$defs/polylineRoute"
+        }
+      ]
+    },
+    "wire": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "serialNumber",
+        "source",
+        "target",
+        "route"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/idString"
+        },
+        "serialNumber": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "source": {
+          "$ref": "#/$defs/endpointRef"
+        },
+        "target": {
+          "$ref": "#/$defs/endpointRef"
+        },
+        "route": {
+          "$ref": "#/$defs/route"
+        },
+        "description": {
+          "type": "string"
+        },
+        "extensions": {
+          "type": "object"
+        }
+      }
+    },
+    "annotationTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entityType",
+        "refId"
+      ],
+      "properties": {
+        "entityType": {
+          "type": "string",
+          "enum": [
+            "component",
+            "port",
+            "node",
+            "wire"
+          ]
+        },
+        "refId": {
+          "$ref": "#/$defs/idString"
+        }
+      }
+    },
+    "annotation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "target",
+        "text"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/idString"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "signal",
+            "note",
+            "label"
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/annotationTarget"
+        },
+        "text": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "position": {
+          "$ref": "#/$defs/point"
+        },
+        "extensions": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

@@ -1,3 +1,5 @@
+#![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
+
 mod commands;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -9,7 +11,6 @@ fn run() {
             commands::validate_document,
             commands::open_document_from_path,
             commands::save_document_to_path,
-            commands::summarize_diff,
         ])
         .run(tauri::generate_context!())
         .expect("error while running EASYAnalyse desktop");

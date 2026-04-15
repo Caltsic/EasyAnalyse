@@ -1,705 +1,528 @@
-# EASYAnalyse Exchange Contract
+# EASYAnalyse Semantic Circuit Exchange
 
-This file is AI-facing documentation for the EASYAnalyse desktop tool.
+Version: `4.0.0`
 
-Goal:
-- Allow an AI to read, modify, generate, and repair circuit exchange JSON for this tool without ambiguity.
-- Prioritize exact field contracts, invariants, allowed transformations, and save-blocking conditions.
-- Prefer authoritative behavior over user-interface intuition.
+This is the only canonical EASYAnalyse exchange format used by the current desktop editor.
 
-Authoritative sources:
-- `AI原生电路交换格式.schema.json`
-- `AI原生电路交换格式设计.md`
-- `AI原生电路表达与还原工具 PRD.md`
-- Current implementation in `easyanalyse-desktop`
+The format is intentionally semantic-first:
 
-If this file conflicts with the JSON schema, the schema wins.
-If this file conflicts with the desktop editor behavior, the schema and persisted JSON contract win.
+- no wires
+- no junction nodes
+- no bend points
+- no standalone signal objects
+- no topology reconstruction step during editing
 
-## 1. Top-Level Contract
+Instead, a circuit is described through:
 
-The persisted file is a single JSON document with this top-level shape:
+- `devices`: the hardware blocks
+- `terminals`: each device's interfaces
+- terminal `label`: the connectivity key
+- `view`: layout and readability metadata
+
+If multiple terminals share the same non-empty `label`, they are considered connected.
+
+## 1. Design Goal
+
+The purpose of this format is to let AI and engineers communicate hardware structure without forcing the AI to fabricate fake routing geometry.
+
+The format must be:
+
+1. easy for AI to generate
+2. easy for humans to read
+3. stable enough for validation
+4. expressive enough to drive a clean semantic diagram
+
+## 2. Core Rule
+
+Connectivity is defined only by terminal labels.
+
+That means:
+
+- the editor does not need wires to understand connectivity
+- the renderer can group devices by shared labels
+- identical labels naturally produce identical terminal colors
+- click and focus behavior can be derived from semantic relations instead of line topology
+
+## 3. Top-Level Shape
 
 ```json
 {
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "4.0.0",
   "document": {},
-  "canvas": {},
-  "components": [],
-  "ports": [],
-  "nodes": [],
-  "wires": [],
-  "annotations": [],
+  "devices": [],
+  "view": {},
   "extensions": {}
 }
 ```
 
-Required top-level arrays:
-- `components`
-- `ports`
-- `nodes`
-- `wires`
-- `annotations`
+Top-level required fields:
 
-Important:
-- This format is normalized.
-- `ports` are not nested under `components`.
-- `wires` do not store freehand endpoints; they reference `port` or `node`.
-- `annotations` are top-level objects and cannot target `document` or another `annotation`.
-
-## 2. Naming, Casing, and Serialization Rules
-
-Use camelCase exactly as shown below.
-
-Critical field names:
 - `schemaVersion`
-- `createdAt`
-- `updatedAt`
-- `componentId`
-- `pinInfo`
-- `connectedWireIds`
-- `serialNumber`
-- `entityType`
-- `refId`
-- `angleDeg`
-- `edgeIndex`
-- `bendPoints`
+- `document`
+- `devices`
+- `view`
 
-Do not emit snake_case variants such as:
-- `angle_deg`
-- `edge_index`
-- `bend_points`
-- `connected_wire_ids`
-- `serial_number`
+## 4. `document`
 
-## 3. Document Object
-
-`document` fields:
+`document` stores global metadata.
 
 ```json
 {
-  "id": "doc.xxx",
-  "title": "Required non-empty string",
-  "description": "optional",
-  "createdAt": "optional ISO datetime",
-  "updatedAt": "optional ISO datetime",
-  "source": "human | ai | mixed | imported",
-  "extensions": {}
+  "id": "doc.demo",
+  "title": "I2C Sensor Node",
+  "description": "MCU with several I2C peripherals",
+  "createdAt": "2026-04-14T12:00:00.000Z",
+  "updatedAt": "2026-04-14T12:00:00.000Z",
+  "source": "ai",
+  "language": "zh-CN",
+  "tags": ["i2c", "sensor"]
 }
 ```
 
 Rules:
-- `id` must be globally unique across every entity in the whole file.
-- `title` must be non-empty at save time.
-- The editor will auto-refresh `updatedAt`.
 
-## 4. Canvas Object
+- `id` must be globally unique across the whole file
+- `title` must be non-empty
+- `source` should be one of: `human`, `ai`, `mixed`, `imported`
 
-`canvas` fields:
+## 5. `devices`
+
+Each device is a readable hardware block.
 
 ```json
 {
-  "origin": { "x": 0, "y": 0 },
-  "width": 2400,
-  "height": 1600,
-  "units": "px",
-  "grid": {
-    "enabled": true,
-    "size": 40
+  "id": "device.mcu",
+  "name": "STM32 Controller",
+  "kind": "controller",
+  "category": "logic",
+  "reference": "U1",
+  "description": "Main control MCU",
+  "tags": ["mcu", "i2c"],
+  "properties": {
+    "partNumber": "STM32F103C8T6",
+    "package": "LQFP-48"
   },
-  "extensions": {}
+  "terminals": []
 }
 ```
 
 Rules:
-- `units` is currently `px`.
-- `origin` exists but the editor treats component, port, node, wire, and annotation coordinates as absolute canvas-space coordinates.
 
-## 5. Component Entity
+- device `id` values must be globally unique
+- `name` must be non-empty
+- `kind` must be non-empty
+- `reference` is recommended for EDA-like readability
+- `properties` can carry structured metadata such as value, tolerance, package, part number, voltage, or notes
 
-Shape:
+## 6. `terminals`
 
-```json
-{
-  "id": "component.xxx",
-  "name": "Required non-empty string",
-  "geometry": {},
-  "description": "optional",
-  "tags": ["optional", "strings"],
-  "extensions": {}
-}
-```
-
-Supported geometry variants:
-
-Rectangle:
+Terminals are nested under the owning device and are the only place where connectivity semantics are declared.
 
 ```json
 {
-  "type": "rectangle",
-  "x": 100,
-  "y": 80,
-  "width": 220,
-  "height": 136
+  "id": "terminal.mcu.scl",
+  "name": "I2C1_SCL_U1",
+  "label": "SCL",
+  "direction": "bidirectional",
+  "description": "I2C clock pin",
+  "required": true,
+  "side": "left",
+  "order": 0,
+  "pin": {
+    "number": "PB6",
+    "name": "PB6"
+  }
 }
 ```
 
-Circle:
+### 6.1 Direction
 
-```json
-{
-  "type": "circle",
-  "cx": 300,
-  "cy": 200,
-  "radius": 72
-}
-```
+Allowed `direction` values:
 
-Triangle:
+- `input`
+- `output`
+- `bidirectional`
+- `passive`
+- `power-in`
+- `power-out`
+- `ground`
+- `shield`
+- `unspecified`
 
-```json
-{
-  "type": "triangle",
-  "vertices": [
-    { "x": 400, "y": 100 },
-    { "x": 500, "y": 260 },
-    { "x": 300, "y": 260 }
-  ]
-}
-```
+### 6.2 Layout Hints
+
+Optional terminal layout fields:
+
+- `side`: `left`, `right`, `top`, `bottom`, `auto`
+- `order`: stable ordering within the same side
+
+Default side behavior when `side` is omitted:
+
+- `input`, `power-in`, `ground` -> `left`
+- `output`, `power-out` -> `right`
+- `bidirectional` -> `top`
+- `passive`, `shield`, `unspecified` -> `bottom`
+
+### 6.3 Connectivity
+
+If two terminals share the same non-empty `label`, they are connected.
+
+There is no other primary connectivity mechanism.
 
 Rules:
-- `name` must be non-empty at save time.
-- `geometry` is the authoritative persisted placement.
-- Components may be rotated in the editor.
-- Rotation is persisted only through an extension, not as a first-class schema field.
 
-Current rotation extension:
+- terminal `id` values must be globally unique across the whole file
+- terminal `name` must be non-empty
+- empty `label` means the terminal is not connected to any shared label group
+- `required: true` without a non-empty `label` should produce a warning
 
-```json
-{
-  "extensions": {
-    "easyanalyse": {
-      "rotationDeg": 90
-    }
-  }
-}
-```
+### 6.4 Authoring Guidance
 
-Rotation notes:
-- `rotationDeg` is optional.
-- Missing `rotationDeg` means `0`.
-- Persist rotation only under `extensions.easyanalyse.rotationDeg`.
-- Do not invent parallel fields like `rotation`, `angle`, or `rotationRadians`.
+For new terminals, default `name` and `label` should be device-specific to avoid accidental shorting, for example:
 
-## 6. Port Entity
+- `INPUT_1_U1`
+- `INPUT_1_U2`
+- `INPUT_1_R1`
 
-Shape:
+After that, the user or AI can replace the label with a semantic value such as `SCL`, `SDA`, `TX`, or `GND`.
+
+## 7. `view`
+
+`view` stores readability metadata only. It does not define circuit truth.
 
 ```json
 {
-  "id": "port.xxx",
-  "componentId": "component.xxx",
-  "name": "Required non-empty string",
-  "direction": "input | output",
-  "pinInfo": {
-    "number": "optional",
-    "label": "optional",
-    "description": "optional"
-  },
-  "anchor": {},
-  "description": "optional",
-  "extensions": {}
-}
-```
-
-Rules:
-- `componentId` must reference an existing component.
-- `name` must be non-empty at save time.
-- Port position is not stored as free `x/y`.
-- Port position is always derived from `component.geometry + anchor + component rotation`.
-
-This is important:
-- In the UI, the user can drag a port freely along the component boundary.
-- Persisted JSON must still encode that final position as an `anchor`, not as arbitrary coordinates.
-
-Supported anchor kinds:
-
-Rectangle side anchor:
-
-```json
-{
-  "kind": "rectangle-side",
-  "side": "top | right | bottom | left",
-  "offset": 0.0
-}
-```
-
-Meaning:
-- `offset` is normalized along that side, usually in `[0, 1]`.
-- `0` means side start.
-- `1` means side end.
-
-Circle angle anchor:
-
-```json
-{
-  "kind": "circle-angle",
-  "angleDeg": 90
-}
-```
-
-Meaning:
-- Angle is measured in degrees around the circle center.
-
-Triangle edge anchor:
-
-```json
-{
-  "kind": "triangle-edge",
-  "edgeIndex": 1,
-  "offset": 0.25
-}
-```
-
-Meaning:
-- `edgeIndex` must be `0`, `1`, or `2`.
-- The edge is the segment from vertex `edgeIndex` to vertex `(edgeIndex + 1) % 3`.
-- `offset` is normalized along that edge.
-
-Anchor compatibility rules:
-- Rectangle component -> only `rectangle-side`
-- Circle component -> only `circle-angle`
-- Triangle component -> only `triangle-edge`
-
-## 7. Node Entity
-
-Shape:
-
-```json
-{
-  "id": "node.xxx",
-  "position": { "x": 0, "y": 0 },
-  "connectedWireIds": ["wire.1", "wire.2"],
-  "role": "generic | junction | branch",
-  "description": "optional",
-  "extensions": {}
-}
-```
-
-Rules:
-- `position` is absolute canvas-space.
-- `connectedWireIds` is required in persisted JSON.
-- `connectedWireIds` must exactly match the actual set of wires that reference this node.
-- `connectedWireIds` must contain at least 2 wire IDs according to schema.
-
-Important editor behavior:
-- The editor recalculates `connectedWireIds` from actual `wire.source/target`.
-- A node with fewer than 2 wires may temporarily exist during editing.
-- Such a node blocks save/export because the persisted exchange format requires at least 2 connected wires.
-
-AI guidance:
-- Do not invent a standalone node.
-- If you create a node, also create at least 2 wires that reference it.
-- If you remove wires from a node and it drops below 2, either:
-  - reconnect it, or
-  - delete the node.
-
-## 8. Wire Entity
-
-Shape:
-
-```json
-{
-  "id": "wire.xxx",
-  "serialNumber": "Required non-empty string",
-  "source": { "entityType": "port | node", "refId": "..." },
-  "target": { "entityType": "port | node", "refId": "..." },
-  "route": {},
-  "description": "optional",
-  "extensions": {}
-}
-```
-
-Endpoint rules:
-- `source.entityType` and `target.entityType` may only be `port` or `node`.
-- `refId` must point to an existing entity of the declared type.
-- A wire never directly targets a component or annotation.
-
-Supported route variants:
-
-Straight:
-
-```json
-{
-  "kind": "straight"
-}
-```
-
-Polyline:
-
-```json
-{
-  "kind": "polyline",
-  "bendPoints": [
-    { "x": 320, "y": 160 },
-    { "x": 360, "y": 220 }
-  ]
-}
-```
-
-Polyline rules:
-- `bendPoints` must exist and contain at least 1 point.
-- `bendPoints` contain only intermediate corners.
-- Do not repeat source endpoint or target endpoint inside `bendPoints`.
-- Order matters. Preserve the exact route order from source to target.
-- The editor supports multiple bend points.
-
-Save-time rule:
-- `serialNumber` must be non-empty.
-
-## 9. Annotation Entity
-
-Shape:
-
-```json
-{
-  "id": "annotation.xxx",
-  "kind": "signal | note | label",
-  "target": {
-    "entityType": "component | port | node | wire",
-    "refId": "..."
-  },
-  "text": "Required non-empty string",
-  "position": { "x": 0, "y": 0 },
-  "extensions": {}
-}
-```
-
-Rules:
-- `target.entityType` may only be:
-  - `component`
-  - `port`
-  - `node`
-  - `wire`
-- `annotation` cannot target `document`.
-- `annotation` cannot target another `annotation`.
-- `text` must be non-empty at save time.
-- `position` is optional. If omitted, the editor derives a default display offset from the target.
-
-## 10. Global Invariants
-
-These are mandatory for valid persisted files:
-
-1. Every `id` in the entire document must be globally unique.
-2. Every reference must resolve.
-3. Every port anchor kind must match its component geometry kind.
-4. Every node’s `connectedWireIds` must exactly equal the actual referencing wires.
-5. Every persisted node must have at least 2 connected wires.
-6. Every required string must be non-empty:
-   - `document.title`
-   - `component.name`
-   - `port.name`
-   - `wire.serialNumber`
-   - `annotation.text`
-7. Every polyline must have at least 1 bend point.
-8. `bendPoints` must not duplicate the source or target endpoint coordinates.
-
-## 11. What The Editor Auto-Normalizes
-
-Before validation/save, the editor normalizes:
-- `document.updatedAt`
-- array ordering by `id`
-- `node.connectedWireIds` from actual wire references
-- blank required strings to a fallback value
-- empty polyline `bendPoints` to a default intermediate point
-
-Fallback behavior for blank required strings:
-- blank document title -> `"Untitled circuit"`
-- blank component name -> component `id`
-- blank port name -> port `id`
-- blank wire serial number -> wire `id`
-- blank annotation text -> annotation `id`
-
-Important:
-- Normalization is not a license to emit sloppy JSON.
-- AI should still produce correct, intentional values instead of relying on fallback repair.
-
-## 12. Save-Blocking Conditions
-
-The desktop tool will refuse to save/export when the normalized document still violates schema or semantic validation.
-
-Common blockers:
-- node has fewer than 2 connected wires
-- missing component referenced by `port.componentId`
-- missing endpoint referenced by a wire
-- wrong anchor kind for a component geometry
-- duplicate IDs
-- malformed route contract
-
-## 13. Construction Recipes
-
-### 13.1 Add a component
-
-Minimum valid component:
-
-```json
-{
-  "id": "component.driver",
-  "name": "Driver",
-  "geometry": {
-    "type": "rectangle",
-    "x": 520,
-    "y": 120,
-    "width": 200,
-    "height": 140
-  }
-}
-```
-
-### 13.2 Add a port on a component
-
-Example for rectangle input:
-
-```json
-{
-  "id": "port.driver.in",
-  "componentId": "component.driver",
-  "name": "IN",
-  "direction": "input",
-  "anchor": {
-    "kind": "rectangle-side",
-    "side": "left",
-    "offset": 0.5
-  }
-}
-```
-
-### 13.3 Create a valid node fan-in / fan-out
-
-Minimum valid node requires 2 wires:
-
-```json
-{
-  "id": "node.mid.1",
-  "position": { "x": 430, "y": 190 },
-  "connectedWireIds": ["wire.1", "wire.2"],
-  "role": "junction"
-}
-```
-
-### 13.4 Create a straight wire
-
-```json
-{
-  "id": "wire.1",
-  "serialNumber": "W1",
-  "source": { "entityType": "port", "refId": "port.mcu.pwm_out" },
-  "target": { "entityType": "node", "refId": "node.mid.1" },
-  "route": { "kind": "straight" }
-}
-```
-
-### 13.5 Create a multi-bend wire
-
-```json
-{
-  "id": "wire.2",
-  "serialNumber": "W2",
-  "source": { "entityType": "node", "refId": "node.mid.1" },
-  "target": { "entityType": "port", "refId": "port.driver.in" },
-  "route": {
-    "kind": "polyline",
-    "bendPoints": [
-      { "x": 470, "y": 190 },
-      { "x": 470, "y": 260 },
-      { "x": 520, "y": 260 }
-    ]
-  }
-}
-```
-
-### 13.6 Rotate a component
-
-Persist rotation only via:
-
-```json
-{
-  "extensions": {
-    "easyanalyse": {
-      "rotationDeg": 90
-    }
-  }
-}
-```
-
-Rotation does not change persisted port anchor kind.
-It changes rendered world position of ports by rotating the anchor-derived point around the component center.
-
-### 13.7 Add annotations
-
-Signal annotation on a port:
-
-```json
-{
-  "id": "annotation.signal.1",
-  "kind": "signal",
-  "target": { "entityType": "port", "refId": "port.mcu.pwm_out" },
-  "text": "3.3V PWM, 20kHz"
-}
-```
-
-## 14. AI Editing Rules
-
-Do:
-- preserve all IDs unless the object is intentionally replaced
-- preserve camelCase
-- update all dependent references when renaming IDs
-- keep `connectedWireIds` synchronized with actual wire references
-- delete orphaned nodes that fall below 2 wires
-- keep route order stable
-- use `extensions.easyanalyse.rotationDeg` for rotation
-
-Do not:
-- switch to nested component->ports structure
-- store free `x/y` on ports
-- add unsupported entity types
-- target annotations with annotations
-- output empty required strings
-- use snake_case aliases
-- put source/target endpoints into `bendPoints`
-- leave a polyline with empty `bendPoints`
-
-## 15. AI Repair Strategy For Invalid Files
-
-When repairing an invalid file, apply this order:
-
-1. Fix casing and field names.
-2. Resolve duplicate IDs.
-3. Resolve broken references.
-4. Fix anchor-kind vs geometry-kind mismatches.
-5. Recompute `node.connectedWireIds`.
-6. Remove or reconnect nodes with fewer than 2 wires.
-7. Fill required non-empty strings.
-8. Ensure every polyline has valid intermediate bend points.
-
-## 16. Practical Notes About Editor Interaction
-
-Current desktop behavior relevant to JSON:
-- Component placement is click-to-place.
-- Node placement is click-to-place.
-- Ports are draggable along the component boundary, but persisted as anchors.
-- Wires can be straight or multi-bend polyline.
-- Component rotation exists and is persisted through extension state.
-- Save is blocked on unresolved schema/semantic issues.
-
-## 17. Minimal Valid Example
-
-```json
-{
-  "schemaVersion": "1.0.0",
-  "document": {
-    "id": "doc.demo",
-    "title": "PWM Driver Demo",
-    "source": "human"
-  },
   "canvas": {
-    "origin": { "x": 0, "y": 0 },
-    "width": 1600,
-    "height": 900,
     "units": "px",
     "grid": {
       "enabled": true,
-      "size": 40
+      "size": 36,
+      "majorEvery": 5
+    },
+    "background": "grid"
+  },
+  "devices": {
+    "device.mcu": {
+      "position": { "x": 280, "y": 320 },
+      "size": { "width": 240, "height": 148 },
+      "rotationDeg": 90,
+      "shape": "rectangle"
     }
   },
-  "components": [
-    {
-      "id": "component.mcu",
-      "name": "MCU",
-      "geometry": {
-        "type": "rectangle",
-        "x": 120,
-        "y": 120,
-        "width": 220,
-        "height": 140
-      }
+  "networkLines": {
+    "network.vcc": {
+      "label": "VCC",
+      "position": { "x": 720, "y": 120 },
+      "length": 960,
+      "orientation": "horizontal"
     },
-    {
-      "id": "component.driver",
-      "name": "Driver",
-      "geometry": {
-        "type": "rectangle",
-        "x": 520,
-        "y": 120,
-        "width": 200,
-        "height": 140
-      },
-      "extensions": {
-        "easyanalyse": {
-          "rotationDeg": 0
-        }
-      }
+    "network.gnd": {
+      "label": "GND",
+      "position": { "x": 720, "y": 560 },
+      "length": 960,
+      "orientation": "horizontal"
     }
-  ],
-  "ports": [
-    {
-      "id": "port.mcu.pwm_out",
-      "componentId": "component.mcu",
-      "name": "PWM_OUT",
-      "direction": "output",
-      "anchor": {
-        "kind": "rectangle-side",
-        "side": "right",
-        "offset": 0.5
-      }
-    },
-    {
-      "id": "port.driver.in",
-      "componentId": "component.driver",
-      "name": "IN",
-      "direction": "input",
-      "anchor": {
-        "kind": "rectangle-side",
-        "side": "left",
-        "offset": 0.5
-      }
-    }
-  ],
-  "nodes": [
-    {
-      "id": "node.mid.1",
-      "position": { "x": 430, "y": 190 },
-      "connectedWireIds": ["wire.1", "wire.2"],
-      "role": "junction"
-    }
-  ],
-  "wires": [
-    {
-      "id": "wire.1",
-      "serialNumber": "W1",
-      "source": { "entityType": "port", "refId": "port.mcu.pwm_out" },
-      "target": { "entityType": "node", "refId": "node.mid.1" },
-      "route": { "kind": "straight" }
-    },
-    {
-      "id": "wire.2",
-      "serialNumber": "W2",
-      "source": { "entityType": "node", "refId": "node.mid.1" },
-      "target": { "entityType": "port", "refId": "port.driver.in" },
-      "route": {
-        "kind": "polyline",
-        "bendPoints": [{ "x": 470, "y": 190 }]
-      }
-    }
-  ],
-  "annotations": [
-    {
-      "id": "annotation.signal.1",
-      "kind": "signal",
-      "target": { "entityType": "port", "refId": "port.mcu.pwm_out" },
-      "text": "3.3V PWM, 20kHz"
-    }
-  ]
+  },
+  "focus": {
+    "defaultDeviceId": "device.mcu",
+    "preferredDirection": "left-to-right"
+  }
 }
 ```
+
+### 7.1 `view.canvas`
+
+Current contract:
+
+- the canvas is infinite
+- `units` must be `"px"`
+- `background` must be `"grid"` when present
+- `grid.size` controls the base grid spacing
+- `grid.majorEvery` controls major grid grouping
+
+### 7.2 `view.devices[deviceId]`
+
+Optional display metadata per device:
+
+- `position`
+- `size`
+- `rotationDeg`: clockwise display rotation in degrees, normalized by the implementation into `[0, 360)`
+- `shape`: `rectangle`, `circle`, `triangle`
+- `locked`
+- `collapsed`
+- `groupId`
+
+### 7.3 `view.networkLines[networkLineId]`
+
+Optional independent linear-network metadata:
+
+- `label`: the shared terminal label represented by this independent network line
+- `position`: the line center on the canvas
+- `length`
+- `orientation`: `horizontal`, `vertical`
+
+Use `view.networkLines` for independent linear networks such as `VCC`, `GND`, `3V3`, `5V`, or other high-frequency rails that would otherwise flood device-focus views.
+
+Behavior:
+
+- each network line is a first-class view entity at the same visual level as a device
+- a network line is not attached to a specific terminal and does not belong to a device
+- independent network lines do not change circuit truth
+- terminal `label` values are still the only connectivity key
+- terminals remain dots on devices; the line is only a semantic visual summary for that label group
+- if a label already has an independent network line, normal device focus can suppress that label so common rails do not explode the layout
+- focusing that independent network line gathers all devices exposing the same label
+
+### 7.4 `view.focus`
+
+Optional focus metadata:
+
+- `defaultDeviceId`
+- `preferredDirection`: `left-to-right`, `top-to-bottom`, `auto`
+
+## 8. Validation Rules
+
+The desktop app always validates the document and keeps the latest validation report visible in the UI.
+
+Validation is advisory, not a save gate, as long as the document can still be normalized into the current semantic v4 model.
+
+In practice, save should fail only when:
+
+- the document cannot be parsed or normalized into the semantic v4 model
+- the target file path cannot be written
+
+Semantic validation currently checks at least:
+
+1. duplicate IDs across document, devices, and terminals
+2. missing device references inside `view.devices`
+3. missing default focus device references
+4. multiple output-like terminals inside one label group
+5. required terminals with no assigned label
+
+Warnings may still be shown for:
+
+- devices with no terminals
+
+## 9. AI Generation Rules
+
+When generating semantic v4 JSON, the AI should follow these rules:
+
+1. Output only the semantic v4 shape: `schemaVersion`, `document`, `devices`, `view`, and optional `extensions`.
+2. Do not output legacy fields such as `components`, `ports`, `nodes`, `wires`, `signals`, or `signalId`.
+3. Use real devices or meaningful subcircuits. Do not invent fake containers, bridge boxes, routing helpers, or placeholder modules unless the user explicitly asks for an abstract block diagram.
+4. Treat every shared terminal `label` as a real electrical connection. If a terminal is not intentionally connected, keep its `label` device-specific such as `INPUT_1_U1`.
+5. For passive parts such as resistors, capacitors, inductors, jumpers, and switches, both terminals must map to real labels. Do not leave floating components with meaningless endpoints.
+6. Include explicit power and ground connectivity whenever the circuit meaning depends on it.
+7. Use `properties` for structured data such as part number, electrical value, tolerance, package, voltage, or frequency. If an exact value is unknown, omit it or mark the uncertainty in `description` rather than fabricating precision.
+8. Keep IDs globally unique and stable, preferably with readable prefixes such as `device.mcu`, `device.r1`, `terminal.mcu.swdio`, or `terminal.r1.a`.
+9. Use `view.devices` to produce a readable layout: keep related devices near each other, prefer left-to-right signal flow, leave generous spacing, and keep enough whitespace that device names and terminal labels never crowd each other. As a rule, example layouts should look loose rather than compact.
+10. Use `view.networkLines` for frequent shared rails such as `VCC`, `GND`, `3V3`, or `5V`. These lines are independent semantic view entities, not device-attached stubs.
+11. Place independent network lines where they clarify the structure, typically above or below the related device cluster, and keep enough room between the line and the devices that the hierarchy remains obvious.
+12. Return plain JSON without comments, markdown wrappers, or explanatory prose when the task is to generate a document.
+
+## 10. Example Files
+
+The repository includes multiple saveable semantic v4 examples intended for AI prompting and regression checks:
+
+- `testJson/semantic-v4-demo.json`: minimal label-based I2C example
+- `testJson/butterworth-4th-order-lowpass.json`: analog multi-stage filter with passives, active stages, power rails, and rotated view metadata
+- `testJson/ripple-carry-adder-4bit.json`: digital arithmetic with repeated adder slices, carry-chain labels, and multi-bit I/O organization
+- `testJson/stm32f103c8t6-minimum-system.json`: MCU minimum system board with regulator, reset, clock, SWD, and UART headers
+
+## 11. Interaction Model
+
+The editor derives behavior directly from semantic data:
+
+### 11.1 Terminal color
+
+- terminals with the same `label` share the same color group
+- different non-empty labels must not reuse the same network color within one document
+- render network colors as hexadecimal color codes
+- avoid `#000000`, `#FFFFFF`, and the passive-terminal gray family when assigning network colors
+- prefer large visual separation between different network colors instead of nearby hues
+- common labels such as `SCL`, `SDA`, `VCC`, and `GND` may use stable preferred colors if uniqueness is still preserved
+- passive terminals should use a gray border, ground terminals a black border, power-input terminals a red border, and bidirectional terminals a black inner ring plus white outer ring
+
+### 11.2 Click device
+
+When the user clicks a device:
+
+- devices feeding its inputs are highlighted as upstream
+- devices driven by its outputs are highlighted as downstream
+- upstream highlighting reads as red
+- downstream highlighting reads as green
+
+### 11.3 Double click device
+
+When the user double-clicks a device:
+
+- the selected device becomes the anchor
+- related devices are repacked with explicit spacing so they do not overlap
+- related devices may auto-rotate so their relevant terminals face toward the anchor
+- upstream related devices move toward the left side
+- downstream related devices move toward the right side
+- peer devices are arranged in ordered rows with gaps instead of stacking chaotically
+- the camera auto-fits the focused set with a clamped zoom range instead of zooming without limit
+- labels represented by independent network lines may be folded locally so common rails do not dominate normal device focus
+- this animation is derived from shared labels and terminal directions, not wire geometry
+
+### 11.4 Focus independent network line
+
+When the user clicks an independent network line:
+
+- the editor uses that line's `label` as the focus target
+- every device exposing that same label can be gathered into a network-focused layout
+- devices may auto-rotate so the relevant terminals face the shared label rail
+- this is especially useful for common nets such as `VCC`, `GND`, and `3V3`
+
+## 12. Example JSON
+
+```json
+{
+  "schemaVersion": "4.0.0",
+  "document": {
+    "id": "doc.i2c-demo",
+    "title": "I2C Sensor Hub",
+    "source": "ai",
+    "language": "zh-CN"
+  },
+  "devices": [
+    {
+      "id": "device.mcu",
+      "name": "MCU",
+      "kind": "controller",
+      "reference": "U1",
+      "terminals": [
+        {
+          "id": "terminal.mcu.vcc",
+          "name": "POWER_IN_1_U1",
+          "label": "VCC",
+          "direction": "power-in",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.mcu.gnd",
+          "name": "GROUND_1_U1",
+          "label": "GND",
+          "direction": "ground",
+          "side": "left",
+          "order": 1
+        },
+        {
+          "id": "terminal.mcu.scl",
+          "name": "BIDIRECTIONAL_1_U1",
+          "label": "SCL",
+          "direction": "bidirectional",
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.mcu.sda",
+          "name": "BIDIRECTIONAL_2_U1",
+          "label": "SDA",
+          "direction": "bidirectional",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.sensor",
+      "name": "Temperature Sensor",
+      "kind": "sensor",
+      "reference": "U2",
+      "terminals": [
+        {
+          "id": "terminal.sensor.vcc",
+          "name": "POWER_IN_1_U2",
+          "label": "VCC",
+          "direction": "power-in",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.sensor.gnd",
+          "name": "GROUND_1_U2",
+          "label": "GND",
+          "direction": "ground",
+          "side": "left",
+          "order": 1
+        },
+        {
+          "id": "terminal.sensor.scl",
+          "name": "INPUT_1_U2",
+          "label": "SCL",
+          "direction": "input",
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.sensor.sda",
+          "name": "BIDIRECTIONAL_1_U2",
+          "label": "SDA",
+          "direction": "bidirectional",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    }
+  ],
+  "view": {
+    "canvas": {
+      "units": "px",
+      "grid": {
+        "enabled": true,
+        "size": 36,
+        "majorEvery": 5
+      },
+      "background": "grid"
+    },
+    "devices": {
+      "device.mcu": {
+        "position": { "x": 220, "y": 240 },
+        "size": { "width": 240, "height": 150 },
+        "shape": "rectangle"
+      },
+      "device.sensor": {
+        "position": { "x": 920, "y": 280 },
+        "size": { "width": 220, "height": 132 },
+        "rotationDeg": 90,
+        "shape": "triangle"
+      }
+    },
+    "networkLines": {
+      "network.vcc": {
+        "label": "VCC",
+        "position": { "x": 580, "y": 100 },
+        "length": 900,
+        "orientation": "horizontal"
+      },
+      "network.gnd": {
+        "label": "GND",
+        "position": { "x": 580, "y": 520 },
+        "length": 900,
+        "orientation": "horizontal"
+      }
+    },
+    "focus": {
+      "defaultDeviceId": "device.mcu",
+      "preferredDirection": "left-to-right"
+    }
+  }
+}
+```
+
+## 13. Migration Notes
+
+Documents based on legacy `components / ports / nodes / wires`, or on intermediate `signals + signalId` modeling, are not the canonical model anymore.
+
+Any future migration logic should translate old formats into:
+
+- `devices`
+- nested `terminals`
+- terminal `label` groups
+- `view.devices`
+- optional `view.networkLines`
+
+New documents should be generated directly in semantic v4 form.

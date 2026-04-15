@@ -1,0 +1,156 @@
+{
+  "schemaVersion": "4.0.0",
+  "document": {
+    "id": "doc.i2c-demo",
+    "title": "I2C Sensor Hub",
+    "description": "Semantic-first circuit example with label-based connectivity",
+    "source": "ai",
+    "language": "zh-CN",
+    "tags": [
+      "i2c",
+      "sensor"
+    ]
+  },
+  "devices": [
+    {
+      "id": "device.mcu",
+      "name": "MCU",
+      "kind": "controller",
+      "reference": "U1",
+      "terminals": [
+        {
+          "id": "terminal.mcu.vcc",
+          "name": "POWER_IN_1_U1",
+          "label": "VCC",
+          "direction": "power-in",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.mcu.gnd",
+          "name": "GROUND_1_U1",
+          "label": "GND",
+          "direction": "ground",
+          "side": "left",
+          "order": 1
+        },
+        {
+          "id": "terminal.mcu.scl",
+          "name": "BIDIRECTIONAL_1_U1",
+          "label": "SCL",
+          "direction": "bidirectional",
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.mcu.sda",
+          "name": "BIDIRECTIONAL_2_U1",
+          "label": "SDA",
+          "direction": "bidirectional",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.sensor",
+      "name": "Temperature Sensor",
+      "kind": "sensor",
+      "reference": "U2",
+      "terminals": [
+        {
+          "id": "terminal.sensor.vcc",
+          "name": "POWER_IN_1_U2",
+          "label": "VCC",
+          "direction": "power-in",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.sensor.gnd",
+          "name": "GROUND_1_U2",
+          "label": "GND",
+          "direction": "ground",
+          "side": "left",
+          "order": 1
+        },
+        {
+          "id": "terminal.sensor.scl",
+          "name": "INPUT_1_U2",
+          "label": "SCL",
+          "direction": "input",
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.sensor.sda",
+          "name": "BIDIRECTIONAL_1_U2",
+          "label": "SDA",
+          "direction": "bidirectional",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    }
+  ],
+  "view": {
+    "canvas": {
+      "units": "px",
+      "grid": {
+        "enabled": true,
+        "size": 36,
+        "majorEvery": 5
+      },
+      "background": "grid"
+    },
+    "devices": {
+      "device.mcu": {
+        "position": {
+          "x": 220,
+          "y": 240
+        },
+        "size": {
+          "width": 240,
+          "height": 150
+        },
+        "shape": "rectangle"
+      },
+      "device.sensor": {
+        "position": {
+          "x": 920,
+          "y": 280
+        },
+        "size": {
+          "width": 220,
+          "height": 132
+        },
+        "rotationDeg": 90,
+        "shape": "triangle"
+      }
+    },
+    "networkLines": {
+      "network.vcc": {
+        "label": "VCC",
+        "position": {
+          "x": 680,
+          "y": 120
+        },
+        "length": 1120,
+        "orientation": "horizontal"
+      },
+      "network.gnd": {
+        "label": "GND",
+        "position": {
+          "x": 680,
+          "y": 500
+        },
+        "length": 1120,
+        "orientation": "horizontal"
+      }
+    },
+    "focus": {
+      "defaultDeviceId": "device.mcu",
+      "preferredDirection": "left-to-right"
+    }
+  }
+}

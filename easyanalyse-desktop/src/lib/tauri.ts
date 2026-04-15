@@ -1,6 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
 import type {
-  DiffSummary,
   DocumentFile,
   OpenDocumentResult,
   SaveDocumentResult,
@@ -25,11 +24,4 @@ export async function openDocumentFromPath(path: string) {
 
 export async function saveDocumentToPath(path: string, document: DocumentFile) {
   return invoke<SaveDocumentResult>('save_document_to_path', { path, document })
-}
-
-export async function summarizeDiffCommand(
-  previous: DocumentFile,
-  next: DocumentFile,
-) {
-  return invoke<DiffSummary>('summarize_diff', { previous, next })
 }

@@ -1,91 +1,48 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:ai-native-circuit-exchange:schema:1.0.0",
-  "title": "AI Native Circuit Exchange Format",
-  "description": "Structured exchange format for the AI 原生电路表达与还原工具.",
+  "$id": "https://easyanalyse.local/schema/ai-native-semantic-circuit.schema.json",
+  "title": "EASYAnalyse Semantic Circuit Exchange",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schemaVersion",
     "document",
-    "canvas",
-    "components",
-    "ports",
-    "nodes",
-    "wires",
-    "annotations"
+    "devices",
+    "view"
   ],
   "properties": {
     "schemaVersion": {
-      "const": "1.0.0"
+      "const": "4.0.0"
     },
     "document": {
       "$ref": "#/$defs/documentMeta"
     },
-    "canvas": {
-      "$ref": "#/$defs/canvas"
-    },
-    "components": {
+    "devices": {
       "type": "array",
       "items": {
-        "$ref": "#/$defs/component"
+        "$ref": "#/$defs/deviceDefinition"
       }
     },
-    "ports": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/port"
-      }
-    },
-    "nodes": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/node"
-      }
-    },
-    "wires": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/wire"
-      }
-    },
-    "annotations": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/annotation"
-      }
+    "view": {
+      "$ref": "#/$defs/viewDefinition"
     },
     "extensions": {
-      "type": "object"
+      "$ref": "#/$defs/extensions"
     }
   },
   "$defs": {
-    "idString": {
-      "type": "string",
-      "pattern": "^[A-Za-z][A-Za-z0-9._:-]{0,127}$"
-    },
-    "nonEmptyString": {
-      "type": "string",
-      "minLength": 1
-    },
-    "coordinate": {
-      "type": "number"
-    },
-    "point": {
+    "extensions": {
       "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "x",
-        "y"
-      ],
-      "properties": {
-        "x": {
-          "$ref": "#/$defs/coordinate"
-        },
-        "y": {
-          "$ref": "#/$defs/coordinate"
-        }
-      }
+      "additionalProperties": true
+    },
+    "documentSource": {
+      "type": "string",
+      "enum": [
+        "human",
+        "ai",
+        "mixed",
+        "imported"
+      ]
     },
     "documentMeta": {
       "type": "object",
@@ -96,37 +53,213 @@
       ],
       "properties": {
         "id": {
-          "$ref": "#/$defs/idString"
+          "type": "string",
+          "minLength": 1
         },
         "title": {
-          "$ref": "#/$defs/nonEmptyString"
+          "type": "string",
+          "minLength": 1
         },
         "description": {
           "type": "string"
         },
         "createdAt": {
-          "type": "string",
-          "format": "date-time"
+          "type": "string"
         },
         "updatedAt": {
-          "type": "string",
-          "format": "date-time"
+          "type": "string"
         },
         "source": {
-          "type": "string",
-          "enum": [
-            "human",
-            "ai",
-            "mixed",
-            "imported"
-          ]
+          "$ref": "#/$defs/documentSource"
+        },
+        "language": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "extensions": {
-          "type": "object"
+          "$ref": "#/$defs/extensions"
         }
       }
     },
-    "grid": {
+    "terminalDirection": {
+      "type": "string",
+      "enum": [
+        "input",
+        "output",
+        "bidirectional",
+        "passive",
+        "power-in",
+        "power-out",
+        "ground",
+        "shield",
+        "unspecified"
+      ]
+    },
+    "terminalSide": {
+      "type": "string",
+      "enum": [
+        "left",
+        "right",
+        "top",
+        "bottom",
+        "auto"
+      ]
+    },
+    "terminalPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "number": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "bank": {
+          "type": "string"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "terminalDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "direction"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string"
+        },
+        "direction": {
+          "$ref": "#/$defs/terminalDirection"
+        },
+        "role": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "pin": {
+          "$ref": "#/$defs/terminalPin"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "side": {
+          "$ref": "#/$defs/terminalSide"
+        },
+        "order": {
+          "type": "integer"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "deviceDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "terminals"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "category": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "reference": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "properties": {
+          "$ref": "#/$defs/extensions"
+        },
+        "terminals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/terminalDefinition"
+          }
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      }
+    },
+    "size": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "width",
+        "height"
+      ],
+      "properties": {
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "height": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "gridDefinition": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -140,492 +273,156 @@
         "size": {
           "type": "number",
           "exclusiveMinimum": 0
+        },
+        "majorEvery": {
+          "type": "integer",
+          "minimum": 2
         }
       }
     },
-    "canvas": {
+    "deviceShape": {
+      "type": "string",
+      "enum": [
+        "rectangle",
+        "circle",
+        "triangle"
+      ]
+    },
+    "deviceViewDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "position": {
+          "$ref": "#/$defs/point"
+        },
+        "size": {
+          "$ref": "#/$defs/size"
+        },
+        "rotationDeg": {
+          "type": "number"
+        },
+        "shape": {
+          "$ref": "#/$defs/deviceShape"
+        },
+        "locked": {
+          "type": "boolean"
+        },
+        "collapsed": {
+          "type": "boolean"
+        },
+        "groupId": {
+          "type": "string"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "networkLineOrientation": {
+      "type": "string",
+      "enum": [
+        "horizontal",
+        "vertical"
+      ]
+    },
+    "networkLineViewDefinition": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "origin",
-        "width",
-        "height",
+        "label",
+        "position"
+      ],
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "position": {
+          "$ref": "#/$defs/point"
+        },
+        "length": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "orientation": {
+          "$ref": "#/$defs/networkLineOrientation"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "focusDirection": {
+      "type": "string",
+      "enum": [
+        "left-to-right",
+        "top-to-bottom",
+        "auto"
+      ]
+    },
+    "focusViewDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "defaultDeviceId": {
+          "type": "string"
+        },
+        "preferredDirection": {
+          "$ref": "#/$defs/focusDirection"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "canvasViewDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
         "units"
       ],
       "properties": {
-        "origin": {
-          "$ref": "#/$defs/point"
-        },
-        "width": {
-          "type": "number",
-          "exclusiveMinimum": 0
-        },
-        "height": {
-          "type": "number",
-          "exclusiveMinimum": 0
-        },
         "units": {
-          "type": "string",
-          "enum": [
-            "px"
-          ]
+          "const": "px"
         },
         "grid": {
-          "$ref": "#/$defs/grid"
+          "$ref": "#/$defs/gridDefinition"
+        },
+        "background": {
+          "const": "grid"
         },
         "extensions": {
-          "type": "object"
+          "$ref": "#/$defs/extensions"
         }
       }
     },
-    "rectangleGeometry": {
+    "viewDefinition": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "type",
-        "x",
-        "y",
-        "width",
-        "height"
+        "canvas"
       ],
       "properties": {
-        "type": {
-          "const": "rectangle"
+        "canvas": {
+          "$ref": "#/$defs/canvasViewDefinition"
         },
-        "x": {
-          "$ref": "#/$defs/coordinate"
-        },
-        "y": {
-          "$ref": "#/$defs/coordinate"
-        },
-        "width": {
-          "type": "number",
-          "exclusiveMinimum": 0
-        },
-        "height": {
-          "type": "number",
-          "exclusiveMinimum": 0
-        }
-      }
-    },
-    "circleGeometry": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "type",
-        "cx",
-        "cy",
-        "radius"
-      ],
-      "properties": {
-        "type": {
-          "const": "circle"
-        },
-        "cx": {
-          "$ref": "#/$defs/coordinate"
-        },
-        "cy": {
-          "$ref": "#/$defs/coordinate"
-        },
-        "radius": {
-          "type": "number",
-          "exclusiveMinimum": 0
-        }
-      }
-    },
-    "triangleGeometry": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "type",
-        "vertices"
-      ],
-      "properties": {
-        "type": {
-          "const": "triangle"
-        },
-        "vertices": {
-          "type": "array",
-          "minItems": 3,
-          "maxItems": 3,
-          "items": {
-            "$ref": "#/$defs/point"
+        "devices": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/deviceViewDefinition"
           }
-        }
-      }
-    },
-    "componentGeometry": {
-      "oneOf": [
-        {
-          "$ref": "#/$defs/rectangleGeometry"
         },
-        {
-          "$ref": "#/$defs/circleGeometry"
-        },
-        {
-          "$ref": "#/$defs/triangleGeometry"
-        }
-      ]
-    },
-    "component": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "name",
-        "geometry"
-      ],
-      "properties": {
-        "id": {
-          "$ref": "#/$defs/idString"
-        },
-        "name": {
-          "$ref": "#/$defs/nonEmptyString"
-        },
-        "geometry": {
-          "$ref": "#/$defs/componentGeometry"
-        },
-        "description": {
-          "type": "string"
-        },
-        "tags": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/nonEmptyString"
-          },
-          "uniqueItems": true
-        },
-        "extensions": {
-          "type": "object"
-        }
-      }
-    },
-    "pinInfo": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "number": {
-          "type": "string"
-        },
-        "label": {
-          "type": "string"
-        },
-        "description": {
-          "type": "string"
-        }
-      }
-    },
-    "rectanglePortAnchor": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "kind",
-        "side",
-        "offset"
-      ],
-      "properties": {
-        "kind": {
-          "const": "rectangle-side"
-        },
-        "side": {
-          "type": "string",
-          "enum": [
-            "top",
-            "right",
-            "bottom",
-            "left"
-          ]
-        },
-        "offset": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
-        }
-      }
-    },
-    "circlePortAnchor": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "kind",
-        "angleDeg"
-      ],
-      "properties": {
-        "kind": {
-          "const": "circle-angle"
-        },
-        "angleDeg": {
-          "type": "number"
-        }
-      }
-    },
-    "trianglePortAnchor": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "kind",
-        "edgeIndex",
-        "offset"
-      ],
-      "properties": {
-        "kind": {
-          "const": "triangle-edge"
-        },
-        "edgeIndex": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 2
-        },
-        "offset": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
-        }
-      }
-    },
-    "portAnchor": {
-      "oneOf": [
-        {
-          "$ref": "#/$defs/rectanglePortAnchor"
-        },
-        {
-          "$ref": "#/$defs/circlePortAnchor"
-        },
-        {
-          "$ref": "#/$defs/trianglePortAnchor"
-        }
-      ]
-    },
-    "port": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "componentId",
-        "name",
-        "direction",
-        "anchor"
-      ],
-      "properties": {
-        "id": {
-          "$ref": "#/$defs/idString"
-        },
-        "componentId": {
-          "$ref": "#/$defs/idString"
-        },
-        "name": {
-          "$ref": "#/$defs/nonEmptyString"
-        },
-        "direction": {
-          "type": "string",
-          "enum": [
-            "input",
-            "output"
-          ]
-        },
-        "pinInfo": {
-          "$ref": "#/$defs/pinInfo"
-        },
-        "anchor": {
-          "$ref": "#/$defs/portAnchor"
-        },
-        "description": {
-          "type": "string"
-        },
-        "extensions": {
-          "type": "object"
-        }
-      }
-    },
-    "node": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "position",
-        "connectedWireIds"
-      ],
-      "properties": {
-        "id": {
-          "$ref": "#/$defs/idString"
-        },
-        "position": {
-          "$ref": "#/$defs/point"
-        },
-        "connectedWireIds": {
-          "type": "array",
-          "minItems": 2,
-          "items": {
-            "$ref": "#/$defs/idString"
-          },
-          "uniqueItems": true
-        },
-        "role": {
-          "type": "string",
-          "enum": [
-            "generic",
-            "junction",
-            "branch"
-          ]
-        },
-        "description": {
-          "type": "string"
-        },
-        "extensions": {
-          "type": "object"
-        }
-      }
-    },
-    "endpointRef": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "entityType",
-        "refId"
-      ],
-      "properties": {
-        "entityType": {
-          "type": "string",
-          "enum": [
-            "port",
-            "node"
-          ]
-        },
-        "refId": {
-          "$ref": "#/$defs/idString"
-        }
-      }
-    },
-    "straightRoute": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "kind"
-      ],
-      "properties": {
-        "kind": {
-          "const": "straight"
-        }
-      }
-    },
-    "polylineRoute": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "kind",
-        "bendPoints"
-      ],
-      "properties": {
-        "kind": {
-          "const": "polyline"
-        },
-        "bendPoints": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/point"
+        "networkLines": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/networkLineViewDefinition"
           }
-        }
-      }
-    },
-    "route": {
-      "oneOf": [
-        {
-          "$ref": "#/$defs/straightRoute"
         },
-        {
-          "$ref": "#/$defs/polylineRoute"
-        }
-      ]
-    },
-    "wire": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "serialNumber",
-        "source",
-        "target",
-        "route"
-      ],
-      "properties": {
-        "id": {
-          "$ref": "#/$defs/idString"
-        },
-        "serialNumber": {
-          "$ref": "#/$defs/nonEmptyString"
-        },
-        "source": {
-          "$ref": "#/$defs/endpointRef"
-        },
-        "target": {
-          "$ref": "#/$defs/endpointRef"
-        },
-        "route": {
-          "$ref": "#/$defs/route"
-        },
-        "description": {
-          "type": "string"
+        "focus": {
+          "$ref": "#/$defs/focusViewDefinition"
         },
         "extensions": {
-          "type": "object"
-        }
-      }
-    },
-    "annotationTarget": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "entityType",
-        "refId"
-      ],
-      "properties": {
-        "entityType": {
-          "type": "string",
-          "enum": [
-            "component",
-            "port",
-            "node",
-            "wire"
-          ]
-        },
-        "refId": {
-          "$ref": "#/$defs/idString"
-        }
-      }
-    },
-    "annotation": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "kind",
-        "target",
-        "text"
-      ],
-      "properties": {
-        "id": {
-          "$ref": "#/$defs/idString"
-        },
-        "kind": {
-          "type": "string",
-          "enum": [
-            "signal",
-            "note",
-            "label"
-          ]
-        },
-        "target": {
-          "$ref": "#/$defs/annotationTarget"
-        },
-        "text": {
-          "$ref": "#/$defs/nonEmptyString"
-        },
-        "position": {
-          "$ref": "#/$defs/point"
-        },
-        "extensions": {
-          "type": "object"
+          "$ref": "#/$defs/extensions"
         }
       }
     }

@@ -1,0 +1,692 @@
+{
+  "schemaVersion": "4.0.0",
+  "document": {
+    "id": "doc.stm32f103.minimum-system",
+    "title": "STM32F103C8T6 Minimum System Board",
+    "description": "Minimum system with 5V input, 3.3V regulator, reset, boot configuration, crystal, SWD, and UART header.",
+    "source": "ai",
+    "language": "en-US",
+    "tags": [
+      "mcu",
+      "minimum-system",
+      "stm32",
+      "stm32f103"
+    ]
+  },
+  "devices": [
+    {
+      "id": "device.power.input",
+      "name": "5V Power Input",
+      "kind": "connector",
+      "reference": "J1",
+      "terminals": [
+        {
+          "id": "terminal.power.input.5v",
+          "name": "POWER_OUT_1_J1",
+          "label": "5V",
+          "direction": "power-out",
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.power.input.gnd",
+          "name": "GROUND_1_J1",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.regulator",
+      "name": "3.3V Regulator",
+      "kind": "regulator",
+      "reference": "U2",
+      "properties": {
+        "partNumber": "AMS1117-3.3"
+      },
+      "terminals": [
+        {
+          "id": "terminal.regulator.vin",
+          "name": "POWER_IN_1_U2",
+          "label": "5V",
+          "direction": "power-in",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.regulator.gnd",
+          "name": "GROUND_1_U2",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 0
+        },
+        {
+          "id": "terminal.regulator.vout",
+          "name": "POWER_OUT_1_U2",
+          "label": "3V3",
+          "direction": "power-out",
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.c1",
+      "name": "Input Capacitor",
+      "kind": "capacitor",
+      "reference": "C1",
+      "properties": {
+        "value": "10uF"
+      },
+      "terminals": [
+        {
+          "id": "terminal.c1.a",
+          "name": "PASSIVE_1_C1",
+          "label": "5V",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.c1.b",
+          "name": "PASSIVE_2_C1",
+          "label": "GND",
+          "direction": "passive",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.c2",
+      "name": "Regulator Output Capacitor",
+      "kind": "capacitor",
+      "reference": "C2",
+      "properties": {
+        "value": "10uF"
+      },
+      "terminals": [
+        {
+          "id": "terminal.c2.a",
+          "name": "PASSIVE_1_C2",
+          "label": "3V3",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.c2.b",
+          "name": "PASSIVE_2_C2",
+          "label": "GND",
+          "direction": "passive",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.c3",
+      "name": "MCU Decoupling Capacitor",
+      "kind": "capacitor",
+      "reference": "C3",
+      "properties": {
+        "value": "100nF"
+      },
+      "terminals": [
+        {
+          "id": "terminal.c3.a",
+          "name": "PASSIVE_1_C3",
+          "label": "3V3",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.c3.b",
+          "name": "PASSIVE_2_C3",
+          "label": "GND",
+          "direction": "passive",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.mcu",
+      "name": "STM32F103C8T6",
+      "kind": "microcontroller",
+      "reference": "U1",
+      "properties": {
+        "partNumber": "STM32F103C8T6",
+        "package": "LQFP-48"
+      },
+      "terminals": [
+        {
+          "id": "terminal.mcu.vdd",
+          "name": "POWER_IN_1_U1",
+          "label": "3V3",
+          "direction": "power-in",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.mcu.vss",
+          "name": "GROUND_1_U1",
+          "label": "GND",
+          "direction": "ground",
+          "side": "left",
+          "order": 1
+        },
+        {
+          "id": "terminal.mcu.nrst",
+          "name": "INPUT_1_U1",
+          "label": "NRST",
+          "direction": "input",
+          "side": "left",
+          "order": 2
+        },
+        {
+          "id": "terminal.mcu.boot0",
+          "name": "INPUT_2_U1",
+          "label": "BOOT0",
+          "direction": "input",
+          "side": "left",
+          "order": 3
+        },
+        {
+          "id": "terminal.mcu.hsein",
+          "name": "BIDIRECTIONAL_1_U1",
+          "label": "HSE_IN",
+          "direction": "bidirectional",
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.mcu.hseout",
+          "name": "BIDIRECTIONAL_2_U1",
+          "label": "HSE_OUT",
+          "direction": "bidirectional",
+          "side": "top",
+          "order": 1
+        },
+        {
+          "id": "terminal.mcu.swdio",
+          "name": "BIDIRECTIONAL_3_U1",
+          "label": "SWDIO",
+          "direction": "bidirectional",
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.mcu.swclk",
+          "name": "INPUT_3_U1",
+          "label": "SWCLK",
+          "direction": "input",
+          "side": "right",
+          "order": 1
+        },
+        {
+          "id": "terminal.mcu.uarttx",
+          "name": "OUTPUT_1_U1",
+          "label": "USART1_TX",
+          "direction": "output",
+          "side": "right",
+          "order": 2
+        },
+        {
+          "id": "terminal.mcu.uartrx",
+          "name": "INPUT_4_U1",
+          "label": "USART1_RX",
+          "direction": "input",
+          "side": "right",
+          "order": 3
+        }
+      ]
+    },
+    {
+      "id": "device.r1",
+      "name": "Reset Pull-Up",
+      "kind": "resistor",
+      "reference": "R1",
+      "properties": {
+        "value": "10k"
+      },
+      "terminals": [
+        {
+          "id": "terminal.r1.a",
+          "name": "PASSIVE_1_R1",
+          "label": "3V3",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.r1.b",
+          "name": "PASSIVE_2_R1",
+          "label": "NRST",
+          "direction": "passive",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.sw1",
+      "name": "Reset Button",
+      "kind": "switch",
+      "reference": "SW1",
+      "terminals": [
+        {
+          "id": "terminal.sw1.a",
+          "name": "PASSIVE_1_SW1",
+          "label": "NRST",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.sw1.b",
+          "name": "PASSIVE_2_SW1",
+          "label": "GND",
+          "direction": "passive",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.r2",
+      "name": "BOOT0 Pull-Down",
+      "kind": "resistor",
+      "reference": "R2",
+      "properties": {
+        "value": "10k"
+      },
+      "terminals": [
+        {
+          "id": "terminal.r2.a",
+          "name": "PASSIVE_1_R2",
+          "label": "BOOT0",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.r2.b",
+          "name": "PASSIVE_2_R2",
+          "label": "GND",
+          "direction": "passive",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.y1",
+      "name": "8MHz Crystal",
+      "kind": "crystal",
+      "reference": "Y1",
+      "properties": {
+        "frequency": "8MHz"
+      },
+      "terminals": [
+        {
+          "id": "terminal.y1.a",
+          "name": "PASSIVE_1_Y1",
+          "label": "HSE_IN",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.y1.b",
+          "name": "PASSIVE_2_Y1",
+          "label": "HSE_OUT",
+          "direction": "passive",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.c4",
+      "name": "Crystal Load Capacitor 1",
+      "kind": "capacitor",
+      "reference": "C4",
+      "properties": {
+        "value": "22pF"
+      },
+      "terminals": [
+        {
+          "id": "terminal.c4.a",
+          "name": "PASSIVE_1_C4",
+          "label": "HSE_IN",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.c4.b",
+          "name": "PASSIVE_2_C4",
+          "label": "GND",
+          "direction": "passive",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.c5",
+      "name": "Crystal Load Capacitor 2",
+      "kind": "capacitor",
+      "reference": "C5",
+      "properties": {
+        "value": "22pF"
+      },
+      "terminals": [
+        {
+          "id": "terminal.c5.a",
+          "name": "PASSIVE_1_C5",
+          "label": "HSE_OUT",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.c5.b",
+          "name": "PASSIVE_2_C5",
+          "label": "GND",
+          "direction": "passive",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.swd",
+      "name": "SWD Header",
+      "kind": "connector",
+      "reference": "J2",
+      "terminals": [
+        {
+          "id": "terminal.swd.3v3",
+          "name": "PASSIVE_1_J2",
+          "label": "3V3",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.swd.gnd",
+          "name": "GROUND_1_J2",
+          "label": "GND",
+          "direction": "ground",
+          "side": "left",
+          "order": 1
+        },
+        {
+          "id": "terminal.swd.swdio",
+          "name": "BIDIRECTIONAL_1_J2",
+          "label": "SWDIO",
+          "direction": "bidirectional",
+          "side": "left",
+          "order": 2
+        },
+        {
+          "id": "terminal.swd.swclk",
+          "name": "INPUT_1_J2",
+          "label": "SWCLK",
+          "direction": "input",
+          "side": "left",
+          "order": 3
+        },
+        {
+          "id": "terminal.swd.nrst",
+          "name": "BIDIRECTIONAL_2_J2",
+          "label": "NRST",
+          "direction": "bidirectional",
+          "side": "left",
+          "order": 4
+        }
+      ]
+    },
+    {
+      "id": "device.uart",
+      "name": "UART Header",
+      "kind": "connector",
+      "reference": "J3",
+      "terminals": [
+        {
+          "id": "terminal.uart.tx",
+          "name": "INPUT_1_J3",
+          "label": "USART1_TX",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.uart.rx",
+          "name": "OUTPUT_1_J3",
+          "label": "USART1_RX",
+          "direction": "output",
+          "side": "left",
+          "order": 1
+        },
+        {
+          "id": "terminal.uart.gnd",
+          "name": "GROUND_1_J3",
+          "label": "GND",
+          "direction": "ground",
+          "side": "left",
+          "order": 2
+        }
+      ]
+    }
+  ],
+  "view": {
+    "canvas": {
+      "units": "px",
+      "grid": {
+        "enabled": true,
+        "size": 36,
+        "majorEvery": 5
+      },
+      "background": "grid"
+    },
+    "devices": {
+      "device.power.input": {
+        "position": {
+          "x": 80,
+          "y": 60
+        },
+        "size": {
+          "width": 140,
+          "height": 140
+        },
+        "shape": "circle"
+      },
+      "device.regulator": {
+        "position": {
+          "x": 360,
+          "y": 60
+        },
+        "size": {
+          "width": 200,
+          "height": 120
+        },
+        "shape": "rectangle"
+      },
+      "device.c1": {
+        "position": {
+          "x": 320,
+          "y": 300
+        },
+        "size": {
+          "width": 150,
+          "height": 92
+        },
+        "shape": "rectangle"
+      },
+      "device.c2": {
+        "position": {
+          "x": 600,
+          "y": 300
+        },
+        "size": {
+          "width": 150,
+          "height": 92
+        },
+        "shape": "rectangle"
+      },
+      "device.c3": {
+        "position": {
+          "x": 860,
+          "y": 300
+        },
+        "size": {
+          "width": 150,
+          "height": 92
+        },
+        "shape": "rectangle"
+      },
+      "device.mcu": {
+        "position": {
+          "x": 980,
+          "y": 80
+        },
+        "size": {
+          "width": 320,
+          "height": 240
+        },
+        "shape": "rectangle"
+      },
+      "device.r1": {
+        "position": {
+          "x": 760,
+          "y": 460
+        },
+        "size": {
+          "width": 150,
+          "height": 92
+        },
+        "shape": "rectangle"
+      },
+      "device.sw1": {
+        "position": {
+          "x": 1040,
+          "y": 460
+        },
+        "size": {
+          "width": 140,
+          "height": 140
+        },
+        "shape": "circle"
+      },
+      "device.r2": {
+        "position": {
+          "x": 1320,
+          "y": 460
+        },
+        "size": {
+          "width": 150,
+          "height": 92
+        },
+        "shape": "rectangle"
+      },
+      "device.y1": {
+        "position": {
+          "x": 980,
+          "y": 720
+        },
+        "size": {
+          "width": 180,
+          "height": 100
+        },
+        "rotationDeg": 90,
+        "shape": "rectangle"
+      },
+      "device.c4": {
+        "position": {
+          "x": 760,
+          "y": 900
+        },
+        "size": {
+          "width": 150,
+          "height": 92
+        },
+        "shape": "rectangle"
+      },
+      "device.c5": {
+        "position": {
+          "x": 1160,
+          "y": 900
+        },
+        "size": {
+          "width": 150,
+          "height": 92
+        },
+        "shape": "rectangle"
+      },
+      "device.swd": {
+        "position": {
+          "x": 1560,
+          "y": 80
+        },
+        "size": {
+          "width": 160,
+          "height": 200
+        },
+        "rotationDeg": 180,
+        "shape": "circle"
+      },
+      "device.uart": {
+        "position": {
+          "x": 1560,
+          "y": 420
+        },
+        "size": {
+          "width": 160,
+          "height": 160
+        },
+        "rotationDeg": 180,
+        "shape": "circle"
+      }
+    },
+    "networkLines": {
+      "network.5v": {
+        "label": "5V",
+        "position": {
+          "x": 360,
+          "y": 20
+        },
+        "length": 620,
+        "orientation": "horizontal"
+      },
+      "network.3v3": {
+        "label": "3V3",
+        "position": {
+          "x": 980,
+          "y": 20
+        },
+        "length": 1700,
+        "orientation": "horizontal"
+      },
+      "network.gnd": {
+        "label": "GND",
+        "position": {
+          "x": 980,
+          "y": 1080
+        },
+        "length": 1700,
+        "orientation": "horizontal"
+      }
+    },
+    "focus": {
+      "defaultDeviceId": "device.mcu",
+      "preferredDirection": "left-to-right"
+    }
+  }
+}

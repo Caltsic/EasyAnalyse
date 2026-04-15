@@ -1,0 +1,603 @@
+{
+  "schemaVersion": "4.0.0",
+  "document": {
+    "id": "doc.butterworth4.lowpass",
+    "title": "4th-Order Butterworth Low-Pass Filter",
+    "description": "Two cascaded active low-pass stages with explicit labels for analog nodes, power, and ground.",
+    "source": "ai",
+    "language": "en-US",
+    "tags": [
+      "analog",
+      "butterworth",
+      "filter",
+      "low-pass"
+    ]
+  },
+  "devices": [
+    {
+      "id": "device.input",
+      "name": "Signal Input",
+      "kind": "connector",
+      "reference": "J1",
+      "properties": {
+        "role": "input"
+      },
+      "terminals": [
+        {
+          "id": "terminal.input.vin",
+          "name": "OUTPUT_1_J1",
+          "label": "VIN",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.input.gnd",
+          "name": "GROUND_1_J1",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.output",
+      "name": "Signal Output",
+      "kind": "connector",
+      "reference": "J2",
+      "properties": {
+        "role": "output"
+      },
+      "terminals": [
+        {
+          "id": "terminal.output.vout",
+          "name": "INPUT_1_J2",
+          "label": "VOUT",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.output.gnd",
+          "name": "GROUND_1_J2",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.power",
+      "name": "Analog Supply",
+      "kind": "connector",
+      "reference": "J3",
+      "properties": {
+        "voltage": "+12V"
+      },
+      "terminals": [
+        {
+          "id": "terminal.power.vcc",
+          "name": "POWER_OUT_1_J3",
+          "label": "VCC",
+          "direction": "power-out",
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.power.gnd",
+          "name": "GROUND_1_J3",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.u1a",
+      "name": "MFB Filter Stage 1",
+      "kind": "op-amp",
+      "reference": "U1A",
+      "description": "First 2nd-order stage of the 4th-order Butterworth low-pass filter.",
+      "properties": {
+        "partNumber": "TL072",
+        "topology": "multiple-feedback low-pass"
+      },
+      "terminals": [
+        {
+          "id": "terminal.u1a.neg",
+          "name": "INPUT_1_U1A",
+          "label": "STAGE1_NEG",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.u1a.pos",
+          "name": "INPUT_2_U1A",
+          "label": "GND",
+          "direction": "input",
+          "side": "left",
+          "order": 1
+        },
+        {
+          "id": "terminal.u1a.out",
+          "name": "OUTPUT_1_U1A",
+          "label": "STAGE1_OUT",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.u1a.vcc",
+          "name": "POWER_IN_1_U1A",
+          "label": "VCC",
+          "direction": "power-in",
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.u1a.gnd",
+          "name": "GROUND_1_U1A",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.u1b",
+      "name": "MFB Filter Stage 2",
+      "kind": "op-amp",
+      "reference": "U1B",
+      "description": "Second 2nd-order stage of the 4th-order Butterworth low-pass filter.",
+      "properties": {
+        "partNumber": "TL072",
+        "topology": "multiple-feedback low-pass"
+      },
+      "terminals": [
+        {
+          "id": "terminal.u1b.neg",
+          "name": "INPUT_1_U1B",
+          "label": "STAGE2_NEG",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.u1b.pos",
+          "name": "INPUT_2_U1B",
+          "label": "GND",
+          "direction": "input",
+          "side": "left",
+          "order": 1
+        },
+        {
+          "id": "terminal.u1b.out",
+          "name": "OUTPUT_1_U1B",
+          "label": "VOUT",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.u1b.vcc",
+          "name": "POWER_IN_1_U1B",
+          "label": "VCC",
+          "direction": "power-in",
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.u1b.gnd",
+          "name": "GROUND_1_U1B",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.r1",
+      "name": "Input Resistor R1",
+      "kind": "resistor",
+      "reference": "R1",
+      "properties": {
+        "value": "10k"
+      },
+      "terminals": [
+        {
+          "id": "terminal.r1.a",
+          "name": "PASSIVE_1_R1",
+          "label": "VIN",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.r1.b",
+          "name": "PASSIVE_2_R1",
+          "label": "STAGE1_NEG",
+          "direction": "passive",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.r2",
+      "name": "Feedback Resistor R2",
+      "kind": "resistor",
+      "reference": "R2",
+      "properties": {
+        "value": "15.8k"
+      },
+      "terminals": [
+        {
+          "id": "terminal.r2.a",
+          "name": "PASSIVE_1_R2",
+          "label": "STAGE1_OUT",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.r2.b",
+          "name": "PASSIVE_2_R2",
+          "label": "STAGE1_NEG",
+          "direction": "passive",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.r3",
+      "name": "Interstage Resistor R3",
+      "kind": "resistor",
+      "reference": "R3",
+      "properties": {
+        "value": "10k"
+      },
+      "terminals": [
+        {
+          "id": "terminal.r3.a",
+          "name": "PASSIVE_1_R3",
+          "label": "STAGE1_OUT",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.r3.b",
+          "name": "PASSIVE_2_R3",
+          "label": "STAGE2_NEG",
+          "direction": "passive",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.r4",
+      "name": "Feedback Resistor R4",
+      "kind": "resistor",
+      "reference": "R4",
+      "properties": {
+        "value": "15.8k"
+      },
+      "terminals": [
+        {
+          "id": "terminal.r4.a",
+          "name": "PASSIVE_1_R4",
+          "label": "VOUT",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.r4.b",
+          "name": "PASSIVE_2_R4",
+          "label": "STAGE2_NEG",
+          "direction": "passive",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.c1",
+      "name": "Feedback Capacitor C1",
+      "kind": "capacitor",
+      "reference": "C1",
+      "properties": {
+        "value": "4.7nF"
+      },
+      "terminals": [
+        {
+          "id": "terminal.c1.a",
+          "name": "PASSIVE_1_C1",
+          "label": "STAGE1_OUT",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.c1.b",
+          "name": "PASSIVE_2_C1",
+          "label": "STAGE1_NEG",
+          "direction": "passive",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.c2",
+      "name": "Shunt Capacitor C2",
+      "kind": "capacitor",
+      "reference": "C2",
+      "properties": {
+        "value": "10nF"
+      },
+      "terminals": [
+        {
+          "id": "terminal.c2.a",
+          "name": "PASSIVE_1_C2",
+          "label": "STAGE1_NEG",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.c2.b",
+          "name": "PASSIVE_2_C2",
+          "label": "GND",
+          "direction": "passive",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.c3",
+      "name": "Feedback Capacitor C3",
+      "kind": "capacitor",
+      "reference": "C3",
+      "properties": {
+        "value": "4.7nF"
+      },
+      "terminals": [
+        {
+          "id": "terminal.c3.a",
+          "name": "PASSIVE_1_C3",
+          "label": "VOUT",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.c3.b",
+          "name": "PASSIVE_2_C3",
+          "label": "STAGE2_NEG",
+          "direction": "passive",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.c4",
+      "name": "Shunt Capacitor C4",
+      "kind": "capacitor",
+      "reference": "C4",
+      "properties": {
+        "value": "10nF"
+      },
+      "terminals": [
+        {
+          "id": "terminal.c4.a",
+          "name": "PASSIVE_1_C4",
+          "label": "STAGE2_NEG",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.c4.b",
+          "name": "PASSIVE_2_C4",
+          "label": "GND",
+          "direction": "passive",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    }
+  ],
+  "view": {
+    "canvas": {
+      "units": "px",
+      "grid": {
+        "enabled": true,
+        "size": 36,
+        "majorEvery": 5
+      },
+      "background": "grid"
+    },
+    "devices": {
+      "device.power": {
+        "position": {
+          "x": 80,
+          "y": 60
+        },
+        "size": {
+          "width": 140,
+          "height": 140
+        },
+        "shape": "circle"
+      },
+      "device.input": {
+        "position": {
+          "x": 80,
+          "y": 340
+        },
+        "size": {
+          "width": 140,
+          "height": 140
+        },
+        "shape": "circle"
+      },
+      "device.r1": {
+        "position": {
+          "x": 420,
+          "y": 360
+        },
+        "size": {
+          "width": 160,
+          "height": 92
+        },
+        "shape": "rectangle"
+      },
+      "device.u1a": {
+        "position": {
+          "x": 720,
+          "y": 220
+        },
+        "size": {
+          "width": 220,
+          "height": 180
+        },
+        "rotationDeg": 90,
+        "shape": "triangle"
+      },
+      "device.r2": {
+        "position": {
+          "x": 1040,
+          "y": 180
+        },
+        "size": {
+          "width": 160,
+          "height": 92
+        },
+        "shape": "rectangle"
+      },
+      "device.c1": {
+        "position": {
+          "x": 1040,
+          "y": 380
+        },
+        "size": {
+          "width": 160,
+          "height": 92
+        },
+        "shape": "rectangle"
+      },
+      "device.c2": {
+        "position": {
+          "x": 720,
+          "y": 620
+        },
+        "size": {
+          "width": 160,
+          "height": 92
+        },
+        "shape": "rectangle"
+      },
+      "device.r3": {
+        "position": {
+          "x": 1360,
+          "y": 360
+        },
+        "size": {
+          "width": 160,
+          "height": 92
+        },
+        "shape": "rectangle"
+      },
+      "device.u1b": {
+        "position": {
+          "x": 1640,
+          "y": 220
+        },
+        "size": {
+          "width": 220,
+          "height": 180
+        },
+        "rotationDeg": 90,
+        "shape": "triangle"
+      },
+      "device.r4": {
+        "position": {
+          "x": 1960,
+          "y": 180
+        },
+        "size": {
+          "width": 160,
+          "height": 92
+        },
+        "shape": "rectangle"
+      },
+      "device.c3": {
+        "position": {
+          "x": 1960,
+          "y": 380
+        },
+        "size": {
+          "width": 160,
+          "height": 92
+        },
+        "shape": "rectangle"
+      },
+      "device.c4": {
+        "position": {
+          "x": 1640,
+          "y": 620
+        },
+        "size": {
+          "width": 160,
+          "height": 92
+        },
+        "shape": "rectangle"
+      },
+      "device.output": {
+        "position": {
+          "x": 2320,
+          "y": 340
+        },
+        "size": {
+          "width": 140,
+          "height": 140
+        },
+        "shape": "circle"
+      }
+    },
+    "networkLines": {
+      "network.vcc": {
+        "label": "VCC",
+        "position": {
+          "x": 1200,
+          "y": 90
+        },
+        "length": 2360,
+        "orientation": "horizontal"
+      },
+      "network.gnd": {
+        "label": "GND",
+        "position": {
+          "x": 1200,
+          "y": 820
+        },
+        "length": 2360,
+        "orientation": "horizontal"
+      }
+    },
+    "focus": {
+      "defaultDeviceId": "device.u1a",
+      "preferredDirection": "left-to-right"
+    }
+  }
+}

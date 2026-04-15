@@ -1,312 +1,206 @@
-# AI 原生电路交换格式设计
+# AI 原生电路交换格式设计说明
 
-文档版本：v1.0.0-draft  
-对应产品：[AI原生电路表达与还原工具 PRD.md](F:\WORKSPACE\obsidian_files\Myimage\Myimage\应道\AI原生电路表达与还原工具 PRD.md)  
-正式 schema：[AI原生电路交换格式.schema.json](F:\WORKSPACE\obsidian_files\Myimage\Myimage\应道\AI原生电路交换格式.schema.json)
+文档版本：`v4.0.0`  
+文档状态：现行设计说明  
+规范入口：[exchange.md](F:/WORKSPACE/EASYAnalyse/exchange.md)  
+正式 Schema：[AI原生电路交换格式.schema.json](F:/WORKSPACE/EASYAnalyse/AI原生电路交换格式.schema.json)
 
-## 1. 设计目标
+## 1. 定位
 
-该交换格式用于承载“AI 原生电路表达与还原工具”的电路结构表达结果，目标是同时满足以下三点：
+这份文档解释 EASYAnalyse 当前电路交换格式为什么这样设计，以及它服务的产品目标是什么。
 
-1. 人工搭建后的电路可被无损导出。
-2. AI 可直接阅读、修改、补充并保持结构正确。
-3. 系统可根据该格式无损还原出完整画布。
+规范的唯一权威来源始终是：
 
-## 2. 建模原则
+- `exchange.md`
+- 正式 schema
+- 运行时归一化与校验实现
 
-### 2.1 采用归一化顶层结构
+本文件只负责解释取舍，不再引入第二套字段定义。
 
-正式格式不将 `ports` 内嵌在 `components` 中，而是将其提升为顶层实体集合：
+## 2. 产品目标
 
-- `components`
-- `ports`
-- `nodes`
-- `wires`
-- `annotations`
+这个项目不是要复刻传统 EDA 的导线拓扑编辑，而是要打通 AI 与工程师之间的硬件表达壁垒。
 
-这样做有三个原因：
+目标可以概括为三点：
 
-1. AI 修改时更容易单点编辑，不需要同时维护嵌套结构。
-2. 连线天然引用 `port` 和 `node`，顶层实体更利于建立索引。
-3. 便于应用层做一致性校验与差异比较。
+1. 让 AI 更容易生成有实际意义的电路描述，而不是伪造导线、节点、容器和无意义连线。
+2. 让工程师看到的是清晰、宽松、结构明确的电路关系图，而不是被布线拓扑拖垮的视觉噪声。
+3. 让保存格式、编辑器行为、示例文件和 AI 文档都指向同一个模型，避免新旧版本混杂。
 
-### 2.2 几何即位置
+## 3. 为什么去掉独立 signal 层
 
-正式格式中，器件的 `geometry` 直接承载绝对几何信息，不再单独保留一个会与几何重复的 `position` 字段。这样可以避免“双重数据源”导致的不一致。
+旧路线即便拿掉了传统导线，仍然可能保留 `signals` / `signalId` 这一层中介。
 
-### 2.3 结构优先于视觉
+这依然有两个问题：
 
-该格式首先描述“拓扑结构和几何关系”，其次才描述界面表现。任何字段只要不影响无损还原，就不应成为首版必填项。
+1. AI 需要先造一层信号对象，再把端子绑上去，生成复杂度和出错概率都偏高。
+2. 对工程师而言，真正重要的是 `SCL`、`SDA`、`VCC`、`GND` 这样的语义标签，而不是额外的中间对象。
 
-### 2.4 区分规范字段与派生字段
+因此，现行模型把连通真相继续收缩为：
 
-- 规范字段：导入导出的主数据源，必须被严格维护。
-- 派生字段：为 AI 可读性或校验便利保留，可由系统重算。
+- 端子的 `label` 本身就是信号语义
+- 相同 `label` 即表示连通
+- 不再持久化独立 `signals`
 
-在首版中，`node.connectedWireIds` 视为派生字段，但允许保留在文件中作为可读性与校验辅助。
+## 4. 当前唯一有效的数据模型
 
-## 3. 顶层对象结构
+当前规范只保留下面这组核心结构：
 
-```json
-{
-  "schemaVersion": "1.0.0",
-  "document": {},
-  "canvas": {},
-  "components": [],
-  "ports": [],
-  "nodes": [],
-  "wires": [],
-  "annotations": []
-}
-```
+- `document`
+- `devices`
+- `terminals`
+- `view`
 
-## 4. 顶层字段说明
+其中：
 
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `schemaVersion` | `string` | 是 | 当前交换格式版本，首版固定为 `1.0.0` |
-| `document` | `object` | 是 | 文档元数据 |
-| `canvas` | `object` | 是 | 画布定义 |
-| `components` | `array` | 是 | 器件集合 |
-| `ports` | `array` | 是 | 端点集合 |
-| `nodes` | `array` | 是 | 节点集合 |
-| `wires` | `array` | 是 | 连线集合 |
-| `annotations` | `array` | 是 | 注释与信号描述集合 |
+- `devices` 表达器件、模块、芯片、电阻、电容、连接器等实体
+- `terminals` 表达器件输入、输出、电源、地、双向口等接口
+- `label` 表达端子的共享网络语义
+- `view` 表达版面与阅读性，不表达电气真相
 
-## 5. 实体结构草案
+## 5. 连通规则
 
-### 5.1 Document
+连通关系只由端子标签决定。
 
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `id` | `string` | 是 | 文档唯一标识 |
-| `title` | `string` | 是 | 文档标题 |
-| `description` | `string` | 否 | 文档说明 |
-| `createdAt` | `string` | 否 | 创建时间，建议 `date-time` |
-| `updatedAt` | `string` | 否 | 更新时间，建议 `date-time` |
-| `source` | `string` | 否 | 建议值：`human` / `ai` / `mixed` / `imported` |
+也就是说：
 
-### 5.2 Canvas
+- 两个端子只要 `label` 相同且非空，就认为它们连通
+- 没有其他主连接机制
+- 旋转、位置、形状、聚焦布局都不会改变连通真相
 
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `origin` | `Point` | 是 | 画布原点 |
-| `width` | `number` | 是 | 画布宽度 |
-| `height` | `number` | 是 | 画布高度 |
-| `units` | `string` | 是 | 首版固定为 `px` |
-| `grid` | `object` | 否 | 网格显示参数 |
+这个规则的好处是简单、稳定、可验证，也符合人类对电路语义的阅读习惯。
 
-### 5.3 Component
+## 6. 默认隔离与显式连通
 
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `id` | `string` | 是 | 器件唯一标识 |
-| `name` | `string` | 是 | 器件名称 |
-| `geometry` | `Geometry` | 是 | 器件几何信息 |
-| `description` | `string` | 否 | 器件说明 |
-| `tags` | `string[]` | 否 | 器件标签 |
+新建端子时，默认 `name` 和 `label` 都带器件后缀，例如：
 
-`Geometry` 取值范围：
+- `INPUT_1_U1`
+- `INPUT_1_U2`
+- `INPUT_1_R1`
 
-1. 矩形：`{ "type": "rectangle", "x": 100, "y": 80, "width": 120, "height": 80 }`
-2. 圆：`{ "type": "circle", "cx": 400, "cy": 220, "radius": 48 }`
-3. 三角形：`{ "type": "triangle", "vertices": [Point, Point, Point] }`
+这样做的意义是：
 
-### 5.4 Port
+- 默认不会误连
+- AI 不会因为复制模板而意外短接不同器件
+- 只有在用户或 AI 明确改成 `SCL`、`SDA`、`TX`、`RX`、`GND` 这类共享标签时，连通关系才成立
 
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `id` | `string` | 是 | 端点唯一标识 |
-| `componentId` | `string` | 是 | 所属器件 `id` |
-| `name` | `string` | 是 | 端点名称 |
-| `direction` | `string` | 是 | 首版限定为 `input` 或 `output` |
-| `pinInfo` | `object` | 否 | 引脚信息 |
-| `anchor` | `PortAnchor` | 是 | 端点在器件边界上的定位方式 |
-| `description` | `string` | 否 | 端点说明 |
+## 7. 视图层职责
 
-`PortAnchor` 取值范围：
+`view` 是阅读层，不是隐藏的电路真相层。
 
-1. 矩形边定位：`{ "kind": "rectangle-side", "side": "right", "offset": 0.5 }`
-2. 圆周角定位：`{ "kind": "circle-angle", "angleDeg": 90 }`
-3. 三角边定位：`{ "kind": "triangle-edge", "edgeIndex": 1, "offset": 0.25 }`
+它负责：
 
-### 5.5 Node
+- 器件位置
+- 器件尺寸
+- 器件显示旋转 `rotationDeg`
+- 器件显示形状
+- 无限网格画布参数
+- 默认聚焦方向
+- 线性独立网络 `networkLines`
 
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `id` | `string` | 是 | 节点唯一标识 |
-| `position` | `Point` | 是 | 节点坐标 |
-| `connectedWireIds` | `string[]` | 是 | 连接到该节点的线条列表 |
-| `role` | `string` | 否 | 建议值：`generic` / `junction` / `branch` |
-| `description` | `string` | 否 | 节点说明 |
+它不负责：
 
-### 5.6 Wire
+- 导线拓扑
+- 节点图
+- 网表替代
+- PCB 约束
+- 仿真级连线几何
 
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `id` | `string` | 是 | 连线唯一标识 |
-| `serialNumber` | `string` | 是 | 用户可见编号，如 `W1` |
-| `source` | `EndpointRef` | 是 | 起点引用 |
-| `target` | `EndpointRef` | 是 | 终点引用 |
-| `route` | `Route` | 是 | 路径定义 |
-| `description` | `string` | 否 | 连线说明 |
+## 8. 校验与保存
 
-说明：
+校验的职责是提醒，不是阻塞。
 
-1. `source` 和 `target` 只允许引用 `port` 或 `node`。
-2. `route.kind = "straight"` 时，不需要折点。
-3. `route.kind = "polyline"` 时，`bendPoints` 只存储中间折点，不重复存起点和终点。
+当前策略是：
 
-### 5.7 Annotation
+- 只要文档还能被归一化到现行 semantic v4 模型，就允许保存
+- 校验问题仍然显示给用户和 AI
+- 只有在文档无法解析、无法归一化、或目标路径无法写入时，保存才应该失败
 
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `id` | `string` | 是 | 注释唯一标识 |
-| `kind` | `string` | 是 | 建议值：`signal` / `note` / `label` |
-| `target` | `AnnotationTarget` | 是 | 注释绑定目标 |
-| `text` | `string` | 是 | 注释文本 |
-| `position` | `Point` | 否 | 标签显示位置提示 |
+这保证了校验是辅助，不会把编辑器变成一扇过早关闭的门。
 
-## 6. 引用模型
+## 9. 线性独立网络与聚焦策略
 
-### 6.1 EndpointRef
+为了解决 `VCC`、`GND`、`3V3`、`5V` 这类高频公共网络在聚焦时把整张图拖得过满的问题，现行视图层引入了 `view.networkLines[networkLineId]`。
 
-```json
-{
-  "entityType": "port",
-  "refId": "port.mcu.pwm_out"
-}
-```
+它的含义必须明确：
 
-或：
+- 它是线性的独立网络对象
+- 它与器件同级存在
+- 它不依附于任何器件
+- 它也不依附于某个具体端子
+- 它只用 `label` 指向一个共享网络语义
 
-```json
-{
-  "entityType": "node",
-  "refId": "node.split.1"
-}
-```
+例如：
 
-### 6.2 AnnotationTarget
+- 一条位于画布上方的 `VCC` 线性独立网络
+- 一条位于画布下方的 `GND` 线性独立网络
 
-注释目标可以绑定到：
+同时，器件上的 `VCC`、`GND` 端子仍然只是彩色点，本身不会因为存在网络线而消失。
 
-1. `component`
-2. `port`
-3. `node`
-4. `wire`
+### 9.1 它不改变电气真相
 
-## 7. 语义约束
+无论是否存在 `networkLines`：
 
-以下约束不完全依赖 JSON Schema，需要应用层校验器补充：
+- 真正的连通规则仍然只看端子 `label`
+- 网络线只是阅读辅助对象
+- 删除网络线不会改变器件之间的语义连通
 
-1. 所有 `id` 必须全局唯一。
-2. `port.componentId` 必须能找到对应的 `component.id`。
-3. `wire.source.refId` 和 `wire.target.refId` 必须存在。
-4. `node.connectedWireIds` 必须与实际引用该节点的线条集合一致。
-5. `port.anchor.kind` 必须与目标器件的 `geometry.type` 相匹配。
-6. `triangle-edge` 的 `edgeIndex` 仅允许 `0`、`1`、`2`。
-7. `polyline` 的 `bendPoints` 应按路径顺序给出。
+### 9.2 它为什么有效
 
-## 8. 归一化与导出建议
+有了线性独立网络以后：
 
-### 8.1 导出建议
+- 普通器件聚焦时，可以把这些高频公共网络折叠掉
+- 这样 `VCC`、`GND` 不会在每次聚焦时把大量器件全部吸过来
+- 电路整体结构会更清楚，主信号链和功能模块更容易阅读
 
-1. 顶层数组建议按 `id` 排序，降低 diff 噪音。
-2. 所有缺省可选字段建议直接省略，不输出空字符串。
-3. 派生字段若输出，必须与主结构一致。
+### 9.3 交互规则
 
-### 8.2 导入建议
+交互上遵循下面的策略：
 
-1. 先做 JSON Schema 校验。
-2. 再做引用完整性和语义完整性校验。
-3. 若派生字段缺失，可在导入阶段补算。
-4. 若派生字段存在但冲突，应以主结构重算并提示冲突。
+1. 普通器件聚焦时，如果某个标签已经有对应的线性独立网络，则该标签可以在本次器件聚焦中被抑制，不展开为整网聚焦。
+2. 点击或聚焦某条线性独立网络时，以该网络的 `label` 为目标，把所有拥有同标签端子的器件聚集过来。
+3. 聚焦过程中，器件可以自动旋转，让相关端子朝向该网络线，以便阅读。
+4. 多个器件必须并排或分行有序排布，保持显式间距，避免重叠。
+5. 相机缩放必须有限制，既要保证相关对象尽量完整显示，也要避免无限缩放导致异常抖动或极端取景。
 
-## 9. 最小示例
+### 9.4 适用场景
 
-```json
-{
-  "schemaVersion": "1.0.0",
-  "document": {
-    "id": "doc.demo",
-    "title": "PWM Driver Demo",
-    "source": "human"
-  },
-  "canvas": {
-    "origin": { "x": 0, "y": 0 },
-    "width": 1600,
-    "height": 900,
-    "units": "px"
-  },
-  "components": [
-    {
-      "id": "component.mcu",
-      "name": "MCU",
-      "geometry": { "type": "rectangle", "x": 120, "y": 120, "width": 220, "height": 140 }
-    },
-    {
-      "id": "component.driver",
-      "name": "Driver",
-      "geometry": { "type": "rectangle", "x": 520, "y": 120, "width": 200, "height": 140 }
-    }
-  ],
-  "ports": [
-    {
-      "id": "port.mcu.pwm_out",
-      "componentId": "component.mcu",
-      "name": "PWM_OUT",
-      "direction": "output",
-      "anchor": { "kind": "rectangle-side", "side": "right", "offset": 0.5 }
-    },
-    {
-      "id": "port.driver.in",
-      "componentId": "component.driver",
-      "name": "IN",
-      "direction": "input",
-      "anchor": { "kind": "rectangle-side", "side": "left", "offset": 0.5 }
-    }
-  ],
-  "nodes": [
-    {
-      "id": "node.mid.1",
-      "position": { "x": 430, "y": 190 },
-      "connectedWireIds": ["wire.1", "wire.2"],
-      "role": "junction"
-    }
-  ],
-  "wires": [
-    {
-      "id": "wire.1",
-      "serialNumber": "W1",
-      "source": { "entityType": "port", "refId": "port.mcu.pwm_out" },
-      "target": { "entityType": "node", "refId": "node.mid.1" },
-      "route": { "kind": "straight" }
-    },
-    {
-      "id": "wire.2",
-      "serialNumber": "W2",
-      "source": { "entityType": "node", "refId": "node.mid.1" },
-      "target": { "entityType": "port", "refId": "port.driver.in" },
-      "route": { "kind": "polyline", "bendPoints": [{ "x": 470, "y": 190 }] },
-      "description": "PWM control path"
-    }
-  ],
-  "annotations": [
-    {
-      "id": "annotation.signal.1",
-      "kind": "signal",
-      "target": { "entityType": "port", "refId": "port.mcu.pwm_out" },
-      "text": "3.3V PWM, 20kHz"
-    }
-  ]
-}
-```
+线性独立网络特别适合：
 
-## 10. 与 PRD 的关系
+- 电源网
+- 地网
+- 参考电压网
+- 公共时钟网
+- 其他连接广泛、但不希望在普通器件聚焦中反复展开的大型共享网络
 
-PRD 第 9 章定义的是产品层需求；本文件定义的是实现层数据模型。若二者存在差异，以以下原则解释：
+## 10. 面向 AI 的意义
 
-1. 不改变 PRD 的业务目标。
-2. 为避免重复和歧义，允许在实现层合并冗余字段。
-3. 为便于 AI 编辑，优先选择引用明确、关系稳定的归一化结构。
+这套设计会直接降低 AI 生成电路的难度：
+
+1. AI 不再需要伪造导线和节点。
+2. AI 不再需要维护独立 signal 对象。
+3. AI 只需要给器件、端子、方向、标签和视图布局。
+4. 高频公共网络可以用 `view.networkLines` 做清晰表达。
+5. 示例文件可以直接作为 few-shot 参考，而不需要再额外解释拓扑绘制规则。
+
+## 11. 边界
+
+这个格式刻意不承担以下职责：
+
+- 传统原理图的导线绘制系统
+- 仿真器的完整网表表达
+- PCB 布线约束
+- 完整 EDA 元件库语义
+
+它的目标不是替代所有工程工具，而是为 AI 与工程师提供一个足够真实、足够可读、足够可保存的中间表达。
+
+## 12. 结论
+
+现行 semantic v4 模型的关键取舍是：
+
+- 用端子 `label` 统一“信号语义”和“连通依据”
+- 用 `view` 承担阅读性而不是连通真相
+- 用 `view.networkLines` 表达高频公共网络的线性独立网络
+- 用器件聚焦与网络聚焦的分离，提升复杂电路的可读性
+
+这套模型的价值不在于复刻传统导线，而在于把“电路结构是什么”这件事表达清楚，并让 AI 真正有机会稳定生成可用结果。

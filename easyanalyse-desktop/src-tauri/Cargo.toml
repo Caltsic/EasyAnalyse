@@ -2,7 +2,7 @@
 name = "easyanalyse-desktop"
 version = "0.1.0"
 description = "AI Native Circuit Expression and Restoration desktop application"
-edition = "2024"
+edition = "2021"
 
 [package.metadata]
 

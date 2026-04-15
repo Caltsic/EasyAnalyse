@@ -1,0 +1,192 @@
+{
+  "schemaVersion": "4.0.0",
+  "document": {
+    "id": "doc.rc-low-pass-filter",
+    "title": "RC Low-Pass Filter",
+    "description": "Single-pole passive low-pass filter with resistor and shunt capacitor.",
+    "source": "ai",
+    "language": "en-US",
+    "tags": [
+      "analog",
+      "filter",
+      "rc",
+      "low-pass"
+    ]
+  },
+  "devices": [
+    {
+      "id": "device.input",
+      "name": "Signal Input",
+      "kind": "connector",
+      "reference": "J1",
+      "terminals": [
+        {
+          "id": "terminal.input.sig",
+          "name": "OUTPUT_1_J1",
+          "label": "SIG_IN",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.input.gnd",
+          "name": "GROUND_1_J1",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.r1",
+      "name": "Series Resistor",
+      "kind": "resistor",
+      "reference": "R1",
+      "properties": {
+        "value": "10k"
+      },
+      "terminals": [
+        {
+          "id": "terminal.r1.a",
+          "name": "PASSIVE_1_R1",
+          "label": "SIG_IN",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.r1.b",
+          "name": "PASSIVE_2_R1",
+          "label": "LPF_OUT",
+          "direction": "passive",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.c1",
+      "name": "Shunt Capacitor",
+      "kind": "capacitor",
+      "reference": "C1",
+      "properties": {
+        "value": "100nF"
+      },
+      "terminals": [
+        {
+          "id": "terminal.c1.a",
+          "name": "PASSIVE_1_C1",
+          "label": "LPF_OUT",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.c1.b",
+          "name": "PASSIVE_2_C1",
+          "label": "GND",
+          "direction": "passive",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.output",
+      "name": "Filtered Output",
+      "kind": "connector",
+      "reference": "J2",
+      "terminals": [
+        {
+          "id": "terminal.output.sig",
+          "name": "INPUT_1_J2",
+          "label": "LPF_OUT",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.output.gnd",
+          "name": "GROUND_1_J2",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 1
+        }
+      ]
+    }
+  ],
+  "view": {
+    "canvas": {
+      "units": "px",
+      "grid": {
+        "enabled": true,
+        "size": 36,
+        "majorEvery": 5
+      },
+      "background": "grid"
+    },
+    "devices": {
+      "device.input": {
+        "position": {
+          "x": 180,
+          "y": 280
+        },
+        "size": {
+          "width": 210,
+          "height": 120
+        },
+        "shape": "circle"
+      },
+      "device.r1": {
+        "position": {
+          "x": 500,
+          "y": 260
+        },
+        "size": {
+          "width": 230,
+          "height": 112
+        },
+        "shape": "rectangle"
+      },
+      "device.c1": {
+        "position": {
+          "x": 500,
+          "y": 470
+        },
+        "size": {
+          "width": 220,
+          "height": 112
+        },
+        "shape": "rectangle"
+      },
+      "device.output": {
+        "position": {
+          "x": 900,
+          "y": 280
+        },
+        "size": {
+          "width": 210,
+          "height": 120
+        },
+        "shape": "circle"
+      }
+    },
+    "networkLines": {
+      "network.gnd": {
+        "label": "GND",
+        "position": {
+          "x": 610,
+          "y": 650
+        },
+        "length": 980,
+        "orientation": "horizontal"
+      }
+    },
+    "focus": {
+      "defaultDeviceId": "device.r1",
+      "preferredDirection": "left-to-right"
+    }
+  }
+}

@@ -1,14 +1,15 @@
-export type EntityType =
-  | 'document'
-  | 'component'
-  | 'port'
-  | 'node'
-  | 'wire'
-  | 'annotation'
+export type EntityType = 'document' | 'device' | 'terminal' | 'networkLine'
+
+export type DocumentFormat = 'semantic-v4' | 'unknown'
 
 export interface Point {
   x: number
   y: number
+}
+
+export interface Size {
+  width: number
+  height: number
 }
 
 export type ExtensionsMap = Record<string, unknown>
@@ -20,140 +21,113 @@ export interface DocumentMeta {
   createdAt?: string
   updatedAt?: string
   source?: 'human' | 'ai' | 'mixed' | 'imported'
+  language?: string
+  tags?: string[]
   extensions?: ExtensionsMap
 }
 
 export interface CanvasGrid {
   enabled: boolean
   size: number
+  majorEvery?: number
 }
 
-export interface CanvasDefinition {
-  origin: Point
-  width: number
-  height: number
+export interface CanvasViewDefinition {
   units: 'px'
   grid?: CanvasGrid
+  background?: 'grid'
   extensions?: ExtensionsMap
 }
 
-export type ComponentGeometry =
-  | {
-      type: 'rectangle'
-      x: number
-      y: number
-      width: number
-      height: number
-    }
-  | {
-      type: 'circle'
-      cx: number
-      cy: number
-      radius: number
-    }
-  | {
-      type: 'triangle'
-      vertices: [Point, Point, Point]
-    }
+export type DeviceShape = 'rectangle' | 'circle' | 'triangle'
 
-export interface ComponentEntity {
-  id: string
-  name: string
-  geometry: ComponentGeometry
-  description?: string
-  tags?: string[]
-  extensions?: ExtensionsMap
-}
+export type TerminalDirection =
+  | 'input'
+  | 'output'
+  | 'bidirectional'
+  | 'passive'
+  | 'power-in'
+  | 'power-out'
+  | 'ground'
+  | 'shield'
+  | 'unspecified'
 
-export type PortAnchor =
-  | {
-      kind: 'rectangle-side'
-      side: 'top' | 'right' | 'bottom' | 'left'
-      offset: number
-    }
-  | {
-      kind: 'circle-angle'
-      angleDeg: number
-    }
-  | {
-      kind: 'triangle-edge'
-      edgeIndex: 0 | 1 | 2
-      offset: number
-    }
+export type TerminalSide = 'left' | 'right' | 'top' | 'bottom' | 'auto'
 
-export interface PinInfo {
+export interface TerminalPin {
   number?: string
-  label?: string
-  description?: string
+  name?: string
+  bank?: string
+  extensions?: ExtensionsMap
 }
 
-export interface PortEntity {
+export interface TerminalDefinition {
   id: string
-  componentId: string
   name: string
-  direction: 'input' | 'output'
-  pinInfo?: PinInfo
-  anchor: PortAnchor
+  label?: string
+  direction: TerminalDirection
+  role?: string
   description?: string
+  pin?: TerminalPin
+  required?: boolean
+  side?: TerminalSide
+  order?: number
   extensions?: ExtensionsMap
 }
 
-export interface NodeEntity {
+export interface DeviceDefinition {
   id: string
-  position: Point
-  connectedWireIds: string[]
-  role?: 'generic' | 'junction' | 'branch'
+  name: string
+  kind: string
+  category?: string
   description?: string
+  reference?: string
+  tags?: string[]
+  properties?: ExtensionsMap
+  terminals: TerminalDefinition[]
   extensions?: ExtensionsMap
 }
 
-export interface EndpointRef {
-  entityType: 'port' | 'node'
-  refId: string
-}
-
-export type Route =
-  | {
-      kind: 'straight'
-    }
-  | {
-      kind: 'polyline'
-      bendPoints: Point[]
-    }
-
-export interface WireEntity {
-  id: string
-  serialNumber: string
-  source: EndpointRef
-  target: EndpointRef
-  route: Route
-  description?: string
-  extensions?: ExtensionsMap
-}
-
-export interface AnnotationTarget {
-  entityType: Exclude<EntityType, 'document' | 'annotation'>
-  refId: string
-}
-
-export interface AnnotationEntity {
-  id: string
-  kind: 'signal' | 'note' | 'label'
-  target: AnnotationTarget
-  text: string
+export interface DeviceViewDefinition {
   position?: Point
+  size?: Size
+  rotationDeg?: number
+  shape?: DeviceShape
+  locked?: boolean
+  collapsed?: boolean
+  groupId?: string
+  extensions?: ExtensionsMap
+}
+
+export type NetworkLineOrientation = 'horizontal' | 'vertical'
+
+export interface NetworkLineViewDefinition {
+  label: string
+  position: Point
+  length?: number
+  orientation?: NetworkLineOrientation
+  extensions?: ExtensionsMap
+}
+
+export interface FocusViewDefinition {
+  defaultDeviceId?: string
+  preferredDirection?: 'left-to-right' | 'top-to-bottom' | 'auto'
+  extensions?: ExtensionsMap
+}
+
+export interface ViewDefinition {
+  canvas: CanvasViewDefinition
+  devices?: Record<string, DeviceViewDefinition>
+  networkLines?: Record<string, NetworkLineViewDefinition>
+  focus?: FocusViewDefinition
   extensions?: ExtensionsMap
 }
 
 export interface DocumentFile {
-  schemaVersion: '1.0.0'
+  schemaVersion: '4.0.0'
   document: DocumentMeta
-  canvas: CanvasDefinition
-  components: ComponentEntity[]
-  ports: PortEntity[]
-  nodes: NodeEntity[]
-  wires: WireEntity[]
-  annotations: AnnotationEntity[]
+  devices: DeviceDefinition[]
+  view: ViewDefinition
   extensions?: ExtensionsMap
 }
 
@@ -166,6 +140,7 @@ export interface ValidationIssue {
 }
 
 export interface ValidationReport {
+  detectedFormat: DocumentFormat
   schemaValid: boolean
   semanticValid: boolean
   issueCount: number
@@ -173,23 +148,8 @@ export interface ValidationReport {
   normalizedDocument?: DocumentFile | null
 }
 
-export interface DiffBucket {
-  added: number
-  removed: number
-  changed: number
-}
-
-export interface DiffSummary {
-  components: DiffBucket
-  ports: DiffBucket
-  nodes: DiffBucket
-  wires: DiffBucket
-  annotations: DiffBucket
-  totalChanges: number
-}
-
 export interface OpenDocumentResult {
-  document: DocumentFile
+  document: DocumentFile | null
   report: ValidationReport
   path: string | null
 }
@@ -205,12 +165,3 @@ export interface EditorSelection {
 }
 
 export type Locale = 'zh-CN' | 'en-US'
-
-export type PlacementMode =
-  | {
-      kind: 'component'
-      shape: ComponentGeometry['type']
-    }
-  | {
-      kind: 'node'
-    }

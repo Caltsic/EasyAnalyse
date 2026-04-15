@@ -1,0 +1,336 @@
+{
+  "schemaVersion": "4.0.0",
+  "document": {
+    "id": "doc.lm358-noninverting-amplifier",
+    "title": "LM358 Non-Inverting Amplifier",
+    "description": "Single-supply non-inverting amplifier with feedback divider and output header.",
+    "source": "ai",
+    "language": "en-US",
+    "tags": [
+      "analog",
+      "op-amp",
+      "lm358",
+      "amplifier"
+    ]
+  },
+  "devices": [
+    {
+      "id": "device.power",
+      "name": "Power Input",
+      "kind": "connector",
+      "reference": "J1",
+      "terminals": [
+        {
+          "id": "terminal.power.vcc",
+          "name": "POWER_OUT_1_J1",
+          "label": "VCC",
+          "direction": "power-out",
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.power.gnd",
+          "name": "GROUND_1_J1",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.input",
+      "name": "Signal Source",
+      "kind": "connector",
+      "reference": "J2",
+      "terminals": [
+        {
+          "id": "terminal.input.vin",
+          "name": "OUTPUT_1_J2",
+          "label": "VIN_SIG",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.input.gnd",
+          "name": "GROUND_1_J2",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.opamp",
+      "name": "LM358",
+      "kind": "op-amp",
+      "reference": "U1",
+      "properties": {
+        "partNumber": "LM358"
+      },
+      "terminals": [
+        {
+          "id": "terminal.opamp.vcc",
+          "name": "POWER_IN_1_U1",
+          "label": "VCC",
+          "direction": "power-in",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.opamp.gnd",
+          "name": "GROUND_1_U1",
+          "label": "GND",
+          "direction": "ground",
+          "side": "left",
+          "order": 1
+        },
+        {
+          "id": "terminal.opamp.noninv",
+          "name": "INPUT_1_U1",
+          "label": "VIN_SIG",
+          "direction": "input",
+          "side": "left",
+          "order": 2
+        },
+        {
+          "id": "terminal.opamp.inv",
+          "name": "INPUT_2_U1",
+          "label": "FB_DIV",
+          "direction": "input",
+          "side": "left",
+          "order": 3
+        },
+        {
+          "id": "terminal.opamp.out",
+          "name": "OUTPUT_1_U1",
+          "label": "VOUT",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.r1",
+      "name": "Feedback Resistor",
+      "kind": "resistor",
+      "reference": "R1",
+      "properties": {
+        "value": "30k"
+      },
+      "terminals": [
+        {
+          "id": "terminal.r1.a",
+          "name": "PASSIVE_1_R1",
+          "label": "VOUT",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.r1.b",
+          "name": "PASSIVE_2_R1",
+          "label": "FB_DIV",
+          "direction": "passive",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.r2",
+      "name": "Gain Resistor",
+      "kind": "resistor",
+      "reference": "R2",
+      "properties": {
+        "value": "10k"
+      },
+      "terminals": [
+        {
+          "id": "terminal.r2.a",
+          "name": "PASSIVE_1_R2",
+          "label": "FB_DIV",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.r2.b",
+          "name": "PASSIVE_2_R2",
+          "label": "GND",
+          "direction": "passive",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.c1",
+      "name": "Decoupling Capacitor",
+      "kind": "capacitor",
+      "reference": "C1",
+      "properties": {
+        "value": "100nF"
+      },
+      "terminals": [
+        {
+          "id": "terminal.c1.a",
+          "name": "PASSIVE_1_C1",
+          "label": "VCC",
+          "direction": "passive",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.c1.b",
+          "name": "PASSIVE_2_C1",
+          "label": "GND",
+          "direction": "passive",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.output",
+      "name": "Output Header",
+      "kind": "connector",
+      "reference": "J3",
+      "terminals": [
+        {
+          "id": "terminal.output.vout",
+          "name": "INPUT_1_J3",
+          "label": "VOUT",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.output.gnd",
+          "name": "GROUND_1_J3",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 1
+        }
+      ]
+    }
+  ],
+  "view": {
+    "canvas": {
+      "units": "px",
+      "grid": {
+        "enabled": true,
+        "size": 36,
+        "majorEvery": 5
+      },
+      "background": "grid"
+    },
+    "devices": {
+      "device.power": {
+        "position": {
+          "x": 120,
+          "y": 160
+        },
+        "size": {
+          "width": 200,
+          "height": 118
+        },
+        "shape": "circle"
+      },
+      "device.input": {
+        "position": {
+          "x": 120,
+          "y": 420
+        },
+        "size": {
+          "width": 200,
+          "height": 118
+        },
+        "shape": "circle"
+      },
+      "device.opamp": {
+        "position": {
+          "x": 520,
+          "y": 280
+        },
+        "size": {
+          "width": 280,
+          "height": 180
+        },
+        "shape": "triangle"
+      },
+      "device.r1": {
+        "position": {
+          "x": 900,
+          "y": 160
+        },
+        "size": {
+          "width": 220,
+          "height": 112
+        },
+        "shape": "rectangle"
+      },
+      "device.r2": {
+        "position": {
+          "x": 900,
+          "y": 360
+        },
+        "size": {
+          "width": 220,
+          "height": 112
+        },
+        "shape": "rectangle"
+      },
+      "device.c1": {
+        "position": {
+          "x": 520,
+          "y": 40
+        },
+        "size": {
+          "width": 220,
+          "height": 112
+        },
+        "shape": "rectangle"
+      },
+      "device.output": {
+        "position": {
+          "x": 1260,
+          "y": 280
+        },
+        "size": {
+          "width": 210,
+          "height": 118
+        },
+        "shape": "circle"
+      }
+    },
+    "networkLines": {
+      "network.vcc": {
+        "label": "VCC",
+        "position": {
+          "x": 700,
+          "y": 60
+        },
+        "length": 1220,
+        "orientation": "horizontal"
+      },
+      "network.gnd": {
+        "label": "GND",
+        "position": {
+          "x": 740,
+          "y": 620
+        },
+        "length": 1300,
+        "orientation": "horizontal"
+      }
+    },
+    "focus": {
+      "defaultDeviceId": "device.opamp",
+      "preferredDirection": "left-to-right"
+    }
+  }
+}

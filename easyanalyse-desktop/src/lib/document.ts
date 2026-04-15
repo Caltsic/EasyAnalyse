@@ -1,273 +1,486 @@
 import { makeId } from './ids'
-import { getEndpointPosition } from './geometry'
+import { translate } from './i18n'
 import type {
-  AnnotationEntity,
-  ComponentEntity,
+  DeviceDefinition,
+  DeviceShape,
+  DeviceViewDefinition,
   DocumentFile,
-  EndpointRef,
+  EditorSelection,
   EntityType,
-  NodeEntity,
-  Point,
-  PortEntity,
-  WireEntity,
+  Locale,
+  NetworkLineViewDefinition,
+  TerminalDefinition,
+  TerminalDirection,
 } from '../types/document'
 
-const EASYANALYSE_EXTENSION_KEY = 'easyanalyse'
-const DEFAULT_DOCUMENT_TITLE = 'Untitled circuit'
+const DEFAULT_CANVAS = {
+  units: 'px' as const,
+  background: 'grid' as const,
+  grid: {
+    enabled: true,
+    size: 36,
+    majorEvery: 5,
+  },
+}
 
-export function buildDefaultDocument(title = 'Untitled circuit'): DocumentFile {
+const DESIGNATOR_PATTERN = /^([A-Z]+)(\d+)$/
+
+export function normalizeRotationDeg(value: number) {
+  const normalized = value % 360
+  return normalized < 0 ? normalized + 360 : normalized
+}
+
+function getDefaultDocumentTitle(locale: Locale = 'zh-CN') {
+  return translate(locale, 'untitledCircuit')
+}
+
+export function buildDefaultDocument(title = getDefaultDocumentTitle()): DocumentFile {
   const timestamp = new Date().toISOString()
-
   return {
-    schemaVersion: '1.0.0',
+    schemaVersion: '4.0.0',
     document: {
       id: makeId('doc'),
       title,
       createdAt: timestamp,
       updatedAt: timestamp,
       source: 'human',
+      language: 'zh-CN',
+      tags: [],
     },
-    canvas: {
-      origin: { x: 0, y: 0 },
-      width: 2400,
-      height: 1600,
-      units: 'px',
-      grid: {
-        enabled: true,
-        size: 40,
+    devices: [],
+    view: {
+      canvas: DEFAULT_CANVAS,
+      devices: {},
+      networkLines: {},
+      focus: {
+        preferredDirection: 'left-to-right',
       },
     },
-    components: [],
-    ports: [],
-    nodes: [],
-    wires: [],
-    annotations: [],
   }
 }
 
 export function normalizeDocumentLocal(document: DocumentFile): DocumentFile {
   const next = structuredClone(document)
-  const nodeWireMap = new Map<string, string[]>()
 
+  next.schemaVersion = '4.0.0'
   next.document.title = ensureRequiredString(
     next.document.title,
-    DEFAULT_DOCUMENT_TITLE,
+    getDefaultDocumentTitle(next.document.language === 'en-US' ? 'en-US' : 'zh-CN'),
   )
-
-  next.nodes.forEach((node) => {
-    nodeWireMap.set(node.id, [])
-  })
-
-  next.components = next.components.map((component) => ({
-    ...component,
-    name: ensureRequiredString(component.name, component.id),
-    tags: component.tags?.map((tag) => tag.trim()).filter(Boolean),
-  }))
-
-  next.ports = next.ports.map((port) => ({
-    ...port,
-    name: ensureRequiredString(port.name, port.id),
-  }))
-
-  next.wires.forEach((wire) => {
-    if (wire.source.entityType === 'node') {
-      nodeWireMap.get(wire.source.refId)?.push(wire.id)
-    }
-    if (wire.target.entityType === 'node') {
-      nodeWireMap.get(wire.target.refId)?.push(wire.id)
-    }
-  })
-
-  next.wires = next.wires.map((wire) => ({
-    ...wire,
-    serialNumber: ensureRequiredString(wire.serialNumber, wire.id),
-    route:
-      wire.route.kind === 'polyline' && wire.route.bendPoints.length === 0
-        ? {
-            kind: 'polyline',
-            bendPoints: buildDefaultPolylineBendPoints(next, wire),
-          }
-        : wire.route,
-  }))
-
-  next.nodes = next.nodes
-    .map((node) => ({
-      ...node,
-      connectedWireIds: [...(nodeWireMap.get(node.id) ?? [])].sort(),
-    }))
-    .sort(byId)
-
-  next.annotations = next.annotations
-    .map((annotation) => ({
-      ...annotation,
-      text: ensureRequiredString(annotation.text, annotation.id),
-    }))
-    .sort(byId)
-
-  next.components = [...next.components].sort(byId)
-  next.ports = [...next.ports].sort(byId)
-  next.wires = [...next.wires].sort(byId)
   next.document.updatedAt = new Date().toISOString()
+  next.document.tags = uniqueNonEmptyStrings(next.document.tags)
+
+  next.devices = next.devices
+    .map((device) => ({
+      ...device,
+      name: ensureRequiredString(device.name, device.id),
+      kind: ensureRequiredString(device.kind, 'module'),
+      category: cleanOptionalString(device.category),
+      description: cleanOptionalString(device.description),
+      reference: cleanOptionalString(device.reference),
+      tags: uniqueNonEmptyStrings(device.tags),
+      terminals: [...device.terminals]
+        .map((terminal) => normalizeTerminal(terminal))
+        .sort(compareTerminals),
+    }))
+    .sort(byId)
+
+  next.view.canvas = {
+    ...DEFAULT_CANVAS,
+    ...next.view.canvas,
+    grid: {
+      ...DEFAULT_CANVAS.grid,
+      ...(next.view.canvas.grid ?? {}),
+    },
+  }
+
+  next.view.devices = Object.fromEntries(
+    Object.entries(next.view.devices ?? {})
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([deviceId, view]) => [deviceId, normalizeDeviceView(view)]),
+  )
+  next.view.networkLines = Object.fromEntries(
+    Object.entries(next.view.networkLines ?? {})
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([networkLineId, view]) => [networkLineId, normalizeNetworkLineView(view)]),
+  )
 
   return next
 }
 
-export function getEntityTitle(
-  entityType: EntityType,
-  id: string | undefined,
-  document: DocumentFile,
-): string {
-  if (entityType === 'document') {
-    return document.document.title
-  }
-
-  if (!id) {
-    return 'No selection'
-  }
-
-  const entity = findEntity(entityType, id, document)
-  if (!entity) {
-    return id
-  }
-
-  if ('name' in entity && typeof entity.name === 'string') {
-    return entity.name
-  }
-
-  if ('serialNumber' in entity && typeof entity.serialNumber === 'string') {
-    return entity.serialNumber
-  }
-
-  if ('text' in entity && typeof entity.text === 'string') {
-    return entity.text
-  }
-
-  return id
-}
-
-export function findEntity(
-  entityType: EntityType,
-  id: string,
-  document: DocumentFile,
-):
-  | DocumentFile['document']
-  | ComponentEntity
-  | PortEntity
-  | NodeEntity
-  | WireEntity
-  | AnnotationEntity
-  | undefined {
-  switch (entityType) {
-    case 'document':
-      return document.document
-    case 'component':
-      return document.components.find((item) => item.id === id)
-    case 'port':
-      return document.ports.find((item) => item.id === id)
-    case 'node':
-      return document.nodes.find((item) => item.id === id)
-    case 'wire':
-      return document.wires.find((item) => item.id === id)
-    case 'annotation':
-      return document.annotations.find((item) => item.id === id)
-    default:
-      return undefined
+function normalizeTerminal(terminal: TerminalDefinition): TerminalDefinition {
+  return {
+    ...terminal,
+    name: ensureRequiredString(terminal.name, terminal.id),
+    label: cleanOptionalString(terminal.label),
+    role: cleanOptionalString(terminal.role),
+    description: cleanOptionalString(terminal.description),
+    side: terminal.side ?? inferSideFromDirection(terminal.direction),
+    order:
+      typeof terminal.order === 'number' && Number.isFinite(terminal.order)
+        ? terminal.order
+        : undefined,
   }
 }
 
-export function countPortsForComponent(
-  componentId: string,
-  direction: 'input' | 'output',
-  document: DocumentFile,
-): number {
-  return document.ports.filter(
-    (port) => port.componentId === componentId && port.direction === direction,
-  ).length
+function normalizeDeviceView(view: DeviceViewDefinition): DeviceViewDefinition {
+  return {
+    ...view,
+    shape: view.shape ?? 'rectangle',
+    position:
+      view.position &&
+      Number.isFinite(view.position.x) &&
+      Number.isFinite(view.position.y)
+        ? view.position
+        : undefined,
+    size:
+      view.size &&
+      Number.isFinite(view.size.width) &&
+      Number.isFinite(view.size.height)
+        ? {
+            width: Math.max(140, view.size.width),
+            height: Math.max(92, view.size.height),
+          }
+        : undefined,
+    rotationDeg:
+      typeof view.rotationDeg === 'number' && Number.isFinite(view.rotationDeg)
+        ? normalizeRotationDeg(view.rotationDeg)
+        : undefined,
+    groupId: cleanOptionalString(view.groupId),
+  }
 }
 
-export function pointToText(point: Point): string {
-  return `${Math.round(point.x)}, ${Math.round(point.y)}`
+function normalizeNetworkLineView(view: NetworkLineViewDefinition): NetworkLineViewDefinition {
+  return {
+    ...view,
+    label: typeof view.label === 'string' ? view.label.trim() : '',
+    position:
+      view.position &&
+      Number.isFinite(view.position.x) &&
+      Number.isFinite(view.position.y)
+        ? view.position
+        : { x: 0, y: 0 },
+    length:
+      typeof view.length === 'number' && Number.isFinite(view.length) && view.length > 0
+        ? Math.min(2400, Math.max(120, view.length))
+        : undefined,
+    orientation: view.orientation === 'vertical' ? 'vertical' : 'horizontal',
+  }
 }
 
-export function endpointRefLabel(endpoint: EndpointRef, document: DocumentFile) {
-  if (endpoint.entityType === 'port') {
-    const port = document.ports.find((item) => item.id === endpoint.refId)
-    return port ? `${port.name} (${endpoint.refId})` : endpoint.refId
+function ensureRequiredString(value: string | undefined, fallback: string) {
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim()
   }
 
-  const node = document.nodes.find((item) => item.id === endpoint.refId)
-  return node ? node.id : endpoint.refId
+  return fallback
+}
+
+function cleanOptionalString(value: string | undefined) {
+  if (typeof value !== 'string') {
+    return undefined
+  }
+
+  const trimmed = value.trim()
+  return trimmed || undefined
+}
+
+function uniqueNonEmptyStrings(values: string[] | undefined) {
+  if (!values?.length) {
+    return []
+  }
+
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b),
+  )
 }
 
 function byId<T extends { id: string }>(left: T, right: T) {
   return left.id.localeCompare(right.id)
 }
 
-function ensureRequiredString(value: string | undefined, fallback: string) {
-  if (typeof value === 'string' && value.trim()) {
-    return value
-  }
-
-  return fallback
+function compareTerminals(left: TerminalDefinition, right: TerminalDefinition) {
+  const leftOrder = left.order ?? Number.MAX_SAFE_INTEGER
+  const rightOrder = right.order ?? Number.MAX_SAFE_INTEGER
+  return (
+    leftOrder - rightOrder ||
+    inferSideRank(left.side) - inferSideRank(right.side) ||
+    left.name.localeCompare(right.name) ||
+    left.id.localeCompare(right.id)
+  )
 }
 
-function buildDefaultPolylineBendPoints(document: DocumentFile, wire: WireEntity): Point[] {
-  const sourcePoint = getEndpointPosition(document, wire.source)
-  const targetPoint = getEndpointPosition(document, wire.target)
-
-  if (!sourcePoint || !targetPoint) {
-    return [{ x: 0, y: 0 }]
+function inferSideRank(side: TerminalDefinition['side']) {
+  switch (side) {
+    case 'left':
+      return 0
+    case 'right':
+      return 1
+    case 'top':
+      return 2
+    case 'bottom':
+      return 3
+    default:
+      return 4
   }
-
-  return createDefaultPolylineBendPoints(sourcePoint, targetPoint)
 }
 
-function createDefaultPolylineBendPoints(source: Point, target: Point): Point[] {
-  const horizontalGap = Math.abs(source.x - target.x)
-  const verticalGap = Math.abs(source.y - target.y)
-
-  if (horizontalGap > verticalGap) {
-    return [{ x: (source.x + target.x) / 2, y: source.y }]
+export function inferSideFromDirection(direction: TerminalDirection) {
+  switch (direction) {
+    case 'input':
+    case 'power-in':
+    case 'ground':
+      return 'left' as const
+    case 'output':
+    case 'power-out':
+      return 'right' as const
+    case 'bidirectional':
+      return 'top' as const
+    case 'passive':
+    case 'shield':
+    case 'unspecified':
+    default:
+      return 'bottom' as const
   }
-
-  return [{ x: source.x, y: (source.y + target.y) / 2 }]
 }
 
-export function getComponentRotation(component: ComponentEntity) {
-  const root = component.extensions?.[EASYANALYSE_EXTENSION_KEY]
-  if (!root || typeof root !== 'object' || Array.isArray(root)) {
-    return 0
-  }
-
-  const rotationDeg = (root as Record<string, unknown>).rotationDeg
-  return typeof rotationDeg === 'number' && Number.isFinite(rotationDeg)
-    ? rotationDeg
-    : 0
+export function normalizeTerminalLabel(label: string | undefined) {
+  return cleanOptionalString(label) ?? null
 }
 
-export function setComponentRotation(
-  component: ComponentEntity,
-  rotationDeg: number,
-): ComponentEntity {
-  const extensions = {
-    ...(component.extensions ?? {}),
-    [EASYANALYSE_EXTENSION_KEY]: {
-      ...readEasyAnalyseExtension(component.extensions),
-      rotationDeg,
-    },
+export function getTerminalDisplayLabel(terminal: TerminalDefinition) {
+  return terminal.label?.trim() || terminal.name
+}
+
+export function getDeviceReference(device: DeviceDefinition, document: DocumentFile) {
+  const explicit = cleanOptionalString(device.reference)
+  if (explicit) {
+    return explicit
   }
 
+  return buildDeviceReferenceMap(document).get(device.id) ?? device.id
+}
+
+export function buildDeviceReferenceMap(document: DocumentFile) {
+  const references = new Map<string, string>()
+  const usedNumbersByPrefix = new Map<string, Set<number>>()
+  const pendingByPrefix = new Map<string, DeviceDefinition[]>()
+
+  for (const device of document.devices) {
+    const explicit = cleanOptionalString(device.reference)
+    if (explicit) {
+      references.set(device.id, explicit)
+      const match = explicit.match(DESIGNATOR_PATTERN)
+      if (match) {
+        const [, prefix, indexText] = match
+        const bucket = usedNumbersByPrefix.get(prefix) ?? new Set<number>()
+        bucket.add(Number(indexText))
+        usedNumbersByPrefix.set(prefix, bucket)
+      }
+      continue
+    }
+
+    const prefix = inferReferencePrefix(device)
+    const bucket = pendingByPrefix.get(prefix) ?? []
+    bucket.push(device)
+    pendingByPrefix.set(prefix, bucket)
+  }
+
+  for (const [prefix, devices] of [...pendingByPrefix.entries()].sort((left, right) =>
+    left[0].localeCompare(right[0]),
+  )) {
+    const used = usedNumbersByPrefix.get(prefix) ?? new Set<number>()
+    let nextIndex = 1
+
+    for (const device of [...devices].sort((left, right) =>
+      left.name.localeCompare(right.name) || left.id.localeCompare(right.id),
+    )) {
+      while (used.has(nextIndex)) {
+        nextIndex += 1
+      }
+
+      const reference = `${prefix}${nextIndex}`
+      references.set(device.id, reference)
+      used.add(nextIndex)
+      nextIndex += 1
+    }
+  }
+
+  return references
+}
+
+export function findNextDeviceReference(document: DocumentFile, prefix: string) {
+  const normalizedPrefix = prefix.trim().replace(/[^A-Za-z]/g, '').toUpperCase() || 'U'
+  const used = new Set<number>()
+
+  for (const reference of buildDeviceReferenceMap(document).values()) {
+    const match = reference.match(DESIGNATOR_PATTERN)
+    if (!match || match[1] !== normalizedPrefix) {
+      continue
+    }
+
+    used.add(Number(match[2]))
+  }
+
+  let index = 1
+  while (used.has(index)) {
+    index += 1
+  }
+
+  return `${normalizedPrefix}${index}`
+}
+
+export function buildDefaultTerminalIdentity(
+  direction: TerminalDirection,
+  order: number,
+  reference: string,
+) {
+  const directionToken = direction.toUpperCase().replace(/-/g, '_')
+  const suffix = reference.trim().toUpperCase() || 'U'
+  const value = `${directionToken}_${order}_${suffix}`
   return {
-    ...component,
-    extensions,
+    name: value,
+    label: value,
   }
 }
 
-function readEasyAnalyseExtension(extensions: DocumentFile['extensions']) {
-  const value = extensions?.[EASYANALYSE_EXTENSION_KEY]
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {}
+function inferReferencePrefix(device: DeviceDefinition) {
+  const haystack = [
+    device.kind,
+    device.category ?? '',
+    device.name,
+    ...(device.tags ?? []),
+  ]
+    .join(' ')
+    .toLowerCase()
+
+  if (/\b(res|resistor)\b/.test(haystack)) {
+    return 'R'
+  }
+  if (/\b(cap|capacitor)\b/.test(haystack)) {
+    return 'C'
+  }
+  if (/\b(ind|inductor|coil)\b/.test(haystack)) {
+    return 'L'
+  }
+  if (/\b(diode|led|tvs|zener)\b/.test(haystack)) {
+    return 'D'
+  }
+  if (/\b(connector|header|socket|jack|plug)\b/.test(haystack)) {
+    return 'J'
+  }
+  if (/\b(switch|button|relay)\b/.test(haystack)) {
+    return 'SW'
+  }
+  if (/\b(power|supply|regulator)\b/.test(haystack)) {
+    return 'PS'
+  }
+  return 'U'
+}
+
+export function getDeviceView(
+  document: DocumentFile,
+  deviceId: string,
+): Required<Pick<DeviceViewDefinition, 'shape'>> & DeviceViewDefinition {
+  const current = document.view.devices?.[deviceId] ?? {}
+  return {
+    shape: current.shape ?? 'rectangle',
+    ...current,
+  }
+}
+
+export function getNetworkLineView(
+  document: DocumentFile,
+  networkLineId: string,
+): NetworkLineViewDefinition | undefined {
+  return document.view.networkLines?.[networkLineId]
+}
+
+export function collectTerminalLabels(
+  document: DocumentFile,
+  options?: { excludeTerminalId?: string },
+) {
+  return [
+    ...new Set(
+      document.devices.flatMap((device) =>
+        device.terminals
+          .filter((terminal) => terminal.id !== options?.excludeTerminalId)
+          .map((terminal) => normalizeTerminalLabel(terminal.label))
+          .filter((label): label is string => Boolean(label)),
+      ),
+    ),
+  ].sort((left, right) => left.localeCompare(right))
+}
+
+export function countDistinctTerminalLabels(document: DocumentFile) {
+  return collectTerminalLabels(document).length
+}
+
+export function findEntity(
+  document: DocumentFile,
+  selection: EditorSelection | null,
+) {
+  if (!selection) {
+    return document.document
   }
 
-  return value as Record<string, unknown>
+  switch (selection.entityType) {
+    case 'document':
+      return document.document
+    case 'device':
+      return document.devices.find((device) => device.id === selection.id)
+    case 'networkLine':
+      return document.view.networkLines?.[selection.id ?? '']
+    case 'terminal':
+      return document.devices
+        .flatMap((device) => device.terminals)
+        .find((terminal) => terminal.id === selection.id)
+    default:
+      return undefined
+  }
+}
+
+export function getEntityTitle(
+  document: DocumentFile,
+  entityType: EntityType,
+  id: string | undefined,
+  locale: Locale,
+) {
+  if (entityType === 'document') {
+    return document.document.title
+  }
+
+  if (!id) {
+    return translate(locale, 'noSelection')
+  }
+
+  if (entityType === 'device') {
+    const device = document.devices.find((item) => item.id === id)
+    return device ? `${getDeviceReference(device, document)} ${device.name}` : id
+  }
+
+  if (entityType === 'networkLine') {
+    const networkLine = document.view.networkLines?.[id]
+    return networkLine?.label?.trim() ? networkLine.label.trim() : id
+  }
+
+  const terminal = document.devices
+    .flatMap((device) => device.terminals.map((item) => ({ device, terminal: item })))
+    .find((item) => item.terminal.id === id)
+  if (!terminal) {
+    return id
+  }
+
+  return `${getDeviceReference(terminal.device, document)}.${getTerminalDisplayLabel(terminal.terminal)}`
+}
+
+export function getDefaultShape(kind: string): DeviceShape {
+  const lower = kind.toLowerCase()
+  if (lower.includes('sensor') || lower.includes('amp') || lower.includes('comparator')) {
+    return 'triangle'
+  }
+  if (lower.includes('connector') || lower.includes('switch')) {
+    return 'circle'
+  }
+  return 'rectangle'
 }

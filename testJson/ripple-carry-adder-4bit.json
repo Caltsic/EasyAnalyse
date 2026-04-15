@@ -1,0 +1,555 @@
+{
+  "schemaVersion": "4.0.0",
+  "document": {
+    "id": "doc.ripplecarry4.adder",
+    "title": "4-Bit Ripple-Carry Adder",
+    "description": "Four cascaded full-adder slices with explicit carry chain labels.",
+    "source": "ai",
+    "language": "en-US",
+    "tags": [
+      "adder",
+      "digital",
+      "logic",
+      "ripple-carry"
+    ]
+  },
+  "devices": [
+    {
+      "id": "device.inputs",
+      "name": "Adder Inputs",
+      "kind": "connector",
+      "reference": "J1",
+      "terminals": [
+        {
+          "id": "terminal.inputs.a0",
+          "name": "OUTPUT_1_J1",
+          "label": "A0",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.inputs.b0",
+          "name": "OUTPUT_2_J1",
+          "label": "B0",
+          "direction": "output",
+          "side": "right",
+          "order": 1
+        },
+        {
+          "id": "terminal.inputs.a1",
+          "name": "OUTPUT_3_J1",
+          "label": "A1",
+          "direction": "output",
+          "side": "right",
+          "order": 2
+        },
+        {
+          "id": "terminal.inputs.b1",
+          "name": "OUTPUT_4_J1",
+          "label": "B1",
+          "direction": "output",
+          "side": "right",
+          "order": 3
+        },
+        {
+          "id": "terminal.inputs.a2",
+          "name": "OUTPUT_5_J1",
+          "label": "A2",
+          "direction": "output",
+          "side": "right",
+          "order": 4
+        },
+        {
+          "id": "terminal.inputs.b2",
+          "name": "OUTPUT_6_J1",
+          "label": "B2",
+          "direction": "output",
+          "side": "right",
+          "order": 5
+        },
+        {
+          "id": "terminal.inputs.a3",
+          "name": "OUTPUT_7_J1",
+          "label": "A3",
+          "direction": "output",
+          "side": "right",
+          "order": 6
+        },
+        {
+          "id": "terminal.inputs.b3",
+          "name": "OUTPUT_8_J1",
+          "label": "B3",
+          "direction": "output",
+          "side": "right",
+          "order": 7
+        },
+        {
+          "id": "terminal.inputs.cin",
+          "name": "OUTPUT_9_J1",
+          "label": "CIN",
+          "direction": "output",
+          "side": "right",
+          "order": 8
+        }
+      ]
+    },
+    {
+      "id": "device.outputs",
+      "name": "Adder Outputs",
+      "kind": "connector",
+      "reference": "J2",
+      "terminals": [
+        {
+          "id": "terminal.outputs.s0",
+          "name": "INPUT_1_J2",
+          "label": "S0",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.outputs.s1",
+          "name": "INPUT_2_J2",
+          "label": "S1",
+          "direction": "input",
+          "side": "left",
+          "order": 1
+        },
+        {
+          "id": "terminal.outputs.s2",
+          "name": "INPUT_3_J2",
+          "label": "S2",
+          "direction": "input",
+          "side": "left",
+          "order": 2
+        },
+        {
+          "id": "terminal.outputs.s3",
+          "name": "INPUT_4_J2",
+          "label": "S3",
+          "direction": "input",
+          "side": "left",
+          "order": 3
+        },
+        {
+          "id": "terminal.outputs.cout",
+          "name": "INPUT_5_J2",
+          "label": "COUT",
+          "direction": "input",
+          "side": "left",
+          "order": 4
+        }
+      ]
+    },
+    {
+      "id": "device.power",
+      "name": "Logic Supply",
+      "kind": "connector",
+      "reference": "J3",
+      "properties": {
+        "voltage": "5V"
+      },
+      "terminals": [
+        {
+          "id": "terminal.power.vcc",
+          "name": "POWER_OUT_1_J3",
+          "label": "VCC",
+          "direction": "power-out",
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.power.gnd",
+          "name": "GROUND_1_J3",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.fa0",
+      "name": "Full Adder Bit 0",
+      "kind": "full-adder",
+      "reference": "U1",
+      "properties": {
+        "bitIndex": 0
+      },
+      "terminals": [
+        {
+          "id": "terminal.fa0.a",
+          "name": "INPUT_1_U1",
+          "label": "A0",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.fa0.b",
+          "name": "INPUT_2_U1",
+          "label": "B0",
+          "direction": "input",
+          "side": "left",
+          "order": 1
+        },
+        {
+          "id": "terminal.fa0.cin",
+          "name": "INPUT_3_U1",
+          "label": "CIN",
+          "direction": "input",
+          "side": "left",
+          "order": 2
+        },
+        {
+          "id": "terminal.fa0.sum",
+          "name": "OUTPUT_1_U1",
+          "label": "S0",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.fa0.cout",
+          "name": "OUTPUT_2_U1",
+          "label": "CARRY1",
+          "direction": "output",
+          "side": "right",
+          "order": 1
+        },
+        {
+          "id": "terminal.fa0.vcc",
+          "name": "POWER_IN_1_U1",
+          "label": "VCC",
+          "direction": "power-in",
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.fa0.gnd",
+          "name": "GROUND_1_U1",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.fa1",
+      "name": "Full Adder Bit 1",
+      "kind": "full-adder",
+      "reference": "U2",
+      "properties": {
+        "bitIndex": 1
+      },
+      "terminals": [
+        {
+          "id": "terminal.fa1.a",
+          "name": "INPUT_1_U2",
+          "label": "A1",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.fa1.b",
+          "name": "INPUT_2_U2",
+          "label": "B1",
+          "direction": "input",
+          "side": "left",
+          "order": 1
+        },
+        {
+          "id": "terminal.fa1.cin",
+          "name": "INPUT_3_U2",
+          "label": "CARRY1",
+          "direction": "input",
+          "side": "left",
+          "order": 2
+        },
+        {
+          "id": "terminal.fa1.sum",
+          "name": "OUTPUT_1_U2",
+          "label": "S1",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.fa1.cout",
+          "name": "OUTPUT_2_U2",
+          "label": "CARRY2",
+          "direction": "output",
+          "side": "right",
+          "order": 1
+        },
+        {
+          "id": "terminal.fa1.vcc",
+          "name": "POWER_IN_1_U2",
+          "label": "VCC",
+          "direction": "power-in",
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.fa1.gnd",
+          "name": "GROUND_1_U2",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.fa2",
+      "name": "Full Adder Bit 2",
+      "kind": "full-adder",
+      "reference": "U3",
+      "properties": {
+        "bitIndex": 2
+      },
+      "terminals": [
+        {
+          "id": "terminal.fa2.a",
+          "name": "INPUT_1_U3",
+          "label": "A2",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.fa2.b",
+          "name": "INPUT_2_U3",
+          "label": "B2",
+          "direction": "input",
+          "side": "left",
+          "order": 1
+        },
+        {
+          "id": "terminal.fa2.cin",
+          "name": "INPUT_3_U3",
+          "label": "CARRY2",
+          "direction": "input",
+          "side": "left",
+          "order": 2
+        },
+        {
+          "id": "terminal.fa2.sum",
+          "name": "OUTPUT_1_U3",
+          "label": "S2",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.fa2.cout",
+          "name": "OUTPUT_2_U3",
+          "label": "CARRY3",
+          "direction": "output",
+          "side": "right",
+          "order": 1
+        },
+        {
+          "id": "terminal.fa2.vcc",
+          "name": "POWER_IN_1_U3",
+          "label": "VCC",
+          "direction": "power-in",
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.fa2.gnd",
+          "name": "GROUND_1_U3",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.fa3",
+      "name": "Full Adder Bit 3",
+      "kind": "full-adder",
+      "reference": "U4",
+      "properties": {
+        "bitIndex": 3
+      },
+      "terminals": [
+        {
+          "id": "terminal.fa3.a",
+          "name": "INPUT_1_U4",
+          "label": "A3",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.fa3.b",
+          "name": "INPUT_2_U4",
+          "label": "B3",
+          "direction": "input",
+          "side": "left",
+          "order": 1
+        },
+        {
+          "id": "terminal.fa3.cin",
+          "name": "INPUT_3_U4",
+          "label": "CARRY3",
+          "direction": "input",
+          "side": "left",
+          "order": 2
+        },
+        {
+          "id": "terminal.fa3.sum",
+          "name": "OUTPUT_1_U4",
+          "label": "S3",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.fa3.cout",
+          "name": "OUTPUT_2_U4",
+          "label": "COUT",
+          "direction": "output",
+          "side": "right",
+          "order": 1
+        },
+        {
+          "id": "terminal.fa3.vcc",
+          "name": "POWER_IN_1_U4",
+          "label": "VCC",
+          "direction": "power-in",
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.fa3.gnd",
+          "name": "GROUND_1_U4",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    }
+  ],
+  "view": {
+    "canvas": {
+      "units": "px",
+      "grid": {
+        "enabled": true,
+        "size": 36,
+        "majorEvery": 5
+      },
+      "background": "grid"
+    },
+    "devices": {
+      "device.power": {
+        "position": {
+          "x": 100,
+          "y": 60
+        },
+        "size": {
+          "width": 140,
+          "height": 140
+        },
+        "shape": "circle"
+      },
+      "device.inputs": {
+        "position": {
+          "x": 100,
+          "y": 260
+        },
+        "size": {
+          "width": 180,
+          "height": 280
+        },
+        "shape": "circle"
+      },
+      "device.fa0": {
+        "position": {
+          "x": 480,
+          "y": 160
+        },
+        "size": {
+          "width": 220,
+          "height": 180
+        },
+        "shape": "rectangle"
+      },
+      "device.fa1": {
+        "position": {
+          "x": 900,
+          "y": 160
+        },
+        "size": {
+          "width": 220,
+          "height": 180
+        },
+        "shape": "rectangle"
+      },
+      "device.fa2": {
+        "position": {
+          "x": 1320,
+          "y": 160
+        },
+        "size": {
+          "width": 220,
+          "height": 180
+        },
+        "shape": "rectangle"
+      },
+      "device.fa3": {
+        "position": {
+          "x": 1740,
+          "y": 160
+        },
+        "size": {
+          "width": 220,
+          "height": 180
+        },
+        "shape": "rectangle"
+      },
+      "device.outputs": {
+        "position": {
+          "x": 2200,
+          "y": 260
+        },
+        "size": {
+          "width": 180,
+          "height": 220
+        },
+        "shape": "circle"
+      }
+    },
+    "networkLines": {
+      "network.vcc": {
+        "label": "VCC",
+        "position": {
+          "x": 1240,
+          "y": 90
+        },
+        "length": 2380,
+        "orientation": "horizontal"
+      },
+      "network.gnd": {
+        "label": "GND",
+        "position": {
+          "x": 1240,
+          "y": 620
+        },
+        "length": 2380,
+        "orientation": "horizontal"
+      }
+    },
+    "focus": {
+      "defaultDeviceId": "device.fa1",
+      "preferredDirection": "left-to-right"
+    }
+  }
+}

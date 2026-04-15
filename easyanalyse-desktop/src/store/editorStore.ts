@@ -2,118 +2,103 @@ import { open, save } from '@tauri-apps/plugin-dialog'
 import { create } from 'zustand'
 import {
   buildDefaultDocument,
-  countPortsForComponent,
-  getComponentRotation,
+  buildDefaultTerminalIdentity,
+  findNextDeviceReference,
+  getDeviceReference,
+  inferSideFromDirection,
   normalizeDocumentLocal,
-  setComponentRotation,
+  normalizeRotationDeg,
 } from '../lib/document'
-import {
-  clamp,
-  createPolylineBendPoint,
-  derivePortAnchor,
-  getEndpointPosition,
-  getGeometryCenter,
-  midpoint,
-  translateGeometry,
-} from '../lib/geometry'
-import { getShapeLabel, getStoredLocale, translate } from '../lib/i18n'
-import { makeId, makeLabel } from '../lib/ids'
+import { getStoredLocale, translate } from '../lib/i18n'
+import { makeId } from '../lib/ids'
 import {
   isTauriRuntime,
   newDocumentCommand,
   openDocumentFromPath,
   saveDocumentToPath,
-  summarizeDiffCommand,
   validateDocumentCommand,
 } from '../lib/tauri'
 import type {
-  AnnotationEntity,
-  AnnotationTarget,
-  ComponentEntity,
-  ComponentGeometry,
-  DiffSummary,
+  DeviceDefinition,
+  DeviceShape,
+  DeviceViewDefinition,
   DocumentFile,
   EditorSelection,
-  EndpointRef,
   Locale,
-  PlacementMode,
+  NetworkLineViewDefinition,
   Point,
-  PortAnchor,
-  PortEntity,
-  Route,
+  TerminalDefinition,
+  TerminalDirection,
   ValidationReport,
 } from '../types/document'
 
-const RECENT_FILES_KEY = 'easyanalyse.recentFiles'
+const FILE_FILTERS = [
+  {
+    name: 'EASYAnalyse Semantic JSON',
+    extensions: ['json'],
+  },
+]
+
+interface ViewportAnimationTarget {
+  center: Point
+  zoom: number
+  sequence: number
+}
 
 interface EditorState {
   document: DocumentFile
   filePath: string | null
   dirty: boolean
+  locale: Locale
   validationReport: ValidationReport | null
   selection: EditorSelection | null
-  selectedEntities: EditorSelection[]
-  connectMode: boolean
-  connectionSource: EndpointRef | null
-  connectionDraftPoints: Point[]
-  draftRouteKind: Route['kind']
-  placementMode: PlacementMode | null
-  recentFiles: string[]
-  diffSummary: DiffSummary | null
+  focusedDeviceId: string | null
+  focusedLabelKey: string | null
+  focusedNetworkLineId: string | null
+  viewportAnimationTarget: ViewportAnimationTarget | null
   history: DocumentFile[]
   future: DocumentFile[]
   statusMessage: string | null
-  locale: Locale
   initialize: () => Promise<void>
-  revalidate: () => Promise<void>
   newDocument: () => Promise<void>
   openDocument: () => Promise<void>
-  reopenRecent: (path: string) => Promise<void>
   saveDocument: () => Promise<void>
   saveDocumentAs: () => Promise<void>
+  revalidate: () => Promise<void>
   setSelection: (selection: EditorSelection | null) => void
-  setSelectedEntities: (selection: EditorSelection[]) => void
-  addComponent: (shape: ComponentGeometry['type']) => void
-  placePendingAt: (point: Point) => void
-  cancelPlacement: () => void
-  updateComponent: (id: string, patch: Partial<ComponentEntity>) => void
-  updateComponentGeometry: (id: string, geometry: ComponentGeometry) => void
-  updateComponentRotation: (id: string, rotationDeg: number) => void
-  moveComponentCenter: (id: string, x: number, y: number) => void
-  addPort: (direction: PortEntity['direction'], componentId?: string) => void
-  updatePort: (id: string, patch: Partial<PortEntity>) => void
-  movePort: (id: string, point: Point) => void
-  addNode: () => void
-  updateNode: (
-    id: string,
-    patch: Partial<DocumentFile['nodes'][number]>,
+  addDevice: (shape?: DeviceShape) => void
+  addNetworkLine: (label?: string) => void
+  updateDevice: (id: string, patch: Partial<DeviceDefinition>) => void
+  updateDeviceView: (id: string, patch: Partial<DeviceViewDefinition>) => void
+  updateNetworkLine: (id: string, patch: Partial<NetworkLineViewDefinition>) => void
+  moveDevice: (id: string, position: Point) => void
+  rotateDevice: (id: string, deltaDeg?: number) => void
+  rotateSelection: () => void
+  addTerminal: (deviceId: string, direction: TerminalDirection) => void
+  updateTerminal: (
+    deviceId: string,
+    terminalId: string,
+    patch: Partial<TerminalDefinition>,
   ) => void
-  moveNode: (id: string, x: number, y: number) => void
-  addAnnotation: (
-    kind: AnnotationEntity['kind'],
-    target?: AnnotationTarget,
-  ) => void
-  updateAnnotation: (id: string, patch: Partial<AnnotationEntity>) => void
-  updateWire: (id: string, patch: Partial<DocumentFile['wires'][number]>) => void
-  moveWireBendPoint: (id: string, index: number, point: Point) => void
-  addWireBendPoint: (id: string) => void
-  beginConnection: () => void
-  cancelConnection: () => void
-  addConnectionBendPoint: (point: Point) => void
-  setDraftRouteKind: (kind: Route['kind']) => void
-  useConnectionEndpoint: (endpoint: EndpointRef) => void
-  deleteSelection: () => void
   updateDocumentMeta: (patch: Partial<DocumentFile['document']>) => void
-  updateCanvas: (patch: Partial<DocumentFile['canvas']>) => void
+  updateCanvas: (patch: Partial<DocumentFile['view']['canvas']>) => void
+  deleteSelection: () => void
   undo: () => void
   redo: () => void
-  setStatusMessage: (message: string | null) => void
   setLocale: (locale: Locale) => void
-  rotateSelectionClockwise: () => void
+  focusDevice: (
+    deviceId: string | null,
+    target?: Omit<ViewportAnimationTarget, 'sequence'> | null,
+  ) => void
+  focusLabel: (labelKey: string | null) => void
+  focusNetworkLine: (networkLineId: string | null) => void
+  clearFocus: () => void
+  resetViewportToOrigin: () => void
 }
 
 function fallbackValidation(document: DocumentFile): ValidationReport {
   return {
+    detectedFormat: 'semantic-v4',
     schemaValid: true,
     semanticValid: true,
     issueCount: 0,
@@ -122,88 +107,12 @@ function fallbackValidation(document: DocumentFile): ValidationReport {
   }
 }
 
-function loadRecentFiles() {
-  try {
-    const raw = window.localStorage.getItem(RECENT_FILES_KEY)
-    if (!raw) {
-      return []
-    }
-
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string') : []
-  } catch {
-    return []
-  }
-}
-
-function saveRecentFiles(paths: string[]) {
-  window.localStorage.setItem(RECENT_FILES_KEY, JSON.stringify(paths))
-}
-
-function nextPortAnchor(
-  geometry: ComponentGeometry,
-  direction: PortEntity['direction'],
-  existingCount: number,
-): PortAnchor {
-  const offset = clamp(0.2 + existingCount * 0.18, 0.15, 0.85)
-
-  if (geometry.type === 'rectangle') {
-    return {
-      kind: 'rectangle-side',
-      side: direction === 'input' ? 'left' : 'right',
-      offset,
-    }
-  }
-
-  if (geometry.type === 'circle') {
-    return {
-      kind: 'circle-angle',
-      angleDeg: direction === 'input' ? 180 + existingCount * 18 : existingCount * -18,
-    }
-  }
-
-  return {
-    kind: 'triangle-edge',
-    edgeIndex: direction === 'input' ? 2 : 1,
-    offset,
-  }
-}
-
-function defaultWireRoute(
-  document: DocumentFile,
-  source: EndpointRef,
-  target: EndpointRef,
-  kind: Route['kind'],
-  bendPoints: Point[] = [],
-): Route {
-  if (kind === 'straight') {
-    return { kind: 'straight' }
-  }
-
-  if (bendPoints.length) {
-    return {
-      kind: 'polyline',
-      bendPoints,
-    }
-  }
-
-  const sourcePoint = getEndpointPosition(document, source)
-  const targetPoint = getEndpointPosition(document, target)
-
-  if (!sourcePoint || !targetPoint) {
-    return { kind: 'polyline', bendPoints: [{ x: 0, y: 0 }] }
-  }
-
-  return {
-    kind: 'polyline',
-    bendPoints: createPolylineBendPoint(sourcePoint, targetPoint),
-  }
-}
-
-function pushRecentFile(path: string, current: string[]) {
-  const next = [path, ...current.filter((item) => item !== path)].slice(0, 6)
-  saveRecentFiles(next)
-  return next
+function withLocale(
+  locale: Locale,
+  key: Parameters<typeof translate>[1],
+  params?: Record<string, string | number>,
+) {
+  return translate(locale, key, params)
 }
 
 function normalizeDialogPath(path: string | string[] | null) {
@@ -223,109 +132,116 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }
 
-function withLocale(locale: Locale, key: Parameters<typeof translate>[1], params?: Record<string, string | number>) {
-  return translate(locale, key, params)
-}
-
-function localizedUntitledTitle(locale: Locale) {
-  return locale === 'zh-CN' ? '未命名电路' : 'Untitled circuit'
-}
-
-function localizedWorkspaceTitle(locale: Locale) {
-  return locale === 'zh-CN' ? '工作区草稿' : 'Workspace Draft'
-}
-
-function selectionList(selection: EditorSelection | null) {
-  return selection ? [selection] : []
-}
-
-function dedupeSelections(selections: EditorSelection[]) {
-  const seen = new Set<string>()
-  const next: EditorSelection[] = []
-
-  for (const selection of selections) {
-    const key = `${selection.entityType}:${selection.id ?? ''}`
-    if (seen.has(key)) {
-      continue
-    }
-    seen.add(key)
-    next.push(selection)
-  }
-
-  return next
-}
-
-function firstSaveBlockingMessage(
-  locale: Locale,
-  report: ValidationReport,
-  document: DocumentFile,
-) {
-  const orphanNodes = document.nodes.filter((node) => node.connectedWireIds.length < 2)
-  if (orphanNodes.length) {
-    return withLocale(locale, 'statusSaveBlockedNode', {
-      id: orphanNodes[0]!.id,
-      count: orphanNodes.length,
+function getSaveStatusMessage(locale: Locale, path: string, report: ValidationReport) {
+  if (report.issueCount > 0) {
+    return withLocale(locale, 'statusSavedWithIssues', {
+      path,
+      count: report.issueCount,
     })
   }
 
-  const issue = report.issues.find((candidate) => candidate.severity === 'error')
-  return issue?.message ?? withLocale(locale, 'statusSaveBlocked')
+  return withLocale(locale, 'statusSaved', { path })
 }
 
-export function untitledTitle(locale: Locale) {
-  return locale === 'zh-CN' ? '未命名电路' : 'Untitled circuit'
-}
-
-export function workspaceTitle(locale: Locale) {
-  return locale === 'zh-CN' ? '工作区草稿' : 'Workspace Draft'
-}
-
-function buildComponentGeometry(
-  shape: ComponentGeometry['type'],
-  point: Point,
-): ComponentGeometry {
-  switch (shape) {
-    case 'rectangle':
-      return {
-        type: 'rectangle',
-        x: point.x - 110,
-        y: point.y - 68,
-        width: 220,
-        height: 136,
-      }
-    case 'circle':
-      return {
-        type: 'circle',
-        cx: point.x,
-        cy: point.y,
-        radius: 72,
-      }
-    case 'triangle':
-      return {
-        type: 'triangle',
-        vertices: [
-          { x: point.x, y: point.y - 88 },
-          { x: point.x + 96, y: point.y + 72 },
-          { x: point.x - 96, y: point.y + 72 },
-        ],
-      }
+function nextDevicePosition(document: DocumentFile) {
+  const index = document.devices.length
+  const column = index % 4
+  const row = Math.floor(index / 4)
+  return {
+    x: 180 + column * 320,
+    y: 180 + row * 220,
   }
 }
 
-function normalizeRotation(rotationDeg: number) {
-  const normalized = rotationDeg % 360
-  return normalized < 0 ? normalized + 360 : normalized
+function inferNetworkLineRole(label: string) {
+  const upper = label.trim().toUpperCase()
+  if (/(^|[_-])(GND|AGND|DGND|PGND|VSS)([_-]|$)/.test(upper) || upper === 'GND') {
+    return 'ground'
+  }
+  if (
+    /(VCC|VDD|VAA|VREF|VBAT|VIN|3V3|5V|12V|24V)/.test(upper) ||
+    upper.startsWith('+')
+  ) {
+    return 'power'
+  }
+  return 'signal'
 }
 
-function isAnnotationTargetEntityType(
-  entityType: EditorSelection['entityType'],
-): entityType is AnnotationTarget['entityType'] {
-  return (
-    entityType === 'component' ||
-    entityType === 'port' ||
-    entityType === 'node' ||
-    entityType === 'wire'
+function summarizeDeviceViewBounds(document: DocumentFile) {
+  const views = Object.values(document.view.devices ?? {}).filter((view) => view.position)
+  if (!views.length) {
+    return {
+      minX: 120,
+      maxX: 1320,
+      minY: 120,
+      maxY: 820,
+    }
+  }
+
+  let minX = Number.POSITIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+
+  for (const view of views) {
+    const position = view.position!
+    const size = view.size ?? { width: 220, height: 136 }
+    minX = Math.min(minX, position.x)
+    minY = Math.min(minY, position.y)
+    maxX = Math.max(maxX, position.x + size.width)
+    maxY = Math.max(maxY, position.y + size.height)
+  }
+
+  return { minX, maxX, minY, maxY }
+}
+
+function chooseDefaultNetworkLineLabel(document: DocumentFile) {
+  const existingLabels = new Set(
+    Object.values(document.view.networkLines ?? {})
+      .map((item) => item.label.trim())
+      .filter(Boolean),
   )
+  const suggested = ['VCC', 'GND', '3V3', '5V', ...document.devices.flatMap((device) =>
+    device.terminals.map((terminal) => terminal.label?.trim() ?? ''),
+  )]
+    .filter(Boolean)
+    .filter((label, index, values) => values.indexOf(label) === index)
+
+  for (const label of suggested) {
+    if (!existingLabels.has(label)) {
+      return label
+    }
+  }
+
+  let index = 1
+  while (existingLabels.has(`NET_${index}`)) {
+    index += 1
+  }
+  return `NET_${index}`
+}
+
+function nextNetworkLineView(document: DocumentFile, label: string): NetworkLineViewDefinition {
+  const bounds = summarizeDeviceViewBounds(document)
+  const role = inferNetworkLineRole(label)
+  const length = Math.min(2400, Math.max(360, bounds.maxX - bounds.minX + 260))
+  const existingCount = Object.keys(document.view.networkLines ?? {}).length
+  const centerX = (bounds.minX + bounds.maxX) / 2
+  const positionY =
+    role === 'ground'
+      ? bounds.maxY + 140 + existingCount * 28
+      : role === 'power'
+        ? bounds.minY - 140 - existingCount * 28
+        : bounds.minY - 260 - existingCount * 36
+
+  return {
+    label,
+    position: {
+      x: centerX,
+      y: positionY,
+    },
+    length,
+    orientation: 'horizontal',
+  }
 }
 
 export const useEditorStore = create<EditorState>((set, get) => {
@@ -365,35 +281,24 @@ export const useEditorStore = create<EditorState>((set, get) => {
       filePath?: string | null
       dirty?: boolean
       selection?: EditorSelection | null
-      selectedEntities?: EditorSelection[]
-      diffSummary?: DiffSummary | null
       resetHistory?: boolean
       statusMessage?: string | null
     },
   ) => {
     const normalized = normalizeDocumentLocal(document)
-    const nextSelection = options?.selection ?? get().selection
-    const nextSelectedEntities =
-      options?.selectedEntities ?? selectionList(nextSelection)
-
     set((state) => ({
       document: normalized,
       filePath: options?.filePath ?? state.filePath,
       dirty: options?.dirty ?? state.dirty,
-      selection: nextSelection,
-      selectedEntities: nextSelectedEntities,
-      diffSummary:
-        options?.diffSummary === undefined ? state.diffSummary : options.diffSummary,
+      selection: options?.selection ?? state.selection,
       history: options?.resetHistory ? [] : state.history,
       future: options?.resetHistory ? [] : state.future,
       statusMessage:
-        options?.statusMessage === undefined
-          ? state.statusMessage
-          : options.statusMessage,
-      connectMode: false,
-      connectionSource: null,
-      connectionDraftPoints: [],
-      placementMode: null,
+        options?.statusMessage === undefined ? state.statusMessage : options.statusMessage,
+      focusedDeviceId: null,
+      focusedLabelKey: null,
+      focusedNetworkLineId: null,
+      viewportAnimationTarget: null,
     }))
 
     void requestValidation(normalized)
@@ -402,148 +307,91 @@ export const useEditorStore = create<EditorState>((set, get) => {
   const mutateDocument = (
     mutator: (draft: DocumentFile) => void,
     selection?: EditorSelection | null,
-    selectedEntities?: EditorSelection[],
   ) => {
-    const current = get().document
-    const draft = structuredClone(current)
+    const currentState = get()
+    const draft = structuredClone(currentState.document)
     mutator(draft)
     const normalized = normalizeDocumentLocal(draft)
-    const nextSelection = selection ?? get().selection
-    const nextSelectedEntities =
-      selectedEntities ??
-      (selection === undefined ? get().selectedEntities : selectionList(nextSelection))
 
     set((state) => ({
       document: normalized,
       dirty: true,
-      selection: nextSelection,
-      selectedEntities: nextSelectedEntities,
+      selection: selection ?? state.selection,
       history: [...state.history, state.document],
       future: [],
-      diffSummary: null,
+      viewportAnimationTarget: null,
+      focusedDeviceId:
+        selection?.entityType === 'device'
+          ? selection.id ?? state.focusedDeviceId
+          : state.focusedDeviceId,
+      focusedLabelKey: null,
+      focusedNetworkLineId: null,
     }))
 
     void requestValidation(normalized)
   }
 
   const loadDocumentFromPath = async (path: string) => {
-    const previous = get().document
     const result = await openDocumentFromPath(path)
-    const resolvedPath = result.path ?? path
-    const diffSummary = await summarizeDiffCommand(previous, result.document).catch(
-      () => null,
-    )
-
-    const recentFiles = pushRecentFile(resolvedPath, get().recentFiles)
+    if (!result.document) {
+      throw new Error('Document could not be opened')
+    }
 
     set({
-      recentFiles,
       validationReport: result.report,
     })
 
     replaceDocument(result.document, {
-      filePath: resolvedPath,
+      filePath: result.path ?? path,
       dirty: false,
       selection: { entityType: 'document' },
-      selectedEntities: [{ entityType: 'document' }],
-      diffSummary,
       resetHistory: true,
-      statusMessage: withLocale(get().locale, 'statusLoaded', { path: resolvedPath }),
+      statusMessage: withLocale(get().locale, 'statusLoaded', {
+        path: result.path ?? path,
+      }),
     })
-  }
-
-  const prepareDocumentForSave = async () => {
-    const state = get()
-    const normalizedDocument = normalizeDocumentLocal(state.document)
-    const report = isTauriRuntime()
-      ? await validateDocumentCommand(normalizedDocument)
-      : fallbackValidation(normalizedDocument)
-    const document = report.normalizedDocument ?? normalizedDocument
-
-    set({
-      document,
-      validationReport: report,
-    })
-
-    if (!report.schemaValid || !report.semanticValid) {
-      set({
-        statusMessage: firstSaveBlockingMessage(state.locale, report, document),
-      })
-      return null
-    }
-
-    return {
-      document,
-      report,
-    }
   }
 
   return {
     document: buildDefaultDocument(),
     filePath: null,
     dirty: false,
+    locale: getStoredLocale(),
     validationReport: null,
     selection: { entityType: 'document' },
-    selectedEntities: [{ entityType: 'document' }],
-    connectMode: false,
-    connectionSource: null,
-    connectionDraftPoints: [],
-    draftRouteKind: 'straight',
-    placementMode: null,
-    recentFiles: [],
-    diffSummary: null,
+    focusedDeviceId: null,
+    focusedLabelKey: null,
+    focusedNetworkLineId: null,
+    viewportAnimationTarget: null,
     history: [],
     future: [],
     statusMessage: null,
-    locale: 'zh-CN',
     initialize: async () => {
-      const recentFiles = loadRecentFiles()
       const locale = getStoredLocale()
-      set({ recentFiles, locale })
-
-      if (isTauriRuntime()) {
-        try {
-          const document = await newDocumentCommand(localizedWorkspaceTitle(locale))
-          replaceDocument(document, {
-            filePath: null,
-            dirty: false,
-            selection: { entityType: 'document' },
-            selectedEntities: [{ entityType: 'document' }],
-            resetHistory: true,
-          })
-          return
-        } catch {
-          // Fall back to local default document.
-        }
-      }
-
-      replaceDocument(buildDefaultDocument(localizedWorkspaceTitle(locale)), {
-        filePath: null,
+      const document = buildDefaultDocument(withLocale(locale, 'untitledCircuit'))
+      set({ locale })
+      replaceDocument(document, {
         dirty: false,
         selection: { entityType: 'document' },
-        selectedEntities: [{ entityType: 'document' }],
         resetHistory: true,
       })
-    },
-    revalidate: async () => {
-      await requestValidation(get().document)
     },
     newDocument: async () => {
-      const locale = get().locale
-      const title = localizedUntitledTitle(locale)
-      const document = isTauriRuntime()
-        ? await newDocumentCommand(title).catch(() => buildDefaultDocument(title))
-        : buildDefaultDocument(title)
-
-      replaceDocument(document, {
-        filePath: null,
-        dirty: false,
-        selection: { entityType: 'document' },
-        selectedEntities: [{ entityType: 'document' }],
-        diffSummary: null,
-        resetHistory: true,
-        statusMessage: withLocale(locale, 'statusNewDocument'),
-      })
+      try {
+        const locale = get().locale
+        const document = isTauriRuntime()
+          ? await newDocumentCommand(withLocale(locale, 'untitledCircuit'))
+          : buildDefaultDocument(withLocale(locale, 'untitledCircuit'))
+        replaceDocument(document, {
+          filePath: null,
+          dirty: false,
+          selection: { entityType: 'document' },
+          resetHistory: true,
+          statusMessage: withLocale(locale, 'statusNewDocument'),
+        })
+      } catch (error) {
+        set({ statusMessage: getErrorMessage(error) })
+      }
     },
     openDocument: async () => {
       try {
@@ -551,10 +399,9 @@ export const useEditorStore = create<EditorState>((set, get) => {
           await open({
             multiple: false,
             directory: false,
-            filters: [{ name: 'AI Native Circuit JSON', extensions: ['json'] }],
+            filters: FILE_FILTERS,
           }),
         )
-
         if (!path) {
           set({ statusMessage: withLocale(get().locale, 'statusOpenCancelled') })
           return
@@ -565,34 +412,31 @@ export const useEditorStore = create<EditorState>((set, get) => {
         set({ statusMessage: getErrorMessage(error) })
       }
     },
-    reopenRecent: async (path) => {
-      try {
-        await loadDocumentFromPath(path)
-      } catch (error) {
-        set({ statusMessage: getErrorMessage(error) })
-      }
-    },
     saveDocument: async () => {
-      const { filePath, recentFiles, locale } = get()
-
-      if (!filePath) {
-        await get().saveDocumentAs()
-        return
-      }
-
       try {
-        const prepared = await prepareDocumentForSave()
-        if (!prepared) {
+        const state = get()
+        const document = normalizeDocumentLocal(state.document)
+        const report = isTauriRuntime()
+          ? await validateDocumentCommand(document)
+          : fallbackValidation(document)
+
+        set({
+          document: report.normalizedDocument ?? document,
+          validationReport: report,
+        })
+
+        if (!state.filePath) {
+          await get().saveDocumentAs()
           return
         }
 
-        const result = await saveDocumentToPath(filePath, prepared.document)
+        const result = await saveDocumentToPath(state.filePath, report.normalizedDocument ?? document)
         set({
           filePath: result.path,
           dirty: false,
           validationReport: result.report,
-          recentFiles: pushRecentFile(result.path, recentFiles),
-          statusMessage: withLocale(locale, 'statusSaved', { path: result.path }),
+          document: result.report.normalizedDocument ?? document,
+          statusMessage: getSaveStatusMessage(state.locale, result.path, result.report),
         })
       } catch (error) {
         set({ statusMessage: getErrorMessage(error) })
@@ -600,558 +444,219 @@ export const useEditorStore = create<EditorState>((set, get) => {
     },
     saveDocumentAs: async () => {
       try {
-        const { document, locale } = get()
-        const suggested =
-          document.document.title.trim().replace(/[\\/:*?"<>|]+/g, '-')
-            .replace(/\s+/g, '-')
-            .toLowerCase() || 'easyanalyse-document'
+        const state = get()
         const path = normalizeDialogPath(
           await save({
-            title: withLocale(locale, 'saveAs'),
-            defaultPath: `${suggested}.json`,
-            filters: [{ name: 'AI Native Circuit JSON', extensions: ['json'] }],
+            filters: FILE_FILTERS,
+            defaultPath: state.filePath ?? `${state.document.document.title || 'easyanalyse'}.json`,
           }),
         )
-
         if (!path) {
-          set({ statusMessage: withLocale(locale, 'statusSaveCancelled') })
+          set({ statusMessage: withLocale(state.locale, 'statusSaveCancelled') })
           return
         }
 
-        const prepared = await prepareDocumentForSave()
-        if (!prepared) {
-          return
-        }
+        const document = normalizeDocumentLocal(state.document)
+        const report = isTauriRuntime()
+          ? await validateDocumentCommand(document)
+          : fallbackValidation(document)
 
-        const result = await saveDocumentToPath(path, prepared.document)
+        set({
+          document: report.normalizedDocument ?? document,
+          validationReport: report,
+        })
+
+        const result = await saveDocumentToPath(path, report.normalizedDocument ?? document)
         set({
           filePath: result.path,
           dirty: false,
           validationReport: result.report,
-          recentFiles: pushRecentFile(result.path, get().recentFiles),
-          statusMessage: withLocale(locale, 'statusSaved', { path: result.path }),
+          document: result.report.normalizedDocument ?? document,
+          statusMessage: getSaveStatusMessage(state.locale, result.path, result.report),
         })
       } catch (error) {
         set({ statusMessage: getErrorMessage(error) })
       }
     },
-    setSelection: (selection) =>
-      set({
-        selection,
-        selectedEntities: selectionList(selection),
-      }),
-    setSelectedEntities: (selectedEntities) => {
-      const next = dedupeSelections(selectedEntities)
-      set({
-        selection: next[0] ?? null,
-        selectedEntities: next,
-      })
+    revalidate: async () => {
+      const document = normalizeDocumentLocal(get().document)
+      set({ document })
+      void requestValidation(document)
     },
-    addComponent: (shape) => {
-      const { placementMode, locale } = get()
-      const sameMode =
-        placementMode?.kind === 'component' && placementMode.shape === shape
-
-      if (sameMode) {
-        set({
-          placementMode: null,
-          statusMessage: withLocale(locale, 'statusPlacementCancelled'),
-        })
-        return
-      }
-
-      set({
-        placementMode: {
-          kind: 'component',
-          shape,
-        },
-        connectMode: false,
-        connectionSource: null,
-        connectionDraftPoints: [],
-        statusMessage: withLocale(locale, 'statusPlacementComponent', {
-          shape: getShapeLabel(locale, shape),
-        }),
-      })
-    },
-    placePendingAt: (point) => {
-      const { placementMode } = get()
-      if (!placementMode) {
-        return
-      }
-
-      let createdSelection: EditorSelection | null = null
-
-      mutateDocument((draft) => {
-        if (placementMode.kind === 'component') {
-          const index = draft.components.length + 1
-          const id = makeId('component')
-          draft.components.push({
-            id,
-            name: makeLabel(placementMode.shape, index),
-            geometry: buildComponentGeometry(placementMode.shape, point),
-            description: '',
-            tags: [],
-          })
-          createdSelection = { entityType: 'component', id }
-          return
-        }
-
-        const id = makeId('node')
-        draft.nodes.push({
-          id,
-          position: point,
-          connectedWireIds: [],
-          role: 'junction',
-          description: '',
-        })
-        createdSelection = { entityType: 'node', id }
-      }, createdSelection)
-
-      set({
-        placementMode: null,
-        selection: createdSelection,
-        selectedEntities: selectionList(createdSelection),
-      })
-    },
-    cancelPlacement: () =>
-      set({
-        placementMode: null,
-        statusMessage: withLocale(get().locale, 'statusPlacementCancelled'),
-      }),
-    updateComponent: (id, patch) => {
-      mutateDocument((draft) => {
-        const component = draft.components.find((item) => item.id === id)
-        if (!component) {
-          return
-        }
-
-        Object.assign(component, patch)
-      }, { entityType: 'component', id })
-    },
-    updateComponentGeometry: (id, geometry) => {
-      mutateDocument((draft) => {
-        const component = draft.components.find((item) => item.id === id)
-        if (!component) {
-          return
-        }
-
-        component.geometry = geometry
-      }, { entityType: 'component', id })
-    },
-    updateComponentRotation: (id, rotationDeg) => {
-      mutateDocument((draft) => {
-        const component = draft.components.find((item) => item.id === id)
-        if (!component) {
-          return
-        }
-
-        Object.assign(component, setComponentRotation(component, normalizeRotation(rotationDeg)))
-      }, { entityType: 'component', id })
-    },
-    moveComponentCenter: (id, x, y) => {
-      mutateDocument((draft) => {
-        const component = draft.components.find((item) => item.id === id)
-        if (!component) {
-          return
-        }
-
-        const currentCenter = getGeometryCenter(component.geometry)
-        component.geometry = translateGeometry(
-          component.geometry,
-          x - currentCenter.x,
-          y - currentCenter.y,
-        )
-      }, { entityType: 'component', id })
-    },
-    addPort: (direction, componentId) => {
+    setSelection: (selection) => set({ selection }),
+    addDevice: (shape = 'rectangle') => {
       const state = get()
-      const targetComponentId =
-        componentId ??
-        (state.selection?.entityType === 'component'
-          ? state.selection.id
-          : state.selection?.entityType === 'port'
-            ? state.document.ports.find((port) => port.id === state.selection?.id)
-                ?.componentId
-            : undefined)
-
-      if (!targetComponentId) {
-        set({ statusMessage: withLocale(state.locale, 'statusSelectComponent') })
-        return
-      }
-
       let createdId = ''
 
       mutateDocument((draft) => {
-        const component = draft.components.find((item) => item.id === targetComponentId)
-        if (!component) {
-          return
-        }
-
-        const existingCount = countPortsForComponent(
-          targetComponentId,
-          direction,
-          draft,
-        )
-
-        const id = makeId('port')
+        const id = makeId('device')
         createdId = id
-        draft.ports.push({
+        const kind = shape === 'triangle' ? 'sensor' : shape === 'circle' ? 'connector' : 'module'
+        const index = draft.devices.length + 1
+        draft.devices.push({
           id,
-          componentId: targetComponentId,
-          name: `${direction === 'input' ? 'IN' : 'OUT'}_${existingCount + 1}`,
-          direction,
-          anchor: nextPortAnchor(component.geometry, direction, existingCount),
-          description: '',
-        })
-      })
-
-      if (createdId) {
-        set({
-          selection: { entityType: 'port', id: createdId },
-          selectedEntities: [{ entityType: 'port', id: createdId }],
-        })
-      }
-    },
-    updatePort: (id, patch) => {
-      mutateDocument((draft) => {
-        const port = draft.ports.find((item) => item.id === id)
-        if (!port) {
-          return
-        }
-
-        Object.assign(port, patch)
-      }, { entityType: 'port', id })
-    },
-    movePort: (id, point) => {
-      mutateDocument((draft) => {
-        const port = draft.ports.find((item) => item.id === id)
-        if (!port) {
-          return
-        }
-
-        const component = draft.components.find((item) => item.id === port.componentId)
-        if (!component) {
-          return
-        }
-
-        port.anchor = derivePortAnchor(component, point)
-      }, { entityType: 'port', id })
-    },
-    addNode: () => {
-      const { placementMode, locale } = get()
-      if (placementMode?.kind === 'node') {
-        set({
-          placementMode: null,
-          statusMessage: withLocale(locale, 'statusPlacementCancelled'),
-        })
-        return
-      }
-
-      set({
-        placementMode: { kind: 'node' },
-        connectMode: false,
-        connectionSource: null,
-        connectionDraftPoints: [],
-        statusMessage: withLocale(locale, 'statusPlacementNode'),
-      })
-    },
-    updateNode: (id, patch) => {
-      mutateDocument((draft) => {
-        const node = draft.nodes.find((item) => item.id === id)
-        if (!node) {
-          return
-        }
-
-        Object.assign(node, patch)
-      }, { entityType: 'node', id })
-    },
-    moveNode: (id, x, y) => {
-      mutateDocument((draft) => {
-        const node = draft.nodes.find((item) => item.id === id)
-        if (!node) {
-          return
-        }
-
-        node.position = { x, y }
-      }, { entityType: 'node', id })
-    },
-    addAnnotation: (kind, target) => {
-      const state = get()
-      const selection = state.selection
-      const derivedTarget =
-        target ??
-        (selection &&
-        selection.id &&
-        isAnnotationTargetEntityType(selection.entityType)
-          ? { entityType: selection.entityType, refId: selection.id }
-          : undefined)
-
-      if (target && !isAnnotationTargetEntityType(target.entityType)) {
-        set({
-          statusMessage: withLocale(state.locale, 'statusInvalidAnnotationTarget'),
-        })
-        return
-      }
-
-      if (
-        selection?.entityType === 'annotation' &&
-        !target
-      ) {
-        set({
-          statusMessage: withLocale(state.locale, 'statusInvalidAnnotationTarget'),
-        })
-        return
-      }
-
-      if (!derivedTarget) {
-        set({ statusMessage: withLocale(state.locale, 'statusSelectTarget') })
-        return
-      }
-
-      let createdId = ''
-
-      mutateDocument((draft) => {
-        const id = makeId('annotation')
-        createdId = id
-        draft.annotations.push({
-          id,
+          name: `${shape === 'triangle' ? 'Sensor' : shape === 'circle' ? 'Connector' : 'Module'} ${index}`,
           kind,
-          target: derivedTarget,
-          text: kind === 'signal' ? '3.3V PWM' : 'Describe this element',
-        })
-      })
-
-      set({
-        selection: { entityType: 'annotation', id: createdId },
-        selectedEntities: [{ entityType: 'annotation', id: createdId }],
-      })
-    },
-    updateAnnotation: (id, patch) => {
-      mutateDocument((draft) => {
-        const annotation = draft.annotations.find((item) => item.id === id)
-        if (!annotation) {
-          return
-        }
-
-        Object.assign(annotation, patch)
-      }, { entityType: 'annotation', id })
-    },
-    updateWire: (id, patch) => {
-      mutateDocument((draft) => {
-        const wire = draft.wires.find((item) => item.id === id)
-        if (!wire) {
-          return
-        }
-
-        Object.assign(wire, patch)
-      }, { entityType: 'wire', id })
-    },
-    moveWireBendPoint: (id, index, point) => {
-      mutateDocument((draft) => {
-        const wire = draft.wires.find((item) => item.id === id)
-        if (!wire || wire.route.kind !== 'polyline') {
-          return
-        }
-
-        wire.route.bendPoints[index] = point
-      }, { entityType: 'wire', id })
-    },
-    addWireBendPoint: (id) => {
-      mutateDocument((draft) => {
-        const wire = draft.wires.find((item) => item.id === id)
-        if (!wire || wire.route.kind !== 'polyline') {
-          return
-        }
-
-        const source = getEndpointPosition(draft, wire.source)
-        const target = getEndpointPosition(draft, wire.target)
-        if (!source || !target) {
-          wire.route.bendPoints.push({ x: 0, y: 0 })
-          return
-        }
-
-        const last = wire.route.bendPoints.at(-1) ?? source
-        wire.route.bendPoints.push(midpoint(last, target))
-      }, { entityType: 'wire', id })
-    },
-    beginConnection: () => {
-      set((state) => {
-        const connectMode = !state.connectMode
-
-        return {
-          connectMode,
-          connectionSource: null,
-          connectionDraftPoints: [],
-          placementMode: null,
-          statusMessage: connectMode
-            ? null
-            : withLocale(state.locale, 'statusConnectionCancelled'),
-        }
-      })
-    },
-    cancelConnection: () => {
-      set({
-        connectMode: false,
-        connectionSource: null,
-        connectionDraftPoints: [],
-        statusMessage: withLocale(get().locale, 'statusConnectionCancelled'),
-      })
-    },
-    addConnectionBendPoint: (point) => {
-      set((state) => {
-        if (
-          !state.connectMode ||
-          !state.connectionSource ||
-          state.draftRouteKind !== 'polyline'
-        ) {
-          return state
-        }
-
-        const nextBendPoints = [...state.connectionDraftPoints, point]
-        return {
-          connectionDraftPoints: nextBendPoints,
-          statusMessage: withLocale(state.locale, 'statusAddedBendPoint', {
-            index: nextBendPoints.length,
-          }),
-        }
-      })
-    },
-    setDraftRouteKind: (kind) =>
-      set((state) => ({
-        draftRouteKind: kind,
-        connectionDraftPoints: kind === 'polyline' ? state.connectionDraftPoints : [],
-      })),
-    useConnectionEndpoint: (endpoint) => {
-      const state = get()
-
-      if (!state.connectMode) {
-        set({
-          selection: { entityType: endpoint.entityType, id: endpoint.refId },
-          selectedEntities: [{ entityType: endpoint.entityType, id: endpoint.refId }],
-        })
-        return
-      }
-
-      if (!state.connectionSource) {
-        set({
-          connectionSource: endpoint,
-          connectionDraftPoints: [],
-          statusMessage: withLocale(state.locale, 'statusConnectionSource', {
-            id: endpoint.refId,
-          }),
-        })
-        return
-      }
-
-      if (
-        state.connectionSource.entityType === endpoint.entityType &&
-        state.connectionSource.refId === endpoint.refId
-      ) {
-        return
-      }
-
-      let createdId = ''
-
-      mutateDocument((draft) => {
-        const id = makeId('wire')
-        createdId = id
-        draft.wires.push({
-          id,
-          serialNumber: `W${draft.wires.length + 1}`,
-          source: state.connectionSource!,
-          target: endpoint,
-          route: defaultWireRoute(
-            draft,
-            state.connectionSource!,
-            endpoint,
-            state.draftRouteKind,
-            state.connectionDraftPoints,
-          ),
+          category: shape === 'triangle' ? 'input' : undefined,
           description: '',
+          reference: findNextDeviceReference(draft, shape === 'circle' ? 'J' : 'U'),
+          tags: [],
+          terminals: [],
         })
-      })
+        draft.view.devices = {
+          ...(draft.view.devices ?? {}),
+          [id]: {
+            position: nextDevicePosition(draft),
+            size: {
+              width: 220,
+              height: 136,
+            },
+            shape,
+          },
+        }
+      }, { entityType: 'device', id: createdId })
 
       set({
-        selection: { entityType: 'wire', id: createdId },
-        selectedEntities: [{ entityType: 'wire', id: createdId }],
-        connectionSource: null,
-        connectionDraftPoints: [],
-        statusMessage: withLocale(state.locale, 'statusCreatedWire', { id: createdId }),
+        selection: { entityType: 'device', id: createdId },
+        statusMessage: `${withLocale(state.locale, 'addDevice')} ${translate(state.locale, shape)}`,
       })
     },
-    deleteSelection: () => {
-      const selectedEntities = get().selectedEntities.filter(
-        (selection) => selection.entityType !== 'document' && selection.id,
-      )
-      if (!selectedEntities.length) {
+    addNetworkLine: (label) => {
+      const document = get().document
+      const nextLabel = (label?.trim() || chooseDefaultNetworkLineLabel(document)).trim()
+      const id = makeId('networkLine')
+
+      mutateDocument((draft) => {
+        draft.view.networkLines = {
+          ...(draft.view.networkLines ?? {}),
+          [id]: nextNetworkLineView(draft, nextLabel),
+        }
+      }, { entityType: 'networkLine', id })
+
+      set({
+        selection: { entityType: 'networkLine', id },
+      })
+    },
+    updateDevice: (id, patch) => {
+      mutateDocument((draft) => {
+        const device = draft.devices.find((item) => item.id === id)
+        if (!device) {
+          return
+        }
+
+        Object.assign(device, patch)
+      }, { entityType: 'device', id })
+    },
+    updateDeviceView: (id, patch) => {
+      mutateDocument((draft) => {
+        draft.view.devices = {
+          ...(draft.view.devices ?? {}),
+          [id]: {
+            ...(draft.view.devices?.[id] ?? {}),
+            ...patch,
+          },
+        }
+      }, { entityType: 'device', id })
+    },
+    updateNetworkLine: (id, patch) => {
+      mutateDocument((draft) => {
+        draft.view.networkLines = {
+          ...(draft.view.networkLines ?? {}),
+          [id]: {
+            ...(draft.view.networkLines?.[id] ?? nextNetworkLineView(draft, patch.label?.trim() || 'NET')),
+            ...patch,
+          },
+        }
+      }, { entityType: 'networkLine', id })
+    },
+    moveDevice: (id, position) => {
+      mutateDocument((draft) => {
+        draft.view.devices = {
+          ...(draft.view.devices ?? {}),
+          [id]: {
+            ...(draft.view.devices?.[id] ?? {}),
+            position,
+          },
+        }
+      }, { entityType: 'device', id })
+    },
+    rotateDevice: (id, deltaDeg = 90) => {
+      const selection = get().selection
+      mutateDocument((draft) => {
+        const current = draft.view.devices?.[id]?.rotationDeg ?? 0
+        draft.view.devices = {
+          ...(draft.view.devices ?? {}),
+          [id]: {
+            ...(draft.view.devices?.[id] ?? {}),
+            rotationDeg: normalizeRotationDeg(current + deltaDeg),
+          },
+        }
+      }, selection)
+    },
+    rotateSelection: () => {
+      const selection = get().selection
+      if (!selection?.id || selection.entityType === 'document') {
         return
       }
 
-      const componentIds = new Set(
-        selectedEntities
-          .filter((selection) => selection.entityType === 'component')
-          .map((selection) => selection.id!),
-      )
-      const portIds = new Set(
-        selectedEntities
-          .filter((selection) => selection.entityType === 'port')
-          .map((selection) => selection.id!),
-      )
-      const nodeIds = new Set(
-        selectedEntities
-          .filter((selection) => selection.entityType === 'node')
-          .map((selection) => selection.id!),
-      )
-      const wireIds = new Set(
-        selectedEntities
-          .filter((selection) => selection.entityType === 'wire')
-          .map((selection) => selection.id!),
-      )
-      const annotationIds = new Set(
-        selectedEntities
-          .filter((selection) => selection.entityType === 'annotation')
-          .map((selection) => selection.id!),
-      )
+      if (selection.entityType === 'device') {
+        get().rotateDevice(selection.id)
+        return
+      }
 
+      if (selection.entityType === 'networkLine') {
+        return
+      }
+
+      const owner = get().document.devices.find((device) =>
+        device.terminals.some((terminal) => terminal.id === selection.id),
+      )
+      if (owner) {
+        get().rotateDevice(owner.id)
+      }
+    },
+    addTerminal: (deviceId, direction) => {
+      let createdId = ''
       mutateDocument((draft) => {
-        for (const port of draft.ports) {
-          if (componentIds.has(port.componentId)) {
-            portIds.add(port.id)
-          }
+        const device = draft.devices.find((item) => item.id === deviceId)
+        if (!device) {
+          return
         }
 
-        draft.components = draft.components.filter((item) => !componentIds.has(item.id))
-        draft.ports = draft.ports.filter((item) => !portIds.has(item.id))
-        draft.nodes = draft.nodes.filter((item) => !nodeIds.has(item.id))
+        const id = makeId('terminal')
+        createdId = id
+        const side = inferSideFromDirection(direction)
+        const directionCount = device.terminals.filter(
+          (terminal) => terminal.direction === direction,
+        ).length
+        const reference = getDeviceReference(device, draft)
+        const identity = buildDefaultTerminalIdentity(direction, directionCount + 1, reference)
 
-        draft.wires = draft.wires.filter((wire) => {
-          const remove =
-            wireIds.has(wire.id) ||
-            portIds.has(wire.source.refId) ||
-            portIds.has(wire.target.refId) ||
-            nodeIds.has(wire.source.refId) ||
-            nodeIds.has(wire.target.refId)
-
-          if (remove) {
-            wireIds.add(wire.id)
-          }
-
-          return !remove
+        device.terminals.push({
+          id,
+          name: identity.name,
+          label: identity.label,
+          direction,
+          side,
+          order: device.terminals.length,
+          required: false,
         })
+      }, { entityType: 'terminal', id: createdId })
 
-        draft.annotations = draft.annotations.filter((annotation) => {
-          if (annotationIds.has(annotation.id)) {
-            return false
-          }
+      set({
+        selection: { entityType: 'terminal', id: createdId },
+      })
+    },
+    updateTerminal: (deviceId, terminalId, patch) => {
+      mutateDocument((draft) => {
+        const device = draft.devices.find((item) => item.id === deviceId)
+        const terminal = device?.terminals.find((item) => item.id === terminalId)
+        if (!terminal) {
+          return
+        }
 
-          return (
-            !componentIds.has(annotation.target.refId) &&
-            !portIds.has(annotation.target.refId) &&
-            !nodeIds.has(annotation.target.refId) &&
-            !wireIds.has(annotation.target.refId)
-          )
-        })
-      }, { entityType: 'document' })
+        Object.assign(terminal, patch)
+      }, { entityType: 'terminal', id: terminalId })
     },
     updateDocumentMeta: (patch) => {
       mutateDocument((draft) => {
@@ -1160,8 +665,59 @@ export const useEditorStore = create<EditorState>((set, get) => {
     },
     updateCanvas: (patch) => {
       mutateDocument((draft) => {
-        Object.assign(draft.canvas, patch)
+        draft.view.canvas = {
+          ...draft.view.canvas,
+          ...patch,
+          grid: {
+            ...(draft.view.canvas.grid ?? { enabled: true, size: 36, majorEvery: 5 }),
+            ...(patch.grid ?? {}),
+          },
+        }
       }, { entityType: 'document' })
+    },
+    deleteSelection: () => {
+      const selection = get().selection
+      if (!selection || selection.entityType === 'document' || !selection.id) {
+        return
+      }
+      const selectionId = selection.id
+
+      mutateDocument((draft) => {
+        if (selection.entityType === 'device') {
+          draft.devices = draft.devices.filter((device) => device.id !== selectionId)
+          if (draft.view.devices?.[selectionId]) {
+            const nextViews = { ...(draft.view.devices ?? {}) }
+            delete nextViews[selectionId]
+            draft.view.devices = nextViews
+          }
+          return
+        }
+
+        if (selection.entityType === 'terminal') {
+          for (const device of draft.devices) {
+            device.terminals = device.terminals.filter((terminal) => terminal.id !== selectionId)
+          }
+          return
+        }
+
+        if (selection.entityType === 'networkLine') {
+          if (draft.view.networkLines?.[selectionId]) {
+            const nextViews = { ...(draft.view.networkLines ?? {}) }
+            delete nextViews[selectionId]
+            draft.view.networkLines = nextViews
+          }
+        }
+      }, { entityType: 'document' })
+
+      set((state) => ({
+        selection: { entityType: 'document' },
+        focusedDeviceId:
+          state.focusedDeviceId === selection.id ? null : state.focusedDeviceId,
+        focusedLabelKey: null,
+        focusedNetworkLineId:
+          state.focusedNetworkLineId === selection.id ? null : state.focusedNetworkLineId,
+        statusMessage: withLocale(state.locale, 'statusDeleted'),
+      }))
     },
     undo: () => {
       const state = get()
@@ -1169,23 +725,18 @@ export const useEditorStore = create<EditorState>((set, get) => {
         return
       }
 
-      const previous = state.history[state.history.length - 1]
-      const nextHistory = state.history.slice(0, -1)
-      const future = [state.document, ...state.future]
-
+      const previous = state.history[state.history.length - 1]!
       set({
         document: previous,
-        history: nextHistory,
-        future,
+        history: state.history.slice(0, -1),
+        future: [state.document, ...state.future],
         dirty: true,
         selection: { entityType: 'document' },
-        selectedEntities: [{ entityType: 'document' }],
-        connectMode: false,
-        connectionSource: null,
-        connectionDraftPoints: [],
-        placementMode: null,
+        focusedDeviceId: null,
+        focusedLabelKey: null,
+        focusedNetworkLineId: null,
+        viewportAnimationTarget: null,
       })
-
       void requestValidation(previous)
     },
     redo: () => {
@@ -1194,44 +745,81 @@ export const useEditorStore = create<EditorState>((set, get) => {
         return
       }
 
-      const next = state.future[0]
-      const future = state.future.slice(1)
-
+      const next = state.future[0]!
       set({
         document: next,
         history: [...state.history, state.document],
-        future,
+        future: state.future.slice(1),
         dirty: true,
         selection: { entityType: 'document' },
-        selectedEntities: [{ entityType: 'document' }],
-        connectMode: false,
-        connectionSource: null,
-        connectionDraftPoints: [],
-        placementMode: null,
+        focusedDeviceId: null,
+        focusedLabelKey: null,
+        focusedNetworkLineId: null,
+        viewportAnimationTarget: null,
       })
-
       void requestValidation(next)
     },
-    setStatusMessage: (message) => set({ statusMessage: message }),
     setLocale: (locale) => {
       window.localStorage.setItem('easyanalyse.locale', locale)
+      set({ locale })
+    },
+    focusDevice: (deviceId, target) =>
+      set((state) => ({
+        focusedDeviceId: deviceId,
+        focusedLabelKey: null,
+        focusedNetworkLineId: null,
+        viewportAnimationTarget:
+          deviceId && target
+            ? {
+                ...target,
+                sequence: (state.viewportAnimationTarget?.sequence ?? 0) + 1,
+              }
+            : null,
+      })),
+    focusLabel: (labelKey) => {
+      const normalized = labelKey?.trim() ? labelKey.trim() : null
+      const matchingNetworkLineId = normalized
+        ? Object.entries(get().document.view.networkLines ?? {}).find(
+            ([, networkLine]) => networkLine.label.trim() === normalized,
+          )?.[0] ?? null
+        : null
+
       set({
-        locale,
-        statusMessage: withLocale(locale, 'statusLocaleSwitched'),
+        focusedDeviceId: null,
+        focusedLabelKey: normalized,
+        focusedNetworkLineId: matchingNetworkLineId,
+        viewportAnimationTarget: null,
       })
     },
-    rotateSelectionClockwise: () => {
-      const selection = get().selection
-      if (selection?.entityType !== 'component' || !selection.id) {
-        return
-      }
+    focusNetworkLine: (networkLineId) => {
+      const networkLine = networkLineId
+        ? get().document.view.networkLines?.[networkLineId]
+        : undefined
 
-      const component = get().document.components.find((item) => item.id === selection.id)
-      if (!component) {
-        return
-      }
-
-      get().updateComponentRotation(selection.id, getComponentRotation(component) + 90)
+      set({
+        focusedDeviceId: null,
+        focusedLabelKey: networkLine?.label?.trim() || null,
+        focusedNetworkLineId: networkLineId,
+        viewportAnimationTarget: null,
+      })
     },
+    clearFocus: () =>
+      set({
+        focusedDeviceId: null,
+        focusedLabelKey: null,
+        focusedNetworkLineId: null,
+        viewportAnimationTarget: null,
+      }),
+    resetViewportToOrigin: () =>
+      set((state) => ({
+        focusedDeviceId: null,
+        focusedLabelKey: null,
+        focusedNetworkLineId: null,
+        viewportAnimationTarget: {
+          center: { x: 0, y: 0 },
+          zoom: 1,
+          sequence: (state.viewportAnimationTarget?.sequence ?? 0) + 1,
+        },
+      })),
   }
 })

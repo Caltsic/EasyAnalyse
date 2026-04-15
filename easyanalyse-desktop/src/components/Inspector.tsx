@@ -1,13 +1,16 @@
-import type { ReactNode } from 'react'
-import { getComponentRotation, getEntityTitle } from '../lib/document'
-import { getComponentBounds } from '../lib/geometry'
+import { useMemo, useState, type ReactNode } from 'react'
+import { deriveCircuitInsights } from '../lib/circuitDescription'
+import {
+  collectTerminalLabels,
+  getEntityTitle,
+  getTerminalDisplayLabel,
+} from '../lib/document'
 import { translate } from '../lib/i18n'
 import { useEditorStore } from '../store/editorStore'
 import type {
-  AnnotationEntity,
-  ComponentEntity,
-  PortEntity,
-  Route,
+  NetworkLineOrientation,
+  TerminalDirection,
+  TerminalSide,
 } from '../types/document'
 
 function Field({
@@ -37,135 +40,167 @@ function parseTags(value: string) {
     .filter(Boolean)
 }
 
-function parsePointsInput(value: string) {
-  return value
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [x, y] = line.split(',').map((part) => Number(part.trim()))
-      return { x, y }
-    })
-    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+function TerminalButtons({
+  onAddTerminal,
+  locale,
+}: {
+  onAddTerminal: (direction: TerminalDirection) => void
+  locale: 'zh-CN' | 'en-US'
+}) {
+  const t = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) =>
+    translate(locale, key, params)
+
+  return (
+    <div className="inspector-actions">
+      <button className="ghost-button" onClick={() => onAddTerminal('input')}>
+        {t('addInput')}
+      </button>
+      <button className="ghost-button" onClick={() => onAddTerminal('output')}>
+        {t('addOutput')}
+      </button>
+      <button className="ghost-button" onClick={() => onAddTerminal('bidirectional')}>
+        {t('addBidirectional')}
+      </button>
+      <button className="ghost-button" onClick={() => onAddTerminal('passive')}>
+        {t('addPassive')}
+      </button>
+      <button className="ghost-button" onClick={() => onAddTerminal('power-in')}>
+        {t('addPowerIn')}
+      </button>
+      <button className="ghost-button" onClick={() => onAddTerminal('ground')}>
+        {t('addGround')}
+      </button>
+    </div>
+  )
+}
+
+function LabelAutocomplete({
+  value,
+  suggestions,
+  onChange,
+  hint,
+}: {
+  value: string
+  suggestions: string[]
+  onChange: (value: string) => void
+  hint: string
+}) {
+  const [open, setOpen] = useState(false)
+
+  const filtered = useMemo(() => {
+    const query = value.trim().toLowerCase()
+    return suggestions
+      .filter((item) => item.trim())
+      .filter((item) => item !== value)
+      .filter((item) => !query || item.toLowerCase().startsWith(query))
+      .slice(0, 10)
+  }, [suggestions, value])
+
+  return (
+    <div className="autocomplete">
+      <input
+        value={value}
+        placeholder={hint}
+        onFocus={() => setOpen(true)}
+        onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+        onChange={(event) => {
+          setOpen(true)
+          onChange(event.target.value)
+        }}
+      />
+      {open && filtered.length > 0 && (
+        <div className="autocomplete__panel">
+          {filtered.map((item) => (
+            <button
+              className="autocomplete__option"
+              key={item}
+              onMouseDown={(event) => {
+                event.preventDefault()
+                onChange(item)
+                setOpen(false)
+              }}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function Inspector() {
   const document = useEditorStore((state) => state.document)
   const selection = useEditorStore((state) => state.selection)
   const locale = useEditorStore((state) => state.locale)
+  const focusedDeviceId = useEditorStore((state) => state.focusedDeviceId)
+  const focusedLabelKey = useEditorStore((state) => state.focusedLabelKey)
   const updateDocumentMeta = useEditorStore((state) => state.updateDocumentMeta)
   const updateCanvas = useEditorStore((state) => state.updateCanvas)
-  const updateComponent = useEditorStore((state) => state.updateComponent)
-  const updateComponentGeometry = useEditorStore(
-    (state) => state.updateComponentGeometry,
-  )
-  const updateComponentRotation = useEditorStore(
-    (state) => state.updateComponentRotation,
-  )
-  const addPort = useEditorStore((state) => state.addPort)
-  const updatePort = useEditorStore((state) => state.updatePort)
-  const updateNode = useEditorStore((state) => state.updateNode)
-  const updateWire = useEditorStore((state) => state.updateWire)
-  const addWireBendPoint = useEditorStore((state) => state.addWireBendPoint)
-  const addAnnotation = useEditorStore((state) => state.addAnnotation)
-  const updateAnnotation = useEditorStore((state) => state.updateAnnotation)
+  const updateDevice = useEditorStore((state) => state.updateDevice)
+  const updateDeviceView = useEditorStore((state) => state.updateDeviceView)
+  const addNetworkLine = useEditorStore((state) => state.addNetworkLine)
+  const updateNetworkLine = useEditorStore((state) => state.updateNetworkLine)
+  const addTerminal = useEditorStore((state) => state.addTerminal)
+  const updateTerminal = useEditorStore((state) => state.updateTerminal)
+  const setSelection = useEditorStore((state) => state.setSelection)
   const deleteSelection = useEditorStore((state) => state.deleteSelection)
+  const focusDevice = useEditorStore((state) => state.focusDevice)
+  const focusLabel = useEditorStore((state) => state.focusLabel)
+  const focusNetworkLine = useEditorStore((state) => state.focusNetworkLine)
+  const clearFocus = useEditorStore((state) => state.clearFocus)
 
   const t = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) =>
     translate(locale, key, params)
 
-  const selectedComponent =
-    selection?.entityType === 'component' && selection.id
-      ? document.components.find((item) => item.id === selection.id)
+  const insights = useMemo(() => deriveCircuitInsights(document, locale), [document, locale])
+  const selectedDevice =
+    selection?.entityType === 'device' && selection.id
+      ? document.devices.find((device) => device.id === selection.id)
       : undefined
-  const selectedPort =
-    selection?.entityType === 'port' && selection.id
-      ? document.ports.find((item) => item.id === selection.id)
+  const selectedTerminalLocation =
+    selection?.entityType === 'terminal' && selection.id
+      ? document.devices
+          .map((device) => ({
+            device,
+            terminal: device.terminals.find((terminal) => terminal.id === selection.id),
+          }))
+          .find((entry) => entry.terminal)
       : undefined
-  const selectedNode =
-    selection?.entityType === 'node' && selection.id
-      ? document.nodes.find((item) => item.id === selection.id)
+  const selectedTerminal = selectedTerminalLocation?.terminal
+  const selectedTerminalDevice = selectedTerminalLocation?.device
+  const selectedNetworkLine =
+    selection?.entityType === 'networkLine' && selection.id
+      ? document.view.networkLines?.[selection.id]
+        ? {
+            id: selection.id,
+            source: document.view.networkLines[selection.id]!,
+          }
+        : undefined
       : undefined
-  const selectedWire =
-    selection?.entityType === 'wire' && selection.id
-      ? document.wires.find((item) => item.id === selection.id)
-      : undefined
-  const selectedAnnotation =
-    selection?.entityType === 'annotation' && selection.id
-      ? document.annotations.find((item) => item.id === selection.id)
-      : undefined
-
-  const componentPorts = selectedComponent
-    ? document.ports.filter((port) => port.componentId === selectedComponent.id)
-    : []
-
-  const updateGeometryBounds = (
-    component: ComponentEntity,
-    patch: Partial<{
-      x: number
-      y: number
-      width: number
-      height: number
-      radius: number
-    }>,
-  ) => {
-    if (component.geometry.type === 'rectangle') {
-      updateComponentGeometry(component.id, {
-        ...component.geometry,
-        x: patch.x ?? component.geometry.x,
-        y: patch.y ?? component.geometry.y,
-        width: patch.width ?? component.geometry.width,
-        height: patch.height ?? component.geometry.height,
-      })
-      return
-    }
-
-    if (component.geometry.type === 'circle') {
-      const radius = patch.radius ?? component.geometry.radius
-      const x = patch.x ?? component.geometry.cx - component.geometry.radius
-      const y = patch.y ?? component.geometry.cy - component.geometry.radius
-
-      updateComponentGeometry(component.id, {
-        ...component.geometry,
-        cx: x + radius,
-        cy: y + radius,
-        radius,
-      })
-      return
-    }
-
-    const bounds = getComponentBounds(component.geometry)
-    const next = {
-      x: patch.x ?? bounds.x,
-      y: patch.y ?? bounds.y,
-      width: patch.width ?? bounds.width,
-      height: patch.height ?? bounds.height,
-    }
-
-    updateComponentGeometry(component.id, {
-      type: 'triangle',
-      vertices: [
-        { x: next.x + next.width / 2, y: next.y },
-        { x: next.x + next.width, y: next.y + next.height },
-        { x: next.x, y: next.y + next.height },
-      ],
-    })
-  }
-
-  const title =
-    selection?.entityType === 'document'
-      ? document.document.title
-      : getEntityTitle(selection?.entityType ?? 'document', selection?.id, document)
+  const activeDevice = selectedTerminalDevice ?? selectedDevice
+  const activeTerminal = selectedTerminal
+  const title = getEntityTitle(
+    document,
+    selection?.entityType ?? 'document',
+    selection?.id,
+    locale,
+  )
+  const labelSuggestions = useMemo(
+    () => collectTerminalLabels(document, { excludeTerminalId: activeTerminal?.id }),
+    [activeTerminal?.id, document],
+  )
+  const connectionMatches =
+    activeTerminal?.label?.trim()
+      ? insights.connectionHighlightsByKey[activeTerminal.label.trim()]?.terminalIds ?? []
+      : []
 
   return (
-    <aside className="panel inspector">
-      <div className="panel__header">
-        <div className="panel__heading">
-          <span className="eyebrow">{t('inspector')}</span>
-          <h2>{title || t('noSelection')}</h2>
-          {selection?.id && selection.entityType !== 'document' && (
-            <small className="inspector__meta">{selection.id}</small>
-          )}
+    <aside className="inspector-shell">
+      <div className="inspector-shell__header">
+        <div>
+          <span className="eyebrow">{t('properties')}</span>
+          <h2>{title}</h2>
         </div>
         {selection?.entityType !== 'document' && selection?.id && (
           <button className="ghost-button danger" onClick={deleteSelection}>
@@ -174,663 +209,551 @@ export function Inspector() {
         )}
       </div>
 
-      {(!selection || selection.entityType === 'document') && (
-        <div className="panel__body">
-          <div className="form-grid">
-            <Field label={t('title')}>
-              <input
-                value={document.document.title}
-                onChange={(event) =>
-                  updateDocumentMeta({ title: event.target.value })
-                }
-              />
-            </Field>
-            <Field label={t('description')}>
-              <textarea
-                rows={3}
-                value={document.document.description ?? ''}
-                onChange={(event) =>
-                  updateDocumentMeta({ description: event.target.value })
-                }
-              />
-            </Field>
-            <Field label={t('canvasWidth')}>
-              <input
-                type="number"
-                value={document.canvas.width}
-                onChange={(event) =>
-                  updateCanvas({ width: parseNumber(event.target.value, 2400) })
-                }
-              />
-            </Field>
-            <Field label={t('canvasHeight')}>
-              <input
-                type="number"
-                value={document.canvas.height}
-                onChange={(event) =>
-                  updateCanvas({ height: parseNumber(event.target.value, 1600) })
-                }
-              />
-            </Field>
-            <Field label={t('gridEnabled')}>
-              <select
-                value={document.canvas.grid?.enabled ? 'yes' : 'no'}
-                onChange={(event) =>
-                  updateCanvas({
-                    grid: {
-                      enabled: event.target.value === 'yes',
-                      size: document.canvas.grid?.size ?? 40,
-                    },
-                  })
-                }
-              >
-                <option value="yes">{t('enabled')}</option>
-                <option value="no">{t('hidden')}</option>
-              </select>
-            </Field>
-            <Field label={t('gridSize')}>
-              <input
-                type="number"
-                value={document.canvas.grid?.size ?? 40}
-                onChange={(event) =>
-                  updateCanvas({
-                    grid: {
-                      enabled: document.canvas.grid?.enabled ?? true,
-                      size: parseNumber(event.target.value, 40),
-                    },
-                  })
-                }
-              />
-            </Field>
-          </div>
-
-          <div className="inspector-card">
-            <span className="eyebrow">{t('aiWorkflow')}</span>
-            <p>{t('aiWorkflowHint')}</p>
-          </div>
-        </div>
-      )}
-
-      {selectedComponent && (
-        <ComponentInspector
-          component={selectedComponent}
-          ports={componentPorts}
-          locale={locale}
-          onComponentChange={updateComponent}
-          onBoundsChange={updateGeometryBounds}
-          onRotationChange={updateComponentRotation}
-          onAddPort={addPort}
-          onAnnotation={() =>
-            addAnnotation('note', {
-              entityType: 'component',
-              refId: selectedComponent.id,
-            })
-          }
-        />
-      )}
-
-      {selectedPort && (
-        <PortInspector
-          port={selectedPort}
-          locale={locale}
-          onPortChange={updatePort}
-          onAnnotation={() =>
-            addAnnotation('signal', { entityType: 'port', refId: selectedPort.id })
-          }
-        />
-      )}
-
-      {selectedNode && (
-        <div className="panel__body">
-          <div className="form-grid">
-            <Field label={t('nodeId')}>
-              <input disabled value={selectedNode.id} />
-            </Field>
-            <Field label={t('role')}>
-              <select
-                value={selectedNode.role ?? 'generic'}
-                onChange={(event) =>
-                  updateNode(selectedNode.id, {
-                    role: event.target.value as NonNullable<typeof selectedNode.role>,
-                  })
-                }
-              >
-                <option value="generic">{t('generic')}</option>
-                <option value="junction">{t('junction')}</option>
-                <option value="branch">{t('branch')}</option>
-              </select>
-            </Field>
-            <Field label={t('x')}>
-              <input
-                type="number"
-                value={selectedNode.position.x}
-                onChange={(event) =>
-                  updateNode(selectedNode.id, {
-                    position: {
-                      ...selectedNode.position,
-                      x: parseNumber(event.target.value),
-                    },
-                  })
-                }
-              />
-            </Field>
-            <Field label={t('y')}>
-              <input
-                type="number"
-                value={selectedNode.position.y}
-                onChange={(event) =>
-                  updateNode(selectedNode.id, {
-                    position: {
-                      ...selectedNode.position,
-                      y: parseNumber(event.target.value),
-                    },
-                  })
-                }
-              />
-            </Field>
-            <Field label={t('description')}>
-              <textarea
-                rows={4}
-                value={selectedNode.description ?? ''}
-                onChange={(event) =>
-                  updateNode(selectedNode.id, { description: event.target.value })
-                }
-              />
-            </Field>
-          </div>
-          <div className="inspector-card">
-            <button
-              className="ghost-button"
-              onClick={() =>
-                addAnnotation('label', { entityType: 'node', refId: selectedNode.id })
-              }
-            >
-              {t('addNodeLabel')}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {selectedWire && (
-        <div className="panel__body">
-          <div className="form-grid">
-            <Field label={t('wireId')}>
-              <input disabled value={selectedWire.id} />
-            </Field>
-            <Field label={t('serialNumber')}>
-              <input
-                value={selectedWire.serialNumber}
-                onChange={(event) =>
-                  updateWire(selectedWire.id, { serialNumber: event.target.value })
-                }
-              />
-            </Field>
-            <Field label={t('route')}>
-              <select
-                value={selectedWire.route.kind}
-                onChange={(event) => {
-                  const kind = event.target.value as Route['kind']
-                  const route: Route =
-                    kind === 'straight'
-                      ? { kind }
-                      : {
-                          kind,
-                          bendPoints:
-                            selectedWire.route.kind === 'polyline'
-                              ? selectedWire.route.bendPoints
-                              : [{ x: 0, y: 0 }],
-                        }
-
-                  updateWire(selectedWire.id, { route })
-                }}
-              >
-                <option value="straight">{t('straight')}</option>
-                <option value="polyline">{t('polyline')}</option>
-              </select>
-            </Field>
-            <Field label={t('description')}>
-              <textarea
-                rows={4}
-                value={selectedWire.description ?? ''}
-                onChange={(event) =>
-                  updateWire(selectedWire.id, { description: event.target.value })
-                }
-              />
-            </Field>
-            {selectedWire.route.kind === 'polyline' && (
-              <Field label={t('bendPoints')}>
+      <div className="inspector-shell__body">
+        {(!selection || selection.entityType === 'document') && (
+          <section className="inspector-section">
+            <span className="eyebrow">{t('documentSettings')}</span>
+            <div className="form-grid">
+              <Field label={t('title')}>
+                <input
+                  value={document.document.title}
+                  onChange={(event) => updateDocumentMeta({ title: event.target.value })}
+                />
+              </Field>
+              <Field label={t('description')}>
                 <textarea
-                  rows={5}
-                  value={selectedWire.route.bendPoints
-                    .map((point) => `${point.x}, ${point.y}`)
-                    .join('\n')}
+                  rows={3}
+                  value={document.document.description ?? ''}
                   onChange={(event) =>
-                    updateWire(selectedWire.id, {
-                      route: {
-                        kind: 'polyline',
-                        bendPoints: parsePointsInput(event.target.value),
+                    updateDocumentMeta({ description: event.target.value })
+                  }
+                />
+              </Field>
+              <Field label={t('gridEnabled')}>
+                <select
+                  value={document.view.canvas.grid?.enabled ? 'yes' : 'no'}
+                  onChange={(event) =>
+                    updateCanvas({
+                      grid: {
+                        enabled: event.target.value === 'yes',
+                        size: document.view.canvas.grid?.size ?? 36,
+                        majorEvery: document.view.canvas.grid?.majorEvery ?? 5,
+                      },
+                    })
+                  }
+                >
+                  <option value="yes">{t('enabled')}</option>
+                  <option value="no">{t('hidden')}</option>
+                </select>
+              </Field>
+              <Field label={t('gridSize')}>
+                <input
+                  type="number"
+                  value={document.view.canvas.grid?.size ?? 36}
+                  onChange={(event) =>
+                    updateCanvas({
+                      grid: {
+                        enabled: document.view.canvas.grid?.enabled ?? true,
+                        size: parseNumber(event.target.value, 36),
+                        majorEvery: document.view.canvas.grid?.majorEvery ?? 5,
                       },
                     })
                   }
                 />
               </Field>
-            )}
-          </div>
+              <Field label={t('majorEvery')}>
+                <input
+                  type="number"
+                  min={2}
+                  value={document.view.canvas.grid?.majorEvery ?? 5}
+                  onChange={(event) =>
+                    updateCanvas({
+                      grid: {
+                        enabled: document.view.canvas.grid?.enabled ?? true,
+                        size: document.view.canvas.grid?.size ?? 36,
+                        majorEvery: Math.max(2, parseNumber(event.target.value, 5)),
+                      },
+                    })
+                  }
+                />
+              </Field>
+            </div>
 
-          <div className="inspector-card">
-            <div className="card-actions">
-              {selectedWire.route.kind === 'polyline' && (
-                <button
-                  className="ghost-button"
-                  onClick={() => addWireBendPoint(selectedWire.id)}
-                >
-                  {t('addBendPoint')}
+            <section className="inspector-section">
+              <div className="inspector-section__header">
+                <span className="eyebrow">{t('networkLines')}</span>
+                <button className="ghost-button" onClick={() => addNetworkLine()}>
+                  {t('addNetworkLine')}
                 </button>
-              )}
+              </div>
+              {Object.entries(document.view.networkLines ?? {}).length > 0 ? (
+                <div className="entity-list">
+                  {Object.entries(document.view.networkLines ?? {}).map(([networkLineId, networkLine]) => (
+                    <button
+                      className={`entity-list__item${selection?.entityType === 'networkLine' && selection.id === networkLineId ? ' is-active' : ''}`}
+                      key={networkLineId}
+                      onClick={() => setSelection({ entityType: 'networkLine', id: networkLineId })}
+                    >
+                      <strong>{networkLine.label}</strong>
+                      <span>{t(networkLine.orientation ?? 'horizontal')}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          </section>
+        )}
+
+        {selectedNetworkLine && !activeDevice && (
+          <section className="inspector-section">
+            <div className="inspector-section__header">
+              <span className="eyebrow">{t('networkLines')}</span>
               <button
                 className="ghost-button"
                 onClick={() =>
-                  addAnnotation('label', { entityType: 'wire', refId: selectedWire.id })
+                  focusedLabelKey === selectedNetworkLine.source.label.trim()
+                    ? clearFocus()
+                    : focusNetworkLine(selectedNetworkLine.id)
                 }
               >
-                {t('addWireLabel')}
+                {focusedLabelKey === selectedNetworkLine.source.label.trim() ? t('exitFocus') : t('focus')}
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {selectedAnnotation && (
-        <div className="panel__body">
-          <div className="form-grid">
-            <Field label={t('annotationId')}>
-              <input disabled value={selectedAnnotation.id} />
-            </Field>
-            <Field label={t('kind')}>
-              <select
-                value={selectedAnnotation.kind}
-                onChange={(event) =>
-                  updateAnnotation(selectedAnnotation.id, {
-                    kind: event.target.value as AnnotationEntity['kind'],
-                  })
-                }
-              >
-                <option value="signal">{t('signal')}</option>
-                <option value="note">{t('note')}</option>
-                <option value="label">{t('label')}</option>
-              </select>
-            </Field>
-            <Field label={t('text')}>
-              <textarea
-                rows={4}
-                value={selectedAnnotation.text}
-                onChange={(event) =>
-                  updateAnnotation(selectedAnnotation.id, {
-                    text: event.target.value,
-                  })
-                }
-              />
-            </Field>
-            <Field label={t('target')}>
-              <input
-                disabled
-                value={`${selectedAnnotation.target.entityType}:${selectedAnnotation.target.refId}`}
-              />
-            </Field>
-          </div>
-        </div>
-      )}
-    </aside>
-  )
-}
-
-function ComponentInspector({
-  component,
-  ports,
-  locale,
-  onComponentChange,
-  onBoundsChange,
-  onRotationChange,
-  onAddPort,
-  onAnnotation,
-}: {
-  component: ComponentEntity
-  ports: PortEntity[]
-  locale: 'zh-CN' | 'en-US'
-  onComponentChange: (id: string, patch: Partial<ComponentEntity>) => void
-  onBoundsChange: (
-    component: ComponentEntity,
-    patch: Partial<{
-      x: number
-      y: number
-      width: number
-      height: number
-      radius: number
-    }>,
-  ) => void
-  onRotationChange: (id: string, rotationDeg: number) => void
-  onAddPort: (direction: PortEntity['direction'], componentId?: string) => void
-  onAnnotation: () => void
-}) {
-  const t = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) =>
-    translate(locale, key, params)
-  const bounds = getComponentBounds(component.geometry)
-  const circleRadius = component.geometry.type === 'circle' ? component.geometry.radius : 0
-  const rotation = getComponentRotation(component)
-
-  return (
-    <div className="panel__body">
-      <div className="form-grid">
-        <Field label={t('name')}>
-          <input
-            value={component.name}
-            onChange={(event) =>
-              onComponentChange(component.id, { name: event.target.value })
-            }
-          />
-        </Field>
-        <Field label={t('description')}>
-          <textarea
-            rows={3}
-            value={component.description ?? ''}
-            onChange={(event) =>
-              onComponentChange(component.id, { description: event.target.value })
-            }
-          />
-        </Field>
-        <Field label={t('tags')}>
-          <input
-            value={(component.tags ?? []).join(', ')}
-            onChange={(event) =>
-              onComponentChange(component.id, { tags: parseTags(event.target.value) })
-            }
-          />
-        </Field>
-        <Field label={t('shape')}>
-          <input disabled value={component.geometry.type} />
-        </Field>
-        <Field label={t('x')}>
-          <input
-            type="number"
-            value={bounds.x}
-            onChange={(event) =>
-              onBoundsChange(component, { x: parseNumber(event.target.value) })
-            }
-          />
-        </Field>
-        <Field label={t('y')}>
-          <input
-            type="number"
-            value={bounds.y}
-            onChange={(event) =>
-              onBoundsChange(component, { y: parseNumber(event.target.value) })
-            }
-          />
-        </Field>
-        {component.geometry.type === 'circle' ? (
-          <Field label={t('radius')}>
-            <input
-              type="number"
-              value={circleRadius}
-              onChange={(event) =>
-                onBoundsChange(component, {
-                  radius: parseNumber(event.target.value, circleRadius),
-                })
-              }
-            />
-          </Field>
-        ) : (
-          <>
-            <Field label={t('width')}>
-              <input
-                type="number"
-                value={bounds.width}
-                onChange={(event) =>
-                  onBoundsChange(component, {
-                    width: parseNumber(event.target.value, bounds.width),
-                  })
-                }
-              />
-            </Field>
-            <Field label={t('height')}>
-              <input
-                type="number"
-                value={bounds.height}
-                onChange={(event) =>
-                  onBoundsChange(component, {
-                    height: parseNumber(event.target.value, bounds.height),
-                  })
-                }
-              />
-            </Field>
-          </>
-        )}
-        <Field label={t('rotation')}>
-          <input
-            type="number"
-            value={rotation}
-            onChange={(event) =>
-              onRotationChange(component.id, parseNumber(event.target.value, rotation))
-            }
-          />
-        </Field>
-      </div>
-
-      <div className="inspector-card">
-        <div className="card-actions">
-          <button className="ghost-button" onClick={() => onRotationChange(component.id, rotation - 90)}>
-            -90°
-          </button>
-          <button className="ghost-button" onClick={() => onRotationChange(component.id, rotation + 90)}>
-            +90°
-          </button>
-          <button className="ghost-button" onClick={() => onAddPort('input', component.id)}>
-            {t('addInputPort')}
-          </button>
-          <button className="ghost-button" onClick={() => onAddPort('output', component.id)}>
-            {t('addOutputPort')}
-          </button>
-          <button className="ghost-button" onClick={onAnnotation}>
-            {t('addNote')}
-          </button>
-        </div>
-        <div className="list">
-          {ports.map((port) => (
-            <div className="list-item" key={port.id}>
-              <strong>{port.name}</strong>
-              <span>{port.direction === 'input' ? t('input') : t('output')}</span>
+            <div className="form-grid">
+              <Field label={t('label')}>
+                <LabelAutocomplete
+                  value={selectedNetworkLine.source.label}
+                  suggestions={labelSuggestions}
+                  hint={t('labelHint')}
+                  onChange={(value) =>
+                    updateNetworkLine(selectedNetworkLine.id, {
+                      label: value,
+                    })
+                  }
+                />
+              </Field>
+              <Field label={t('orientation')}>
+                <select
+                  value={selectedNetworkLine.source.orientation ?? 'horizontal'}
+                  onChange={(event) =>
+                    updateNetworkLine(selectedNetworkLine.id, {
+                      orientation: event.target.value as NetworkLineOrientation,
+                    })
+                  }
+                >
+                  {(['horizontal', 'vertical'] as NetworkLineOrientation[]).map((orientation) => (
+                    <option key={orientation} value={orientation}>
+                      {t(orientation)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label={t('length')}>
+                <input
+                  type="number"
+                  min={120}
+                  value={selectedNetworkLine.source.length ?? 720}
+                  onChange={(event) =>
+                    updateNetworkLine(selectedNetworkLine.id, {
+                      length: Math.max(120, parseNumber(event.target.value, 720)),
+                    })
+                  }
+                />
+              </Field>
+              <Field label={t('positionX')}>
+                <input
+                  type="number"
+                  value={selectedNetworkLine.source.position.x}
+                  onChange={(event) =>
+                    updateNetworkLine(selectedNetworkLine.id, {
+                      position: {
+                        x: parseNumber(event.target.value, selectedNetworkLine.source.position.x),
+                        y: selectedNetworkLine.source.position.y,
+                      },
+                    })
+                  }
+                />
+              </Field>
+              <Field label={t('positionY')}>
+                <input
+                  type="number"
+                  value={selectedNetworkLine.source.position.y}
+                  onChange={(event) =>
+                    updateNetworkLine(selectedNetworkLine.id, {
+                      position: {
+                        x: selectedNetworkLine.source.position.x,
+                        y: parseNumber(event.target.value, selectedNetworkLine.source.position.y),
+                      },
+                    })
+                  }
+                />
+              </Field>
             </div>
-          ))}
-          {!ports.length && <p className="muted-copy">{t('noPortsYet')}</p>}
-        </div>
-      </div>
-    </div>
-  )
-}
+          </section>
+        )}
 
-function PortInspector({
-  port,
-  locale,
-  onPortChange,
-  onAnnotation,
-}: {
-  port: PortEntity
-  locale: 'zh-CN' | 'en-US'
-  onPortChange: (id: string, patch: Partial<PortEntity>) => void
-  onAnnotation: () => void
-}) {
-  const t = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) =>
-    translate(locale, key, params)
-  const rectangleAnchor =
-    port.anchor.kind === 'rectangle-side' ? port.anchor : null
-  const circleAnchor = port.anchor.kind === 'circle-angle' ? port.anchor : null
-  const triangleAnchor =
-    port.anchor.kind === 'triangle-edge' ? port.anchor : null
-
-  return (
-    <div className="panel__body">
-      <div className="form-grid">
-        <Field label={t('name')}>
-          <input
-            value={port.name}
-            onChange={(event) => onPortChange(port.id, { name: event.target.value })}
-          />
-        </Field>
-        <Field label={t('portDirection')}>
-          <select
-            value={port.direction}
-            onChange={(event) =>
-              onPortChange(port.id, {
-                direction: event.target.value as PortEntity['direction'],
-              })
-            }
-          >
-            <option value="input">{t('input')}</option>
-            <option value="output">{t('output')}</option>
-          </select>
-        </Field>
-        <Field label={t('pinNumber')}>
-          <input
-            value={port.pinInfo?.number ?? ''}
-            onChange={(event) =>
-              onPortChange(port.id, {
-                pinInfo: {
-                  ...port.pinInfo,
-                  number: event.target.value,
-                },
-              })
-            }
-          />
-        </Field>
-        <Field label={t('pinLabel')}>
-          <input
-            value={port.pinInfo?.label ?? ''}
-            onChange={(event) =>
-              onPortChange(port.id, {
-                pinInfo: {
-                  ...port.pinInfo,
-                  label: event.target.value,
-                },
-              })
-            }
-          />
-        </Field>
-        <Field label={t('description')}>
-          <textarea
-            rows={3}
-            value={port.description ?? ''}
-            onChange={(event) =>
-              onPortChange(port.id, { description: event.target.value })
-            }
-          />
-        </Field>
-
-        {rectangleAnchor && (
+        {activeDevice && (
           <>
-            <Field label={t('side')}>
-              <select
-                value={rectangleAnchor.side}
-                onChange={(event) =>
-                  onPortChange(port.id, {
-                    anchor: {
-                      kind: 'rectangle-side',
-                      side: event.target.value as typeof rectangleAnchor.side,
-                      offset: rectangleAnchor.offset,
-                    },
-                  })
-                }
-              >
-                <option value="top">{t('top')}</option>
-                <option value="right">{t('right')}</option>
-                <option value="bottom">{t('bottom')}</option>
-                <option value="left">{t('left')}</option>
-              </select>
-            </Field>
-            <Field label={t('offset')}>
-              <input
-                type="number"
-                min={0}
-                max={1}
-                step={0.05}
-                value={rectangleAnchor.offset}
-                onChange={(event) =>
-                  onPortChange(port.id, {
-                    anchor: {
-                      kind: 'rectangle-side',
-                      side: rectangleAnchor.side,
-                      offset: parseNumber(event.target.value, rectangleAnchor.offset),
-                    },
-                  })
-                }
+            <section className="inspector-section">
+              <div className="inspector-section__header">
+                <span className="eyebrow">{t('terminals')}</span>
+                <button
+                  className="ghost-button"
+                  onClick={() => (focusedDeviceId === activeDevice.id ? clearFocus() : focusDevice(activeDevice.id))}
+                >
+                  {focusedDeviceId === activeDevice.id ? t('exitFocus') : t('focus')}
+                </button>
+              </div>
+
+              {activeTerminal ? (
+                <div className="inspector-stack">
+                  <div className="form-grid">
+                    <Field label={t('label')}>
+                      <LabelAutocomplete
+                        value={activeTerminal.label ?? ''}
+                        suggestions={labelSuggestions}
+                        hint={t('labelHint')}
+                        onChange={(value) =>
+                          updateTerminal(activeDevice.id, activeTerminal.id, {
+                            label: value,
+                          })
+                        }
+                      />
+                    </Field>
+                    <Field label={t('focusNetwork')}>
+                      <button
+                        className="ghost-button"
+                        disabled={!activeTerminal.label?.trim()}
+                        onClick={() => {
+                          const label = activeTerminal.label?.trim()
+                          if (!label) {
+                            return
+                          }
+                          if (focusedLabelKey === label) {
+                            clearFocus()
+                          } else {
+                            focusLabel(label)
+                          }
+                        }}
+                      >
+                        {focusedLabelKey === activeTerminal.label?.trim() ? t('exitFocus') : t('focusNetwork')}
+                      </button>
+                    </Field>
+                    <Field label={t('direction')}>
+                      <select
+                        value={activeTerminal.direction}
+                        onChange={(event) =>
+                          updateTerminal(activeDevice.id, activeTerminal.id, {
+                            direction: event.target.value as TerminalDirection,
+                          })
+                        }
+                      >
+                        {(
+                          [
+                            'input',
+                            'output',
+                            'bidirectional',
+                            'passive',
+                            'power-in',
+                            'power-out',
+                            'ground',
+                            'shield',
+                            'unspecified',
+                          ] as TerminalDirection[]
+                        ).map((direction) => (
+                          <option key={direction} value={direction}>
+                            {t(direction)}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label={t('name')}>
+                      <input
+                        value={activeTerminal.name}
+                        onChange={(event) =>
+                          updateTerminal(activeDevice.id, activeTerminal.id, {
+                            name: event.target.value,
+                          })
+                        }
+                      />
+                    </Field>
+                    <Field label={t('side')}>
+                      <select
+                        value={activeTerminal.side ?? 'auto'}
+                        onChange={(event) =>
+                          updateTerminal(activeDevice.id, activeTerminal.id, {
+                            side: event.target.value as TerminalSide,
+                          })
+                        }
+                      >
+                        {(['auto', 'left', 'right', 'top', 'bottom'] as TerminalSide[]).map((side) => (
+                          <option key={side} value={side}>
+                            {t(side)}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label={t('order')}>
+                      <input
+                        type="number"
+                        value={activeTerminal.order ?? 0}
+                        onChange={(event) =>
+                          updateTerminal(activeDevice.id, activeTerminal.id, {
+                            order: parseNumber(event.target.value, 0),
+                          })
+                        }
+                      />
+                    </Field>
+                    <Field label={t('required')}>
+                      <select
+                        value={activeTerminal.required ? 'yes' : 'no'}
+                        onChange={(event) =>
+                          updateTerminal(activeDevice.id, activeTerminal.id, {
+                            required: event.target.value === 'yes',
+                          })
+                        }
+                      >
+                        <option value="no">{t('hidden')}</option>
+                        <option value="yes">{t('enabled')}</option>
+                      </select>
+                    </Field>
+                    <Field label={t('pinNumber')}>
+                      <input
+                        value={activeTerminal.pin?.number ?? ''}
+                        onChange={(event) =>
+                          updateTerminal(activeDevice.id, activeTerminal.id, {
+                            pin: {
+                              ...(activeTerminal.pin ?? {}),
+                              number: event.target.value,
+                            },
+                          })
+                        }
+                      />
+                    </Field>
+                    <Field label={t('pinLabel')}>
+                      <input
+                        value={activeTerminal.pin?.name ?? ''}
+                        onChange={(event) =>
+                          updateTerminal(activeDevice.id, activeTerminal.id, {
+                            pin: {
+                              ...(activeTerminal.pin ?? {}),
+                              name: event.target.value,
+                            },
+                          })
+                        }
+                      />
+                    </Field>
+                    <Field label={t('description')}>
+                      <textarea
+                        rows={3}
+                        value={activeTerminal.description ?? ''}
+                        onChange={(event) =>
+                          updateTerminal(activeDevice.id, activeTerminal.id, {
+                            description: event.target.value,
+                          })
+                        }
+                      />
+                    </Field>
+                  </div>
+
+                  <div className="list">
+                    <div className="list-item">
+                      <strong>{t('usedLabels')}</strong>
+                      <span>{labelSuggestions.length}</span>
+                    </div>
+                    <div className="list-item">
+                      <strong>{t('labelMatches')}</strong>
+                      <span>{connectionMatches.length}</span>
+                    </div>
+                  </div>
+
+                  {connectionMatches.length > 0 && (
+                    <div className="entity-list">
+                      {connectionMatches.map((terminalId) => {
+                        const terminal = insights.terminalById[terminalId]
+                        const device = insights.deviceById[terminal.deviceId]
+                        return (
+                          <button
+                            className="entity-list__item"
+                            key={terminalId}
+                            onClick={() => setSelection({ entityType: 'terminal', id: terminalId })}
+                          >
+                            <strong>{device.reference}.{terminal.displayLabel}</strong>
+                            <span>{device.source.name}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="inspector-hint">{t('selectTerminalHint')}</p>
+              )}
+
+              <TerminalButtons
+                locale={locale}
+                onAddTerminal={(direction) => addTerminal(activeDevice.id, direction)}
               />
-            </Field>
+
+              <div className="entity-list">
+                {activeDevice.terminals.map((terminal) => (
+                  <button
+                    className={`entity-list__item${activeTerminal?.id === terminal.id ? ' is-active' : ''}`}
+                    key={terminal.id}
+                    onClick={() => setSelection({ entityType: 'terminal', id: terminal.id })}
+                  >
+                    <strong>{getTerminalDisplayLabel(terminal)}</strong>
+                    <span>{t(terminal.direction)}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="inspector-section">
+              <span className="eyebrow">{t('document')}</span>
+              <div className="form-grid">
+                <Field label={t('reference')}>
+                  <input
+                    value={activeDevice.reference ?? ''}
+                    onChange={(event) =>
+                      updateDevice(activeDevice.id, { reference: event.target.value })
+                    }
+                  />
+                </Field>
+                <Field label={t('name')}>
+                  <input
+                    value={activeDevice.name}
+                    onChange={(event) =>
+                      updateDevice(activeDevice.id, { name: event.target.value })
+                    }
+                  />
+                </Field>
+                <Field label={t('kind')}>
+                  <input
+                    value={activeDevice.kind}
+                    onChange={(event) =>
+                      updateDevice(activeDevice.id, { kind: event.target.value })
+                    }
+                  />
+                </Field>
+                <Field label={t('category')}>
+                  <input
+                    value={activeDevice.category ?? ''}
+                    onChange={(event) =>
+                      updateDevice(activeDevice.id, { category: event.target.value })
+                    }
+                  />
+                </Field>
+                <Field label={t('description')}>
+                  <textarea
+                    rows={3}
+                    value={activeDevice.description ?? ''}
+                    onChange={(event) =>
+                      updateDevice(activeDevice.id, { description: event.target.value })
+                    }
+                  />
+                </Field>
+                <Field label={t('tags')}>
+                  <input
+                    value={(activeDevice.tags ?? []).join(', ')}
+                    onChange={(event) =>
+                      updateDevice(activeDevice.id, { tags: parseTags(event.target.value) })
+                    }
+                  />
+                </Field>
+              </div>
+            </section>
+
+            <section className="inspector-section">
+              <span className="eyebrow">{t('canvasTitle')}</span>
+              <div className="form-grid">
+                <Field label={t('shape')}>
+                  <select
+                    value={document.view.devices?.[activeDevice.id]?.shape ?? 'rectangle'}
+                    onChange={(event) =>
+                      updateDeviceView(activeDevice.id, {
+                        shape: event.target.value as 'rectangle' | 'circle' | 'triangle',
+                      })
+                    }
+                  >
+                    <option value="rectangle">{t('rectangle')}</option>
+                    <option value="circle">{t('circle')}</option>
+                    <option value="triangle">{t('triangle')}</option>
+                  </select>
+                </Field>
+                <Field label={t('rotation')}>
+                  <input
+                    type="number"
+                    value={document.view.devices?.[activeDevice.id]?.rotationDeg ?? 0}
+                    onChange={(event) =>
+                      updateDeviceView(activeDevice.id, {
+                        rotationDeg: parseNumber(event.target.value, 0),
+                      })
+                    }
+                  />
+                </Field>
+                <Field label={t('positionX')}>
+                  <input
+                    type="number"
+                    value={document.view.devices?.[activeDevice.id]?.position?.x ?? 180}
+                    onChange={(event) =>
+                      updateDeviceView(activeDevice.id, {
+                        position: {
+                          x: parseNumber(event.target.value, 180),
+                          y: document.view.devices?.[activeDevice.id]?.position?.y ?? 180,
+                        },
+                      })
+                    }
+                  />
+                </Field>
+                <Field label={t('positionY')}>
+                  <input
+                    type="number"
+                    value={document.view.devices?.[activeDevice.id]?.position?.y ?? 180}
+                    onChange={(event) =>
+                      updateDeviceView(activeDevice.id, {
+                        position: {
+                          x: document.view.devices?.[activeDevice.id]?.position?.x ?? 180,
+                          y: parseNumber(event.target.value, 180),
+                        },
+                      })
+                    }
+                  />
+                </Field>
+                <Field label={t('width')}>
+                  <input
+                    type="number"
+                    value={document.view.devices?.[activeDevice.id]?.size?.width ?? 220}
+                    onChange={(event) =>
+                      updateDeviceView(activeDevice.id, {
+                        size: {
+                          width: parseNumber(event.target.value, 220),
+                          height: document.view.devices?.[activeDevice.id]?.size?.height ?? 136,
+                        },
+                      })
+                    }
+                  />
+                </Field>
+                <Field label={t('height')}>
+                  <input
+                    type="number"
+                    value={document.view.devices?.[activeDevice.id]?.size?.height ?? 136}
+                    onChange={(event) =>
+                      updateDeviceView(activeDevice.id, {
+                        size: {
+                          width: document.view.devices?.[activeDevice.id]?.size?.width ?? 220,
+                          height: parseNumber(event.target.value, 136),
+                        },
+                      })
+                    }
+                  />
+                </Field>
+              </div>
+              <p className="inspector-hint">{t('rotationHint')}</p>
+            </section>
           </>
         )}
-
-        {circleAnchor && (
-          <Field label={t('angle')}>
-            <input
-              type="number"
-              value={circleAnchor.angleDeg}
-              onChange={(event) =>
-                onPortChange(port.id, {
-                  anchor: {
-                    kind: 'circle-angle',
-                    angleDeg: parseNumber(event.target.value, circleAnchor.angleDeg),
-                  },
-                })
-              }
-            />
-          </Field>
-        )}
-
-        {triangleAnchor && (
-          <>
-            <Field label={t('edge')}>
-              <select
-                value={String(triangleAnchor.edgeIndex)}
-                onChange={(event) =>
-                  onPortChange(port.id, {
-                    anchor: {
-                      kind: 'triangle-edge',
-                      edgeIndex: Number(event.target.value) as 0 | 1 | 2,
-                      offset: triangleAnchor.offset,
-                    },
-                  })
-                }
-              >
-                <option value="0">0</option>
-                <option value="1">1</option>
-                <option value="2">2</option>
-              </select>
-            </Field>
-            <Field label={t('offset')}>
-              <input
-                type="number"
-                min={0}
-                max={1}
-                step={0.05}
-                value={triangleAnchor.offset}
-                onChange={(event) =>
-                  onPortChange(port.id, {
-                    anchor: {
-                      kind: 'triangle-edge',
-                      edgeIndex: triangleAnchor.edgeIndex,
-                      offset: parseNumber(event.target.value, triangleAnchor.offset),
-                    },
-                  })
-                }
-              />
-            </Field>
-          </>
-        )}
       </div>
-
-      <div className="inspector-card">
-        <button className="ghost-button" onClick={onAnnotation}>
-          {t('addSignalAnnotation')}
-        </button>
-      </div>
-    </div>
+    </aside>
   )
 }

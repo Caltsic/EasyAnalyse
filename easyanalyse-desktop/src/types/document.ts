@@ -1,4 +1,4 @@
-export type EntityType = 'document' | 'device' | 'terminal' | 'networkLine'
+export type EntityType = 'document' | 'device' | 'deviceGroup' | 'terminal' | 'networkLine'
 
 export type DocumentFormat = 'semantic-v4' | 'unknown'
 
@@ -66,6 +66,7 @@ export interface TerminalDefinition {
   name: string
   label?: string
   direction: TerminalDirection
+  logicalDirection?: TerminalDirection
   role?: string
   description?: string
   pin?: TerminalPin
@@ -73,6 +74,17 @@ export interface TerminalDefinition {
   side?: TerminalSide
   order?: number
   extensions?: ExtensionsMap
+}
+
+export interface DeviceProperties extends ExtensionsMap {
+  value?: string
+  voltage?: string
+  outputVoltage?: string
+  nominalVoltage?: string
+  frequency?: string
+  partNumber?: string
+  package?: string
+  topology?: string
 }
 
 export interface DeviceDefinition {
@@ -83,7 +95,7 @@ export interface DeviceDefinition {
   description?: string
   reference?: string
   tags?: string[]
-  properties?: ExtensionsMap
+  properties?: DeviceProperties
   terminals: TerminalDefinition[]
   extensions?: ExtensionsMap
 }
@@ -159,9 +171,25 @@ export interface SaveDocumentResult {
   report: ValidationReport
 }
 
-export interface EditorSelection {
-  entityType: EntityType
-  id?: string
-}
+export type EditorSelection =
+  | {
+      entityType: 'document'
+    }
+  | {
+      entityType: 'device'
+      id: string
+    }
+  | {
+      entityType: 'deviceGroup'
+      ids: string[]
+    }
+  | {
+      entityType: 'terminal'
+      id: string
+    }
+  | {
+      entityType: 'networkLine'
+      id: string
+    }
 
 export type Locale = 'zh-CN' | 'en-US'

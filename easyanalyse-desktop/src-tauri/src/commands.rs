@@ -1,7 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use easyanalyse_core::{CoreError, DocumentFile, ValidationReport, default_document, validate_value};
+use easyanalyse_core::{
+    default_document, validate_value, CoreError, DocumentFile, ValidationReport,
+};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -50,6 +52,9 @@ pub fn open_document_from_path(path: String) -> Result<OpenDocumentResult, Strin
 #[tauri::command]
 pub fn save_document_to_path(path: String, document: Value) -> Result<SaveDocumentResult, String> {
     let report = validate_value(document).map_err(error_to_string)?;
+    if !report.schema_valid || !report.semantic_valid {
+        return Err(validation_summary(&report));
+    }
     let final_path = ensure_json_extension(Path::new(&path));
     let normalized = report
         .normalized_document

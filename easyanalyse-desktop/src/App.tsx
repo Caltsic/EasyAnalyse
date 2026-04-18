@@ -1,8 +1,9 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { CanvasView } from './components/CanvasView'
 import { Inspector } from './components/Inspector'
 import { CloudBackground } from './components/layout/CloudBackground'
+import { getDeviceTemplateOptions, type DeviceVisualKind } from './lib/deviceSymbols'
 import { translate } from './lib/i18n'
 import { useEditorStore } from './store/editorStore'
 
@@ -17,12 +18,14 @@ function isEditableTarget(target: EventTarget | null) {
 }
 
 function App() {
+  const [deviceTemplateKey, setDeviceTemplateKey] = useState<DeviceVisualKind>('module')
   const document = useEditorStore((state) => state.document)
   const filePath = useEditorStore((state) => state.filePath)
   const dirty = useEditorStore((state) => state.dirty)
   const locale = useEditorStore((state) => state.locale)
   const validationReport = useEditorStore((state) => state.validationReport)
   const statusMessage = useEditorStore((state) => state.statusMessage)
+  const pendingDeviceShape = useEditorStore((state) => state.pendingDeviceShape)
   const initialize = useEditorStore((state) => state.initialize)
   const newDocument = useEditorStore((state) => state.newDocument)
   const openDocument = useEditorStore((state) => state.openDocument)
@@ -34,6 +37,7 @@ function App() {
   const undo = useEditorStore((state) => state.undo)
   const redo = useEditorStore((state) => state.redo)
   const clearFocus = useEditorStore((state) => state.clearFocus)
+  const cancelPendingDevicePlacement = useEditorStore((state) => state.cancelPendingDevicePlacement)
   const resetViewportToOrigin = useEditorStore((state) => state.resetViewportToOrigin)
   const rotateSelection = useEditorStore((state) => state.rotateSelection)
 
@@ -113,6 +117,10 @@ function App() {
       }
 
       if (event.key === 'Escape') {
+        if (pendingDeviceShape) {
+          cancelPendingDevicePlacement()
+          return
+        }
         clearFocus()
       }
     }
@@ -120,10 +128,12 @@ function App() {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [
+    cancelPendingDevicePlacement,
     clearFocus,
     deleteSelection,
     newDocument,
     openDocument,
+    pendingDeviceShape,
     redo,
     resetViewportToOrigin,
     rotateSelection,
@@ -142,6 +152,7 @@ function App() {
   const healthy = validationReport
     ? validationReport.schemaValid && validationReport.semanticValid
     : true
+  const deviceTemplateOptions = useMemo(() => getDeviceTemplateOptions(), [])
 
   return (
     <div className="shell">
@@ -175,7 +186,19 @@ function App() {
             <button className="ghost-button" onClick={() => void revalidate()}>
               {t('revalidate')}
             </button>
-            <button className="ghost-button" onClick={() => addDevice()}>
+            <select
+              className="topbar__template-select"
+              aria-label="Device template"
+              value={deviceTemplateKey}
+              onChange={(event) => setDeviceTemplateKey(event.target.value as DeviceVisualKind)}
+            >
+              {deviceTemplateOptions.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <button className="ghost-button" onClick={() => addDevice(deviceTemplateKey)}>
               {t('addDevice')}
             </button>
           </div>

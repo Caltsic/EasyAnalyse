@@ -77,6 +77,8 @@ pub struct TerminalDefinition {
     pub label: Option<String>,
     pub direction: TerminalDirection,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logical_direction: Option<TerminalDirection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,

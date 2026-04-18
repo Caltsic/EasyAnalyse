@@ -7,8 +7,9 @@ use serde_json::Value;
 use thiserror::Error;
 
 use crate::{
-    CanvasViewDefinition, DocumentFile, DocumentMeta, DocumentSource, FocusDirection,
-    FocusViewDefinition, GridDefinition, TerminalDirection, TerminalSide, ViewDefinition,
+    CanvasViewDefinition, DeviceDefinition, DocumentFile, DocumentMeta, DocumentSource,
+    FocusDirection, FocusViewDefinition, GridDefinition, TerminalDefinition, TerminalDirection,
+    TerminalSide, ViewDefinition,
 };
 
 static SCHEMA_JSON: Lazy<Value> = Lazy::new(|| {
@@ -172,6 +173,7 @@ pub fn normalize_document(document: &mut DocumentFile) {
             device.description = clean_optional(device.description);
             device.reference = clean_optional(device.reference);
             device.tags = Some(unique_non_empty(device.tags.take().unwrap_or_default()));
+            normalize_properties(&mut device.properties);
 
             let mut terminals = device
                 .terminals
@@ -181,8 +183,8 @@ pub fn normalize_document(document: &mut DocumentFile) {
                     terminal.label = clean_optional(terminal.label);
                     terminal.role = clean_optional(terminal.role);
                     terminal.description = clean_optional(terminal.description);
-                    terminal.side =
-                        Some(terminal.side.unwrap_or_else(|| default_side(&terminal.direction)));
+                    let default_terminal_side = default_side_for_terminal(&terminal);
+                    terminal.side = Some(terminal.side.unwrap_or(default_terminal_side));
                     terminal
                 })
                 .collect::<Vec<_>>();
@@ -259,7 +261,7 @@ fn validate_schema(value: &Value) -> Result<Vec<ValidationIssue>, CoreError> {
 fn validate_semantics(document: &DocumentFile) -> Vec<ValidationIssue> {
     let mut issues = Vec::new();
     let mut ids = BTreeSet::new();
-    let mut label_usage = BTreeMap::<String, Vec<(String, TerminalDirection)>>::new();
+    let mut label_usage = BTreeMap::<String, Vec<(&DeviceDefinition, &TerminalDefinition)>>::new();
 
     push_unique_id_issue(&mut issues, &mut ids, &document.document.id);
 
@@ -290,6 +292,8 @@ fn validate_semantics(document: &DocumentFile) -> Vec<ValidationIssue> {
             ));
         }
 
+        validate_device_parameters(device, &mut issues);
+
         for terminal in &device.terminals {
             push_unique_id_issue(&mut issues, &mut ids, &terminal.id);
 
@@ -305,7 +309,7 @@ fn validate_semantics(document: &DocumentFile) -> Vec<ValidationIssue> {
                 label_usage
                     .entry(label)
                     .or_default()
-                    .push((terminal.id.clone(), terminal.direction.clone()));
+                    .push((device, terminal));
             } else if terminal.required.unwrap_or(false) {
                 issues.push(semantic_warning(
                     "semantic.terminal.requiredUnlabeled",
@@ -316,21 +320,8 @@ fn validate_semantics(document: &DocumentFile) -> Vec<ValidationIssue> {
         }
     }
 
-    for (label, members) in label_usage {
-        let output_like_count = members
-            .iter()
-            .filter(|(_, direction)| {
-                matches!(direction, TerminalDirection::Output | TerminalDirection::PowerOut)
-            })
-            .count();
-
-        if output_like_count > 1 {
-            issues.push(semantic_warning(
-                "semantic.label.direction.multipleOutputs",
-                format!("Connection label {} contains multiple output-like terminals", label),
-                None,
-            ));
-        }
+    for (label, members) in &label_usage {
+        validate_power_label(label, members, &mut issues);
     }
 
     if let Some(view_devices) = &document.view.devices {
@@ -405,6 +396,198 @@ fn normalize_label(value: Option<&str>) -> Option<String> {
     })
 }
 
+fn collapse_terminal_direction_value(direction: &TerminalDirection) -> Option<TerminalDirection> {
+    match direction {
+        TerminalDirection::Input | TerminalDirection::Ground | TerminalDirection::PowerIn => {
+            Some(TerminalDirection::Input)
+        }
+        TerminalDirection::Output | TerminalDirection::PowerOut => Some(TerminalDirection::Output),
+        TerminalDirection::Bidirectional
+        | TerminalDirection::Passive
+        | TerminalDirection::Shield
+        | TerminalDirection::Unspecified => None,
+    }
+}
+
+fn terminal_flow_direction(terminal: &TerminalDefinition) -> Option<TerminalDirection> {
+    terminal
+        .logical_direction
+        .as_ref()
+        .and_then(collapse_terminal_direction_value)
+        .or_else(|| collapse_terminal_direction_value(&terminal.direction))
+}
+
+fn validate_device_parameters(device: &DeviceDefinition, issues: &mut Vec<ValidationIssue>) {
+    if requires_device_value(device)
+        && !has_non_empty_property(device, &["value", "resistance", "capacitance", "inductance"])
+    {
+        issues.push(semantic_issue(
+            "semantic.device.value.missing",
+            format!(
+                "Device {} ({}) must declare a concrete electrical value",
+                device.id, device.kind
+            ),
+            Some(device.id.clone()),
+        ));
+    }
+
+    if requires_device_frequency(device) && !has_non_empty_property(device, &["frequency", "value"])
+    {
+        issues.push(semantic_issue(
+            "semantic.device.frequency.missing",
+            format!(
+                "Device {} ({}) must declare a concrete frequency",
+                device.id, device.kind
+            ),
+            Some(device.id.clone()),
+        ));
+    }
+}
+
+fn validate_power_label(
+    label: &str,
+    members: &[(&DeviceDefinition, &TerminalDefinition)],
+    issues: &mut Vec<ValidationIssue>,
+) {
+    if !is_power_like_label(label, members) || is_ground_like_label(label) {
+        return;
+    }
+
+    if is_explicit_voltage_label(label) || has_concrete_voltage_source(members) {
+        return;
+    }
+
+    issues.push(semantic_issue(
+        "semantic.label.powerVoltage.missing",
+        format!(
+            "Power label {} must resolve to a concrete voltage via the label itself or a sourcing device property",
+            label
+        ),
+        None,
+    ));
+}
+
+fn is_power_like_label(label: &str, members: &[(&DeviceDefinition, &TerminalDefinition)]) -> bool {
+    let normalized = label.trim().to_ascii_uppercase();
+    if normalized.is_empty() {
+        return false;
+    }
+
+    is_ground_like_label(&normalized)
+        || normalized == "VCC"
+        || normalized == "VDD"
+        || normalized == "VBAT"
+        || normalized.contains("VREF")
+        || (normalized == "VIN"
+            && members.iter().any(|(device, _)| {
+                has_non_empty_property(device, &["voltage", "outputVoltage", "nominalVoltage"])
+                    || normalized_device_haystack(device).contains("power")
+                    || normalized_device_haystack(device).contains("supply")
+                    || normalized_device_haystack(device).contains("regulator")
+                    || normalized_device_haystack(device).contains("battery")
+            }))
+        || is_explicit_voltage_label(&normalized)
+}
+
+fn is_ground_like_label(label: &str) -> bool {
+    matches!(label.trim().to_ascii_uppercase().as_str(), "GND" | "AGND" | "DGND" | "PGND" | "VSS")
+}
+
+fn requires_device_value(device: &DeviceDefinition) -> bool {
+    let kind = normalized_device_haystack(device);
+    let reference = normalized_reference(device);
+
+    reference.starts_with('R')
+        || reference.starts_with('C')
+        || reference.starts_with('L')
+        || kind.contains("resistor")
+        || kind.contains("capacitor")
+        || kind.contains("inductor")
+        || kind.contains("ferrite")
+        || kind.contains("bead")
+        || kind.contains("thermistor")
+        || kind.contains("varistor")
+}
+
+fn requires_device_frequency(device: &DeviceDefinition) -> bool {
+    let kind = normalized_device_haystack(device);
+    let reference = normalized_reference(device);
+
+    reference.starts_with('Y')
+        || kind.contains("crystal")
+        || kind.contains("oscillator")
+        || kind.contains("resonator")
+        || kind.contains("clock")
+}
+
+fn normalized_device_haystack(device: &DeviceDefinition) -> String {
+    let mut parts = vec![
+        device.kind.as_str(),
+        device.name.as_str(),
+        device.category.as_deref().unwrap_or(""),
+        device.reference.as_deref().unwrap_or(""),
+    ]
+    .into_iter()
+    .map(str::trim)
+    .filter(|value| !value.is_empty())
+    .map(str::to_lowercase)
+    .collect::<Vec<_>>();
+
+    if let Some(tags) = &device.tags {
+        parts.extend(
+            tags.iter()
+                .map(|tag| tag.trim().to_lowercase())
+                .filter(|tag| !tag.is_empty()),
+        );
+    }
+
+    parts.join(" ")
+}
+
+fn normalized_reference(device: &DeviceDefinition) -> String {
+    device
+        .reference
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_uppercase()
+}
+
+fn has_non_empty_property(device: &DeviceDefinition, keys: &[&str]) -> bool {
+    let Some(properties) = &device.properties else {
+        return false;
+    };
+
+    keys.iter().any(|key| {
+        properties
+            .get(*key)
+            .and_then(|value| value.as_str())
+            .map(|text| !text.trim().is_empty())
+            .unwrap_or(false)
+    })
+}
+
+fn has_concrete_voltage_source(members: &[(&DeviceDefinition, &TerminalDefinition)]) -> bool {
+    members.iter().any(|(device, terminal)| {
+        terminal_flow_direction(terminal) == Some(TerminalDirection::Output)
+            && has_non_empty_property(device, &["voltage", "outputVoltage", "nominalVoltage"])
+    })
+}
+
+fn is_explicit_voltage_label(label: &str) -> bool {
+    let normalized = label.trim().to_uppercase();
+    if normalized.is_empty() {
+        return false;
+    }
+
+    let compact = normalized.replace('_', "").replace('-', "");
+    if compact.starts_with('+') || compact.starts_with('-') {
+        return compact[1..].contains('V') || compact.ends_with("V") || compact.ends_with("MV");
+    }
+
+    compact.chars().any(|ch| ch.is_ascii_digit()) && compact.contains('V')
+}
+
 fn ensure_required_string(value: &str, fallback: &str) -> String {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -425,6 +608,29 @@ fn clean_optional(value: Option<String>) -> Option<String> {
     })
 }
 
+fn normalize_properties(properties: &mut Option<crate::Properties>) {
+    let Some(properties_map) = properties.as_mut() else {
+        return;
+    };
+
+    properties_map.retain(|_, value| match value {
+        Value::String(text) => {
+            let trimmed = text.trim().to_string();
+            if trimmed.is_empty() {
+                return false;
+            }
+
+            *text = trimmed;
+            true
+        }
+        _ => true,
+    });
+
+    if properties_map.is_empty() {
+        *properties = None;
+    }
+}
+
 fn unique_non_empty(values: Vec<String>) -> Vec<String> {
     let mut set = BTreeSet::new();
     for value in values {
@@ -436,16 +642,11 @@ fn unique_non_empty(values: Vec<String>) -> Vec<String> {
     set.into_iter().collect()
 }
 
-fn default_side(direction: &TerminalDirection) -> TerminalSide {
-    match direction {
-        TerminalDirection::Input | TerminalDirection::PowerIn | TerminalDirection::Ground => {
-            TerminalSide::Left
-        }
-        TerminalDirection::Output | TerminalDirection::PowerOut => TerminalSide::Right,
-        TerminalDirection::Bidirectional => TerminalSide::Top,
-        TerminalDirection::Passive
-        | TerminalDirection::Shield
-        | TerminalDirection::Unspecified => TerminalSide::Bottom,
+fn default_side_for_terminal(terminal: &TerminalDefinition) -> TerminalSide {
+    if terminal_flow_direction(terminal) == Some(TerminalDirection::Output) {
+        TerminalSide::Right
+    } else {
+        TerminalSide::Left
     }
 }
 
@@ -533,7 +734,8 @@ mod tests {
                         id: "terminal.mcu.scl".into(),
                         name: "I2C1_SCL".into(),
                         label: Some("SCL".into()),
-                        direction: TerminalDirection::Bidirectional,
+                        direction: TerminalDirection::Output,
+                        logical_direction: None,
                         role: None,
                         description: None,
                         pin: None,
@@ -558,6 +760,7 @@ mod tests {
                         name: "SCL".into(),
                         label: Some("SCL".into()),
                         direction: TerminalDirection::Input,
+                        logical_direction: None,
                         role: None,
                         description: None,
                         pin: None,
@@ -620,7 +823,7 @@ mod tests {
         assert_eq!(document.document.tags.unwrap(), vec!["logic"]);
         assert!(matches!(
             document.devices[0].terminals[0].side,
-            Some(TerminalSide::Top)
+            Some(TerminalSide::Right)
         ));
     }
 
@@ -634,6 +837,78 @@ mod tests {
         assert!(issues
             .iter()
             .any(|issue| issue.code == "semantic.terminal.requiredUnlabeled"));
+    }
+
+    #[test]
+    fn errors_when_component_value_is_missing() {
+        let mut document = sample_document();
+        document.devices.push(DeviceDefinition {
+            id: "device.r1".into(),
+            name: "Pull-up".into(),
+            kind: "resistor".into(),
+            category: None,
+            description: None,
+            reference: Some("R1".into()),
+            tags: Some(Vec::new()),
+            terminals: vec![],
+            properties: None,
+            extensions: None,
+        });
+
+        let issues = validate_semantics(&document);
+
+        assert!(issues
+            .iter()
+            .any(|issue| issue.code == "semantic.device.value.missing"));
+    }
+
+    #[test]
+    fn errors_when_power_label_has_no_concrete_voltage() {
+        let value = json!({
+            "schemaVersion": "4.0.0",
+            "document": {
+                "id": "doc.power-demo",
+                "title": "Power Demo"
+            },
+            "devices": [{
+                "id": "device.source",
+                "name": "Power Header",
+                "kind": "connector",
+                "reference": "J1",
+                "terminals": [{
+                    "id": "terminal.source.vcc",
+                    "name": "POWER_OUT_1_J1",
+                    "label": "VCC",
+                    "direction": "output"
+                }]
+            }, {
+                "id": "device.load",
+                "name": "Amplifier",
+                "kind": "op-amp",
+                "reference": "U1",
+                "terminals": [{
+                    "id": "terminal.load.vcc",
+                    "name": "POWER_IN_1_U1",
+                    "label": "VCC",
+                    "direction": "input"
+                }]
+            }],
+            "view": {
+                "canvas": {
+                    "units": "px",
+                    "grid": { "enabled": true, "size": 36, "majorEvery": 5 },
+                    "background": "grid"
+                }
+            }
+        });
+
+        let document = serde_json::from_value::<DocumentFile>(value).expect("document should parse");
+
+        let issues = validate_semantics(&document);
+
+        assert!(issues
+            .iter()
+            .any(|issue| issue.code == "semantic.label.powerVoltage.missing"));
     }
 
     #[test]
@@ -652,7 +927,7 @@ mod tests {
                     "id": "terminal.mcu.scl",
                     "name": "SCL",
                     "label": "SCL",
-                    "direction": "bidirectional"
+                    "direction": "output"
                 }]
             }],
             "view": {
@@ -673,6 +948,70 @@ mod tests {
     }
 
     #[test]
+    fn preserves_extended_terminal_directions_and_logical_direction() {
+        let value = json!({
+            "schemaVersion": "4.0.0",
+            "document": {
+                "id": "doc.legacy",
+                "title": "Legacy"
+            },
+            "devices": [{
+                "id": "device.r1",
+                "name": "Divider Resistor",
+                "kind": "resistor",
+                "reference": "R1",
+                "terminals": [{
+                    "id": "terminal.r1.a",
+                    "name": "PASSIVE_1_R1",
+                    "label": "VIN",
+                    "direction": "passive",
+                    "logicalDirection": "input",
+                    "order": 0
+                }, {
+                    "id": "terminal.r1.b",
+                    "name": "PASSIVE_2_R1",
+                    "label": "DIV_OUT",
+                    "direction": "passive",
+                    "logicalDirection": "output",
+                    "order": 1
+                }, {
+                    "id": "terminal.r1.sda",
+                    "name": "SDA",
+                    "label": "SDA",
+                    "direction": "bidirectional",
+                    "logicalDirection": "output",
+                    "side": "top",
+                    "order": 2
+                }],
+                "properties": {
+                    "value": "10k"
+                }
+            }],
+            "view": {
+                "canvas": {
+                    "units": "px",
+                    "grid": { "enabled": true, "size": 36, "majorEvery": 5 },
+                    "background": "grid"
+                }
+            }
+        });
+
+        let mut document = serde_json::from_value::<DocumentFile>(value).expect("legacy document should parse");
+        normalize_document(&mut document);
+
+        let terminals = &document.devices[0].terminals;
+        assert_eq!(terminals[0].direction, TerminalDirection::Passive);
+        assert_eq!(terminals[0].logical_direction, Some(TerminalDirection::Input));
+        assert_eq!(terminals[0].side, Some(TerminalSide::Left));
+        assert_eq!(terminals[1].direction, TerminalDirection::Passive);
+        assert_eq!(terminals[1].logical_direction, Some(TerminalDirection::Output));
+        assert_eq!(terminals[1].side, Some(TerminalSide::Right));
+        assert_eq!(terminals[2].direction, TerminalDirection::Bidirectional);
+        assert_eq!(terminals[2].logical_direction, Some(TerminalDirection::Output));
+        assert_eq!(terminals[2].side, Some(TerminalSide::Right));
+    }
+
+    #[test]
     fn bundled_examples_validate() {
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let repo_root = manifest_dir
@@ -683,8 +1022,12 @@ mod tests {
         for relative in [
             "testJson/semantic-v4-demo.json",
             "testJson/butterworth-4th-order-lowpass.json",
+            "testJson/lm358-noninverting-amplifier.json",
+            "testJson/rc-low-pass-filter.json",
+            "testJson/resistor-voltage-divider.json",
             "testJson/ripple-carry-adder-4bit.json",
             "testJson/stm32f103c8t6-minimum-system.json",
+            "testJson/stm32f103-pwm-motor-driver-18v.json",
         ] {
             let path = repo_root.join(relative);
             let content =

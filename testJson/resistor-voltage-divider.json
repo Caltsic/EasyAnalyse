@@ -19,20 +19,23 @@
       "name": "Input Terminal",
       "kind": "connector",
       "reference": "J1",
+      "properties": {
+        "voltage": "12V"
+      },
       "terminals": [
         {
           "id": "terminal.input.vin",
-          "name": "POWER_OUT_1_J1",
+          "name": "OUTPUT_1_J1",
           "label": "VIN",
-          "direction": "power-out",
+          "direction": "output",
           "side": "right",
           "order": 0
         },
         {
           "id": "terminal.input.gnd",
-          "name": "GROUND_1_J1",
+          "name": "INPUT_1_J1",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "bottom",
           "order": 1
         }
@@ -52,6 +55,7 @@
           "name": "PASSIVE_1_R1",
           "label": "VIN",
           "direction": "passive",
+          "logicalDirection": "input",
           "side": "left",
           "order": 0
         },
@@ -60,6 +64,7 @@
           "name": "PASSIVE_2_R1",
           "label": "DIV_OUT",
           "direction": "passive",
+          "logicalDirection": "output",
           "side": "right",
           "order": 1
         }
@@ -108,9 +113,9 @@
         },
         {
           "id": "terminal.adc.gnd",
-          "name": "GROUND_1_J2",
+          "name": "INPUT_2_J2",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "bottom",
           "order": 1
         }

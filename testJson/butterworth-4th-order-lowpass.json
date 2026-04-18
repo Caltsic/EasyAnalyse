@@ -33,9 +33,9 @@
         },
         {
           "id": "terminal.input.gnd",
-          "name": "GROUND_1_J1",
+          "name": "INPUT_1_J1",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "bottom",
           "order": 1
         }
@@ -60,9 +60,9 @@
         },
         {
           "id": "terminal.output.gnd",
-          "name": "GROUND_1_J2",
+          "name": "INPUT_2_J2",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "bottom",
           "order": 1
         }
@@ -79,17 +79,17 @@
       "terminals": [
         {
           "id": "terminal.power.vcc",
-          "name": "POWER_OUT_1_J3",
-          "label": "VCC",
-          "direction": "power-out",
+          "name": "OUTPUT_1_J3",
+          "label": "+12V",
+          "direction": "output",
           "side": "right",
           "order": 0
         },
         {
           "id": "terminal.power.gnd",
-          "name": "GROUND_1_J3",
+          "name": "INPUT_1_J3",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "bottom",
           "order": 1
         }
@@ -132,17 +132,17 @@
         },
         {
           "id": "terminal.u1a.vcc",
-          "name": "POWER_IN_1_U1A",
-          "label": "VCC",
-          "direction": "power-in",
+          "name": "INPUT_3_U1A",
+          "label": "+12V",
+          "direction": "input",
           "side": "top",
           "order": 0
         },
         {
           "id": "terminal.u1a.gnd",
-          "name": "GROUND_1_U1A",
+          "name": "INPUT_4_U1A",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "bottom",
           "order": 0
         }
@@ -185,17 +185,17 @@
         },
         {
           "id": "terminal.u1b.vcc",
-          "name": "POWER_IN_1_U1B",
-          "label": "VCC",
-          "direction": "power-in",
+          "name": "INPUT_3_U1B",
+          "label": "+12V",
+          "direction": "input",
           "side": "top",
           "order": 0
         },
         {
           "id": "terminal.u1b.gnd",
-          "name": "GROUND_1_U1B",
+          "name": "INPUT_4_U1B",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "bottom",
           "order": 0
         }
@@ -577,7 +577,7 @@
     },
     "networkLines": {
       "network.vcc": {
-        "label": "VCC",
+        "label": "+12V",
         "position": {
           "x": 1200,
           "y": 90

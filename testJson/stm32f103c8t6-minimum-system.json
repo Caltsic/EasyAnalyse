@@ -22,17 +22,17 @@
       "terminals": [
         {
           "id": "terminal.power.input.5v",
-          "name": "POWER_OUT_1_J1",
+          "name": "OUTPUT_1_J1",
           "label": "5V",
-          "direction": "power-out",
+          "direction": "output",
           "side": "right",
           "order": 0
         },
         {
           "id": "terminal.power.input.gnd",
-          "name": "GROUND_1_J1",
+          "name": "INPUT_1_J1",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "bottom",
           "order": 1
         }
@@ -49,25 +49,25 @@
       "terminals": [
         {
           "id": "terminal.regulator.vin",
-          "name": "POWER_IN_1_U2",
+          "name": "INPUT_1_U2",
           "label": "5V",
-          "direction": "power-in",
+          "direction": "input",
           "side": "left",
           "order": 0
         },
         {
           "id": "terminal.regulator.gnd",
-          "name": "GROUND_1_U2",
+          "name": "INPUT_2_U2",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "bottom",
           "order": 0
         },
         {
           "id": "terminal.regulator.vout",
-          "name": "POWER_OUT_1_U2",
+          "name": "OUTPUT_1_U2",
           "label": "3V3",
-          "direction": "power-out",
+          "direction": "output",
           "side": "right",
           "order": 0
         }
@@ -84,17 +84,17 @@
       "terminals": [
         {
           "id": "terminal.c1.a",
-          "name": "PASSIVE_1_C1",
+          "name": "INPUT_1_C1",
           "label": "5V",
-          "direction": "passive",
+          "direction": "input",
           "side": "left",
           "order": 0
         },
         {
           "id": "terminal.c1.b",
-          "name": "PASSIVE_2_C1",
+          "name": "OUTPUT_1_C1",
           "label": "GND",
-          "direction": "passive",
+          "direction": "output",
           "side": "right",
           "order": 1
         }
@@ -111,17 +111,17 @@
       "terminals": [
         {
           "id": "terminal.c2.a",
-          "name": "PASSIVE_1_C2",
+          "name": "INPUT_1_C2",
           "label": "3V3",
-          "direction": "passive",
+          "direction": "input",
           "side": "left",
           "order": 0
         },
         {
           "id": "terminal.c2.b",
-          "name": "PASSIVE_2_C2",
+          "name": "OUTPUT_1_C2",
           "label": "GND",
-          "direction": "passive",
+          "direction": "output",
           "side": "right",
           "order": 1
         }
@@ -138,17 +138,17 @@
       "terminals": [
         {
           "id": "terminal.c3.a",
-          "name": "PASSIVE_1_C3",
+          "name": "INPUT_1_C3",
           "label": "3V3",
-          "direction": "passive",
+          "direction": "input",
           "side": "left",
           "order": 0
         },
         {
           "id": "terminal.c3.b",
-          "name": "PASSIVE_2_C3",
+          "name": "OUTPUT_1_C3",
           "label": "GND",
-          "direction": "passive",
+          "direction": "output",
           "side": "right",
           "order": 1
         }
@@ -166,23 +166,23 @@
       "terminals": [
         {
           "id": "terminal.mcu.vdd",
-          "name": "POWER_IN_1_U1",
+          "name": "INPUT_1_U1",
           "label": "3V3",
-          "direction": "power-in",
+          "direction": "input",
           "side": "left",
           "order": 0
         },
         {
           "id": "terminal.mcu.vss",
-          "name": "GROUND_1_U1",
+          "name": "INPUT_2_U1",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "left",
           "order": 1
         },
         {
           "id": "terminal.mcu.nrst",
-          "name": "INPUT_1_U1",
+          "name": "INPUT_3_U1",
           "label": "NRST",
           "direction": "input",
           "side": "left",
@@ -190,7 +190,7 @@
         },
         {
           "id": "terminal.mcu.boot0",
-          "name": "INPUT_2_U1",
+          "name": "INPUT_4_U1",
           "label": "BOOT0",
           "direction": "input",
           "side": "left",
@@ -198,31 +198,31 @@
         },
         {
           "id": "terminal.mcu.hsein",
-          "name": "BIDIRECTIONAL_1_U1",
+          "name": "INPUT_5_U1",
           "label": "HSE_IN",
-          "direction": "bidirectional",
+          "direction": "input",
           "side": "top",
           "order": 0
         },
         {
           "id": "terminal.mcu.hseout",
-          "name": "BIDIRECTIONAL_2_U1",
+          "name": "OUTPUT_1_U1",
           "label": "HSE_OUT",
-          "direction": "bidirectional",
+          "direction": "output",
           "side": "top",
           "order": 1
         },
         {
           "id": "terminal.mcu.swdio",
-          "name": "BIDIRECTIONAL_3_U1",
+          "name": "OUTPUT_2_U1",
           "label": "SWDIO",
-          "direction": "bidirectional",
+          "direction": "output",
           "side": "right",
           "order": 0
         },
         {
           "id": "terminal.mcu.swclk",
-          "name": "INPUT_3_U1",
+          "name": "INPUT_6_U1",
           "label": "SWCLK",
           "direction": "input",
           "side": "right",
@@ -230,7 +230,7 @@
         },
         {
           "id": "terminal.mcu.uarttx",
-          "name": "OUTPUT_1_U1",
+          "name": "OUTPUT_3_U1",
           "label": "USART1_TX",
           "direction": "output",
           "side": "right",
@@ -238,7 +238,7 @@
         },
         {
           "id": "terminal.mcu.uartrx",
-          "name": "INPUT_4_U1",
+          "name": "INPUT_7_U1",
           "label": "USART1_RX",
           "direction": "input",
           "side": "right",
@@ -257,17 +257,17 @@
       "terminals": [
         {
           "id": "terminal.r1.a",
-          "name": "PASSIVE_1_R1",
+          "name": "INPUT_1_R1",
           "label": "3V3",
-          "direction": "passive",
+          "direction": "input",
           "side": "left",
           "order": 0
         },
         {
           "id": "terminal.r1.b",
-          "name": "PASSIVE_2_R1",
+          "name": "INPUT_2_R1",
           "label": "NRST",
-          "direction": "passive",
+          "direction": "input",
           "side": "right",
           "order": 1
         }
@@ -281,17 +281,17 @@
       "terminals": [
         {
           "id": "terminal.sw1.a",
-          "name": "PASSIVE_1_SW1",
+          "name": "INPUT_1_SW1",
           "label": "NRST",
-          "direction": "passive",
+          "direction": "input",
           "side": "left",
           "order": 0
         },
         {
           "id": "terminal.sw1.b",
-          "name": "PASSIVE_2_SW1",
+          "name": "OUTPUT_1_SW1",
           "label": "GND",
-          "direction": "passive",
+          "direction": "output",
           "side": "right",
           "order": 1
         }
@@ -308,17 +308,17 @@
       "terminals": [
         {
           "id": "terminal.r2.a",
-          "name": "PASSIVE_1_R2",
+          "name": "INPUT_1_R2",
           "label": "BOOT0",
-          "direction": "passive",
+          "direction": "input",
           "side": "left",
           "order": 0
         },
         {
           "id": "terminal.r2.b",
-          "name": "PASSIVE_2_R2",
+          "name": "OUTPUT_1_R2",
           "label": "GND",
-          "direction": "passive",
+          "direction": "output",
           "side": "right",
           "order": 1
         }
@@ -335,17 +335,17 @@
       "terminals": [
         {
           "id": "terminal.y1.a",
-          "name": "PASSIVE_1_Y1",
+          "name": "INPUT_1_Y1",
           "label": "HSE_IN",
-          "direction": "passive",
+          "direction": "input",
           "side": "left",
           "order": 0
         },
         {
           "id": "terminal.y1.b",
-          "name": "PASSIVE_2_Y1",
+          "name": "OUTPUT_1_Y1",
           "label": "HSE_OUT",
-          "direction": "passive",
+          "direction": "output",
           "side": "right",
           "order": 1
         }
@@ -362,17 +362,17 @@
       "terminals": [
         {
           "id": "terminal.c4.a",
-          "name": "PASSIVE_1_C4",
+          "name": "INPUT_1_C4",
           "label": "HSE_IN",
-          "direction": "passive",
+          "direction": "input",
           "side": "left",
           "order": 0
         },
         {
           "id": "terminal.c4.b",
-          "name": "PASSIVE_2_C4",
+          "name": "OUTPUT_1_C4",
           "label": "GND",
-          "direction": "passive",
+          "direction": "output",
           "side": "right",
           "order": 1
         }
@@ -389,17 +389,17 @@
       "terminals": [
         {
           "id": "terminal.c5.a",
-          "name": "PASSIVE_1_C5",
+          "name": "OUTPUT_1_C5",
           "label": "HSE_OUT",
-          "direction": "passive",
+          "direction": "output",
           "side": "left",
           "order": 0
         },
         {
           "id": "terminal.c5.b",
-          "name": "PASSIVE_2_C5",
+          "name": "OUTPUT_2_C5",
           "label": "GND",
-          "direction": "passive",
+          "direction": "output",
           "side": "right",
           "order": 1
         }
@@ -413,31 +413,31 @@
       "terminals": [
         {
           "id": "terminal.swd.3v3",
-          "name": "PASSIVE_1_J2",
+          "name": "INPUT_1_J2",
           "label": "3V3",
-          "direction": "passive",
+          "direction": "input",
           "side": "left",
           "order": 0
         },
         {
           "id": "terminal.swd.gnd",
-          "name": "GROUND_1_J2",
+          "name": "INPUT_2_J2",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "left",
           "order": 1
         },
         {
           "id": "terminal.swd.swdio",
-          "name": "BIDIRECTIONAL_1_J2",
+          "name": "OUTPUT_1_J2",
           "label": "SWDIO",
-          "direction": "bidirectional",
+          "direction": "output",
           "side": "left",
           "order": 2
         },
         {
           "id": "terminal.swd.swclk",
-          "name": "INPUT_1_J2",
+          "name": "INPUT_3_J2",
           "label": "SWCLK",
           "direction": "input",
           "side": "left",
@@ -445,9 +445,9 @@
         },
         {
           "id": "terminal.swd.nrst",
-          "name": "BIDIRECTIONAL_2_J2",
+          "name": "INPUT_4_J2",
           "label": "NRST",
-          "direction": "bidirectional",
+          "direction": "input",
           "side": "left",
           "order": 4
         }
@@ -477,9 +477,9 @@
         },
         {
           "id": "terminal.uart.gnd",
-          "name": "GROUND_1_J3",
+          "name": "INPUT_2_J3",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "left",
           "order": 2
         }

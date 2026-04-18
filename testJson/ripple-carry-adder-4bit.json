@@ -153,17 +153,17 @@
       "terminals": [
         {
           "id": "terminal.power.vcc",
-          "name": "POWER_OUT_1_J3",
-          "label": "VCC",
-          "direction": "power-out",
+          "name": "OUTPUT_1_J3",
+          "label": "5V",
+          "direction": "output",
           "side": "right",
           "order": 0
         },
         {
           "id": "terminal.power.gnd",
-          "name": "GROUND_1_J3",
+          "name": "INPUT_1_J3",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "bottom",
           "order": 1
         }
@@ -220,17 +220,17 @@
         },
         {
           "id": "terminal.fa0.vcc",
-          "name": "POWER_IN_1_U1",
-          "label": "VCC",
-          "direction": "power-in",
+          "name": "INPUT_4_U1",
+          "label": "5V",
+          "direction": "input",
           "side": "top",
           "order": 0
         },
         {
           "id": "terminal.fa0.gnd",
-          "name": "GROUND_1_U1",
+          "name": "INPUT_5_U1",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "bottom",
           "order": 0
         }
@@ -287,17 +287,17 @@
         },
         {
           "id": "terminal.fa1.vcc",
-          "name": "POWER_IN_1_U2",
-          "label": "VCC",
-          "direction": "power-in",
+          "name": "INPUT_4_U2",
+          "label": "5V",
+          "direction": "input",
           "side": "top",
           "order": 0
         },
         {
           "id": "terminal.fa1.gnd",
-          "name": "GROUND_1_U2",
+          "name": "INPUT_5_U2",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "bottom",
           "order": 0
         }
@@ -354,17 +354,17 @@
         },
         {
           "id": "terminal.fa2.vcc",
-          "name": "POWER_IN_1_U3",
-          "label": "VCC",
-          "direction": "power-in",
+          "name": "INPUT_4_U3",
+          "label": "5V",
+          "direction": "input",
           "side": "top",
           "order": 0
         },
         {
           "id": "terminal.fa2.gnd",
-          "name": "GROUND_1_U3",
+          "name": "INPUT_5_U3",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "bottom",
           "order": 0
         }
@@ -421,17 +421,17 @@
         },
         {
           "id": "terminal.fa3.vcc",
-          "name": "POWER_IN_1_U4",
-          "label": "VCC",
-          "direction": "power-in",
+          "name": "INPUT_4_U4",
+          "label": "5V",
+          "direction": "input",
           "side": "top",
           "order": 0
         },
         {
           "id": "terminal.fa3.gnd",
-          "name": "GROUND_1_U4",
+          "name": "INPUT_5_U4",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "bottom",
           "order": 0
         }
@@ -529,7 +529,7 @@
     },
     "networkLines": {
       "network.vcc": {
-        "label": "VCC",
+        "label": "5V",
         "position": {
           "x": 1240,
           "y": 90

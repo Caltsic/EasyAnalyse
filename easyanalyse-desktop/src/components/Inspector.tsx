@@ -1,6 +1,11 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { deriveCircuitInsights } from '../lib/circuitDescription'
 import {
+  getDeviceTemplateOptions,
+  getDeviceVisualPreset,
+  type DeviceVisualKind,
+} from '../lib/deviceSymbols'
+import {
   collectTerminalLabels,
   getEntityTitle,
   getTerminalDisplayLabel,
@@ -8,10 +13,31 @@ import {
 import { translate } from '../lib/i18n'
 import { useEditorStore } from '../store/editorStore'
 import type {
+  DeviceProperties,
   NetworkLineOrientation,
   TerminalDirection,
   TerminalSide,
 } from '../types/document'
+
+const TERMINAL_DIRECTION_OPTIONS: TerminalDirection[] = [
+  'input',
+  'output',
+  'passive',
+  'bidirectional',
+  'power-in',
+  'power-out',
+  'ground',
+  'shield',
+  'unspecified',
+]
+
+const LOGICAL_DIRECTION_OPTIONS: Array<{ value: '' | TerminalDirection; labelKey: 'none' | TerminalDirection }> = [
+  { value: '', labelKey: 'none' },
+  { value: 'input', labelKey: 'input' },
+  { value: 'output', labelKey: 'output' },
+  { value: 'passive', labelKey: 'passive' },
+  { value: 'bidirectional', labelKey: 'bidirectional' },
+]
 
 function Field({
   label,
@@ -40,6 +66,21 @@ function parseTags(value: string) {
     .filter(Boolean)
 }
 
+function getDeviceProperty(
+  properties: DeviceProperties | undefined,
+  key: keyof DeviceProperties,
+) {
+  const value = properties?.[key]
+  return typeof value === 'string' ? value : ''
+}
+
+function getDirectionSummary(
+  direction: TerminalDirection,
+  t: (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) => string,
+) {
+  return t(direction)
+}
+
 function TerminalButtons({
   onAddTerminal,
   locale,
@@ -58,17 +99,11 @@ function TerminalButtons({
       <button className="ghost-button" onClick={() => onAddTerminal('output')}>
         {t('addOutput')}
       </button>
-      <button className="ghost-button" onClick={() => onAddTerminal('bidirectional')}>
-        {t('addBidirectional')}
-      </button>
       <button className="ghost-button" onClick={() => onAddTerminal('passive')}>
         {t('addPassive')}
       </button>
-      <button className="ghost-button" onClick={() => onAddTerminal('power-in')}>
-        {t('addPowerIn')}
-      </button>
-      <button className="ghost-button" onClick={() => onAddTerminal('ground')}>
-        {t('addGround')}
+      <button className="ghost-button" onClick={() => onAddTerminal('bidirectional')}>
+        {t('addBidirectional')}
       </button>
     </div>
   )
@@ -138,6 +173,7 @@ export function Inspector() {
   const updateDocumentMeta = useEditorStore((state) => state.updateDocumentMeta)
   const updateCanvas = useEditorStore((state) => state.updateCanvas)
   const updateDevice = useEditorStore((state) => state.updateDevice)
+  const applyDeviceTemplate = useEditorStore((state) => state.applyDeviceTemplate)
   const updateDeviceView = useEditorStore((state) => state.updateDeviceView)
   const addNetworkLine = useEditorStore((state) => state.addNetworkLine)
   const updateNetworkLine = useEditorStore((state) => state.updateNetworkLine)
@@ -154,6 +190,10 @@ export function Inspector() {
     translate(locale, key, params)
 
   const insights = useMemo(() => deriveCircuitInsights(document, locale), [document, locale])
+  const selectedDeviceGroup =
+    selection?.entityType === 'deviceGroup'
+      ? document.devices.filter((device) => selection.ids.includes(device.id))
+      : []
   const selectedDevice =
     selection?.entityType === 'device' && selection.id
       ? document.devices.find((device) => device.id === selection.id)
@@ -178,22 +218,43 @@ export function Inspector() {
           }
         : undefined
       : undefined
+  const selectedNetworkLineId = selection?.entityType === 'networkLine' ? selection.id : null
   const activeDevice = selectedTerminalDevice ?? selectedDevice
   const activeTerminal = selectedTerminal
-  const title = getEntityTitle(
-    document,
-    selection?.entityType ?? 'document',
-    selection?.id,
-    locale,
-  )
-  const labelSuggestions = useMemo(
-    () => collectTerminalLabels(document, { excludeTerminalId: activeTerminal?.id }),
-    [activeTerminal?.id, document],
-  )
+  const title =
+    selection?.entityType === 'deviceGroup'
+      ? locale === 'zh-CN'
+        ? `已选择 ${selectedDeviceGroup.length} 个器件`
+        : `${selectedDeviceGroup.length} devices selected`
+      : getEntityTitle(
+          document,
+          selection?.entityType ?? 'document',
+          selection && 'id' in selection ? selection.id : undefined,
+          locale,
+        )
+  const labelSuggestions = collectTerminalLabels(document, {
+    excludeTerminalId: activeTerminal?.id,
+  })
+  const deviceTemplateOptions = useMemo(() => getDeviceTemplateOptions(), [])
+  const activeDeviceTemplateKey = activeDevice
+    ? getDeviceVisualPreset(activeDevice).key
+    : 'module'
   const connectionMatches =
     activeTerminal?.label?.trim()
       ? insights.connectionHighlightsByKey[activeTerminal.label.trim()]?.terminalIds ?? []
       : []
+  const updateActiveDeviceProperty = (key: keyof DeviceProperties, value: string) => {
+    if (!activeDevice) {
+      return
+    }
+
+    updateDevice(activeDevice.id, {
+      properties: {
+        ...(activeDevice.properties ?? {}),
+        [key]: value,
+      },
+    })
+  }
 
   return (
     <aside className="inspector-shell">
@@ -202,11 +263,13 @@ export function Inspector() {
           <span className="eyebrow">{t('properties')}</span>
           <h2>{title}</h2>
         </div>
-        {selection?.entityType !== 'document' && selection?.id && (
+        {selection?.entityType !== 'document' &&
+          (selection?.entityType === 'deviceGroup' ||
+            (selection && 'id' in selection && selection.id)) && (
           <button className="ghost-button danger" onClick={deleteSelection}>
             {t('delete')}
           </button>
-        )}
+          )}
       </div>
 
       <div className="inspector-shell__body">
@@ -290,7 +353,7 @@ export function Inspector() {
                 <div className="entity-list">
                   {Object.entries(document.view.networkLines ?? {}).map(([networkLineId, networkLine]) => (
                     <button
-                      className={`entity-list__item${selection?.entityType === 'networkLine' && selection.id === networkLineId ? ' is-active' : ''}`}
+                      className={`entity-list__item${selectedNetworkLineId === networkLineId ? ' is-active' : ''}`}
                       key={networkLineId}
                       onClick={() => setSelection({ entityType: 'networkLine', id: networkLineId })}
                     >
@@ -392,6 +455,31 @@ export function Inspector() {
           </section>
         )}
 
+        {selection?.entityType === 'deviceGroup' && selectedDeviceGroup.length > 0 && (
+          <section className="inspector-section">
+            <div className="inspector-section__header">
+              <span className="eyebrow">{t('members')}</span>
+            </div>
+            <p className="inspector-hint">
+              {locale === 'zh-CN'
+                ? '多选状态下可一起拖动和按空格旋转，且不会触发聚焦。'
+                : 'Multiple devices move together and rotate with Space. Focus is disabled for grouped selection.'}
+            </p>
+            <div className="entity-list">
+              {selectedDeviceGroup.map((device) => (
+                <button
+                  className="entity-list__item"
+                  key={device.id}
+                  onClick={() => setSelection({ entityType: 'device', id: device.id })}
+                >
+                  <strong>{getEntityTitle(document, 'device', device.id, locale)}</strong>
+                  <span>{device.kind}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
         {activeDevice && (
           <>
             <section className="inspector-section">
@@ -448,21 +536,27 @@ export function Inspector() {
                           })
                         }
                       >
-                        {(
-                          [
-                            'input',
-                            'output',
-                            'bidirectional',
-                            'passive',
-                            'power-in',
-                            'power-out',
-                            'ground',
-                            'shield',
-                            'unspecified',
-                          ] as TerminalDirection[]
-                        ).map((direction) => (
+                        {TERMINAL_DIRECTION_OPTIONS.map((direction) => (
                           <option key={direction} value={direction}>
                             {t(direction)}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label={t('logicalDirection')}>
+                      <select
+                        value={activeTerminal.logicalDirection ?? ''}
+                        onChange={(event) =>
+                          updateTerminal(activeDevice.id, activeTerminal.id, {
+                            logicalDirection: event.target.value
+                              ? (event.target.value as TerminalDirection)
+                              : undefined,
+                          })
+                        }
+                      >
+                        {LOGICAL_DIRECTION_OPTIONS.map((option) => (
+                          <option key={option.labelKey} value={option.value}>
+                            {t(option.labelKey)}
                           </option>
                         ))}
                       </select>
@@ -603,7 +697,7 @@ export function Inspector() {
                     onClick={() => setSelection({ entityType: 'terminal', id: terminal.id })}
                   >
                     <strong>{getTerminalDisplayLabel(terminal)}</strong>
-                    <span>{t(terminal.direction)}</span>
+                    <span>{getDirectionSummary(terminal.direction, t)}</span>
                   </button>
                 ))}
               </div>
@@ -627,6 +721,20 @@ export function Inspector() {
                       updateDevice(activeDevice.id, { name: event.target.value })
                     }
                   />
+                </Field>
+                <Field label="Template">
+                  <select
+                    value={activeDeviceTemplateKey}
+                    onChange={(event) =>
+                      applyDeviceTemplate(activeDevice.id, event.target.value as DeviceVisualKind)
+                    }
+                  >
+                    {deviceTemplateOptions.map((option) => (
+                      <option key={option.key} value={option.key}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </Field>
                 <Field label={t('kind')}>
                   <input
@@ -658,6 +766,64 @@ export function Inspector() {
                     value={(activeDevice.tags ?? []).join(', ')}
                     onChange={(event) =>
                       updateDevice(activeDevice.id, { tags: parseTags(event.target.value) })
+                    }
+                  />
+                </Field>
+              </div>
+            </section>
+
+            <section className="inspector-section">
+              <span className="eyebrow">{t('deviceParameters')}</span>
+              <div className="form-grid">
+                <Field label={t('value')}>
+                  <input
+                    value={getDeviceProperty(activeDevice.properties, 'value')}
+                    onChange={(event) => updateActiveDeviceProperty('value', event.target.value)}
+                  />
+                </Field>
+                <Field label={t('voltage')}>
+                  <input
+                    value={getDeviceProperty(activeDevice.properties, 'voltage')}
+                    onChange={(event) => updateActiveDeviceProperty('voltage', event.target.value)}
+                  />
+                </Field>
+                <Field label={t('outputVoltage')}>
+                  <input
+                    value={getDeviceProperty(activeDevice.properties, 'outputVoltage')}
+                    onChange={(event) =>
+                      updateActiveDeviceProperty('outputVoltage', event.target.value)
+                    }
+                  />
+                </Field>
+                <Field label={t('nominalVoltage')}>
+                  <input
+                    value={getDeviceProperty(activeDevice.properties, 'nominalVoltage')}
+                    onChange={(event) =>
+                      updateActiveDeviceProperty('nominalVoltage', event.target.value)
+                    }
+                  />
+                </Field>
+                <Field label={t('frequency')}>
+                  <input
+                    value={getDeviceProperty(activeDevice.properties, 'frequency')}
+                    onChange={(event) =>
+                      updateActiveDeviceProperty('frequency', event.target.value)
+                    }
+                  />
+                </Field>
+                <Field label={t('partNumber')}>
+                  <input
+                    value={getDeviceProperty(activeDevice.properties, 'partNumber')}
+                    onChange={(event) =>
+                      updateActiveDeviceProperty('partNumber', event.target.value)
+                    }
+                  />
+                </Field>
+                <Field label={t('package')}>
+                  <input
+                    value={getDeviceProperty(activeDevice.properties, 'package')}
+                    onChange={(event) =>
+                      updateActiveDeviceProperty('package', event.target.value)
                     }
                   />
                 </Field>

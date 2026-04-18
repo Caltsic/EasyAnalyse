@@ -30,9 +30,9 @@
         },
         {
           "id": "terminal.input.gnd",
-          "name": "GROUND_1_J1",
+          "name": "INPUT_1_J1",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "bottom",
           "order": 1
         }
@@ -52,6 +52,7 @@
           "name": "PASSIVE_1_R1",
           "label": "SIG_IN",
           "direction": "passive",
+          "logicalDirection": "input",
           "side": "left",
           "order": 0
         },
@@ -60,6 +61,7 @@
           "name": "PASSIVE_2_R1",
           "label": "LPF_OUT",
           "direction": "passive",
+          "logicalDirection": "output",
           "side": "right",
           "order": 1
         }
@@ -108,9 +110,9 @@
         },
         {
           "id": "terminal.output.gnd",
-          "name": "GROUND_1_J2",
+          "name": "INPUT_2_J2",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "bottom",
           "order": 1
         }

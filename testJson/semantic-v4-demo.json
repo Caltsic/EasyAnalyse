@@ -20,33 +20,33 @@
       "terminals": [
         {
           "id": "terminal.mcu.vcc",
-          "name": "POWER_IN_1_U1",
-          "label": "VCC",
-          "direction": "power-in",
+          "name": "INPUT_1_U1",
+          "label": "3V3",
+          "direction": "input",
           "side": "left",
           "order": 0
         },
         {
           "id": "terminal.mcu.gnd",
-          "name": "GROUND_1_U1",
+          "name": "INPUT_2_U1",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "left",
           "order": 1
         },
         {
           "id": "terminal.mcu.scl",
-          "name": "BIDIRECTIONAL_1_U1",
+          "name": "OUTPUT_1_U1",
           "label": "SCL",
-          "direction": "bidirectional",
+          "direction": "output",
           "side": "right",
           "order": 0
         },
         {
           "id": "terminal.mcu.sda",
-          "name": "BIDIRECTIONAL_2_U1",
+          "name": "OUTPUT_2_U1",
           "label": "SDA",
-          "direction": "bidirectional",
+          "direction": "output",
           "side": "right",
           "order": 1
         }
@@ -60,23 +60,23 @@
       "terminals": [
         {
           "id": "terminal.sensor.vcc",
-          "name": "POWER_IN_1_U2",
-          "label": "VCC",
-          "direction": "power-in",
+          "name": "INPUT_1_U2",
+          "label": "3V3",
+          "direction": "input",
           "side": "left",
           "order": 0
         },
         {
           "id": "terminal.sensor.gnd",
-          "name": "GROUND_1_U2",
+          "name": "INPUT_2_U2",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "left",
           "order": 1
         },
         {
           "id": "terminal.sensor.scl",
-          "name": "INPUT_1_U2",
+          "name": "INPUT_3_U2",
           "label": "SCL",
           "direction": "input",
           "side": "right",
@@ -84,9 +84,9 @@
         },
         {
           "id": "terminal.sensor.sda",
-          "name": "BIDIRECTIONAL_1_U2",
+          "name": "INPUT_4_U2",
           "label": "SDA",
-          "direction": "bidirectional",
+          "direction": "input",
           "side": "right",
           "order": 1
         }
@@ -130,7 +130,7 @@
     },
     "networkLines": {
       "network.vcc": {
-        "label": "VCC",
+        "label": "3V3",
         "position": {
           "x": 680,
           "y": 120

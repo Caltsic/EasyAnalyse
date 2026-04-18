@@ -19,20 +19,23 @@
       "name": "Power Input",
       "kind": "connector",
       "reference": "J1",
+      "properties": {
+        "voltage": "5V"
+      },
       "terminals": [
         {
           "id": "terminal.power.vcc",
-          "name": "POWER_OUT_1_J1",
-          "label": "VCC",
-          "direction": "power-out",
+          "name": "OUTPUT_1_J1",
+          "label": "5V",
+          "direction": "output",
           "side": "right",
           "order": 0
         },
         {
           "id": "terminal.power.gnd",
-          "name": "GROUND_1_J1",
+          "name": "INPUT_1_J1",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "bottom",
           "order": 1
         }
@@ -54,9 +57,9 @@
         },
         {
           "id": "terminal.input.gnd",
-          "name": "GROUND_1_J2",
+          "name": "INPUT_1_J2",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "bottom",
           "order": 1
         }
@@ -73,23 +76,23 @@
       "terminals": [
         {
           "id": "terminal.opamp.vcc",
-          "name": "POWER_IN_1_U1",
-          "label": "VCC",
-          "direction": "power-in",
+          "name": "INPUT_1_U1",
+          "label": "5V",
+          "direction": "input",
           "side": "left",
           "order": 0
         },
         {
           "id": "terminal.opamp.gnd",
-          "name": "GROUND_1_U1",
+          "name": "INPUT_2_U1",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "left",
           "order": 1
         },
         {
           "id": "terminal.opamp.noninv",
-          "name": "INPUT_1_U1",
+          "name": "INPUT_3_U1",
           "label": "VIN_SIG",
           "direction": "input",
           "side": "left",
@@ -97,7 +100,7 @@
         },
         {
           "id": "terminal.opamp.inv",
-          "name": "INPUT_2_U1",
+          "name": "INPUT_4_U1",
           "label": "FB_DIV",
           "direction": "input",
           "side": "left",
@@ -179,7 +182,7 @@
         {
           "id": "terminal.c1.a",
           "name": "PASSIVE_1_C1",
-          "label": "VCC",
+          "label": "5V",
           "direction": "passive",
           "side": "left",
           "order": 0
@@ -210,9 +213,9 @@
         },
         {
           "id": "terminal.output.gnd",
-          "name": "GROUND_1_J3",
+          "name": "INPUT_2_J3",
           "label": "GND",
-          "direction": "ground",
+          "direction": "input",
           "side": "bottom",
           "order": 1
         }
@@ -310,7 +313,7 @@
     },
     "networkLines": {
       "network.vcc": {
-        "label": "VCC",
+        "label": "5V",
         "position": {
           "x": 700,
           "y": 60

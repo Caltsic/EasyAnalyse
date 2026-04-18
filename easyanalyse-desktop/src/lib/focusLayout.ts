@@ -4,23 +4,28 @@ import type {
   DerivedNetworkLine,
   DerivedTerminal,
 } from './circuitDescription'
+import {
+  getTerminalLabelIntent,
+  inferPeerLabelIntent,
+  isSinkLikeDirection,
+  isSourceLikeDirection,
+  resolveSharedLabelBucket,
+} from './document'
 import type { Bounds } from './geometry'
 import type {
   NetworkLineOrientation,
   Point,
-  TerminalDirection,
   TerminalSide,
 } from '../types/document'
 
 const FOCUS_COLUMN_GAP = 184
 const FOCUS_STACK_GAP = 104
-const FOCUS_PEER_GAP_Y = 176
 const FOCUS_GRID_GAP_X = 140
 const FOCUS_GRID_GAP_Y = 124
 const FOCUS_RAIL_GAP_Y = 108
 const FOCUS_PADDING = 56
 
-type FocusBucket = 'upstream' | 'downstream' | 'peer'
+type FocusBucket = 'upstream' | 'downstream'
 
 export type FocusTarget =
   | { type: 'device'; id: string }
@@ -50,10 +55,7 @@ export interface FocusLayoutResult {
 interface FocusDeviceRelation {
   upstreamLabelKeys: Set<string>
   downstreamLabelKeys: Set<string>
-  peerLabelKeys: Set<string>
 }
-
-type FocusLabelIntent = 'upstream' | 'downstream' | 'mixed' | 'flex' | 'peer'
 
 interface DeviceBucketItem {
   deviceId: string
@@ -131,8 +133,6 @@ function deriveDeviceFocusLayout(insights: CircuitInsights, focusDeviceId: strin
 
   const upstreamItems = buildBucketItems('upstream')
   const downstreamItems = buildBucketItems('downstream')
-  const peerItems = buildBucketItems('peer')
-
   placeVerticalColumn(
     states,
     upstreamItems,
@@ -146,13 +146,6 @@ function deriveDeviceFocusLayout(insights: CircuitInsights, focusDeviceId: strin
     anchor.center.x + anchorFootprint.width / 2 + FOCUS_COLUMN_GAP,
     anchor.center.y,
     'right',
-  )
-  placeWrappedRow(
-    states,
-    peerItems,
-    anchor.center.x,
-    anchor.center.y + anchorFootprint.height / 2 + FOCUS_PEER_GAP_Y,
-    Math.min(4, Math.max(2, peerItems.length)),
   )
 
   return {
@@ -282,32 +275,23 @@ function buildDeviceFocusRelations(
       otherByDevice.set(terminal.deviceId, bucket)
     }
 
-    const anchorHasSource = anchorTerminals.some((terminal) => isSourceLike(terminal.direction))
-    const anchorHasSink = anchorTerminals.some((terminal) => isSinkLike(terminal.direction))
-    const anchorHasFlexible = anchorTerminals.some((terminal) => isFlexible(terminal.direction))
-    const intent = determineFocusLabelIntent(anchorHasSource, anchorHasSink, anchorHasFlexible)
+    const intent = getTerminalLabelIntent(anchorTerminals) ?? inferPeerLabelIntent(groupTerminals)
+    if (!intent) {
+      continue
+    }
 
     for (const [deviceId, terminals] of otherByDevice.entries()) {
-      const otherHasSource = terminals.some((terminal) => isSourceLike(terminal.direction))
-      const otherHasSink = terminals.some((terminal) => isSinkLike(terminal.direction))
-      const otherHasFlexible = terminals.some((terminal) => isFlexible(terminal.direction))
       const relation = getOrCreateDeviceRelation(relations, deviceId)
-      const bucket = resolveLabelBucket(intent, otherHasSource, otherHasSink, otherHasFlexible)
-      relation[`${bucket}LabelKeys`].add(labelKey)
+      const bucket = resolveSharedLabelBucket(intent, terminals)
+      if (bucket) {
+        relation[`${bucket}LabelKeys`].add(labelKey)
+      }
     }
   }
 
   for (const relation of relations.values()) {
     if (relation.upstreamLabelKeys.size && relation.downstreamLabelKeys.size) {
-      if (relation.upstreamLabelKeys.size === relation.downstreamLabelKeys.size) {
-        relation.peerLabelKeys = new Set([
-          ...relation.peerLabelKeys,
-          ...relation.upstreamLabelKeys,
-          ...relation.downstreamLabelKeys,
-        ])
-        relation.upstreamLabelKeys.clear()
-        relation.downstreamLabelKeys.clear()
-      } else if (relation.upstreamLabelKeys.size > relation.downstreamLabelKeys.size) {
+      if (relation.upstreamLabelKeys.size > relation.downstreamLabelKeys.size) {
         relation.downstreamLabelKeys.clear()
       } else {
         relation.upstreamLabelKeys.clear()
@@ -316,56 +300,6 @@ function buildDeviceFocusRelations(
   }
 
   return relations
-}
-
-function determineFocusLabelIntent(
-  anchorHasSource: boolean,
-  anchorHasSink: boolean,
-  anchorHasFlexible: boolean,
-): FocusLabelIntent {
-  if (anchorHasSink && !anchorHasSource) {
-    return 'upstream'
-  }
-  if (anchorHasSource && !anchorHasSink) {
-    return 'downstream'
-  }
-  if (anchorHasSource && anchorHasSink) {
-    return 'mixed'
-  }
-  if (anchorHasFlexible) {
-    return 'flex'
-  }
-  return 'peer'
-}
-
-function resolveLabelBucket(
-  intent: FocusLabelIntent,
-  otherHasSource: boolean,
-  otherHasSink: boolean,
-  otherHasFlexible: boolean,
-): FocusBucket {
-  if (otherHasFlexible) {
-    return 'peer'
-  }
-
-  switch (intent) {
-    case 'upstream':
-      return 'upstream'
-    case 'downstream':
-      return 'downstream'
-    case 'mixed':
-    case 'flex':
-      if (otherHasSource && !otherHasSink) {
-        return 'upstream'
-      }
-      if (otherHasSink && !otherHasSource) {
-        return 'downstream'
-      }
-      return 'peer'
-    case 'peer':
-    default:
-      return 'peer'
-  }
 }
 
 function placeVerticalColumn(
@@ -542,7 +476,7 @@ function chooseAnchorRotation(device: DerivedDevice, terminals: DerivedTerminal[
     let score = 0
     for (const terminal of terminals) {
       const displayedSide = rotateSide(terminal.side, candidate)
-      const desiredSide = desiredSideForDirection(terminal.direction)
+      const desiredSide = desiredSideForDirection(terminal.flowDirection)
       score += 4 - sideDistance(displayedSide, desiredSide)
     }
 
@@ -711,17 +645,16 @@ function getOrCreateDeviceRelation(
   const created = {
     upstreamLabelKeys: new Set<string>(),
     downstreamLabelKeys: new Set<string>(),
-    peerLabelKeys: new Set<string>(),
   } satisfies FocusDeviceRelation
   relations.set(deviceId, created)
   return created
 }
 
-function desiredSideForDirection(direction: TerminalDirection): Exclude<TerminalSide, 'auto'> {
-  if (isSourceLike(direction)) {
+function desiredSideForDirection(direction: Parameters<typeof isSourceLikeDirection>[0]): Exclude<TerminalSide, 'auto'> {
+  if (isSourceLikeDirection(direction)) {
     return 'right'
   }
-  if (isSinkLike(direction)) {
+  if (isSinkLikeDirection(direction)) {
     return 'left'
   }
   return 'top'
@@ -733,7 +666,6 @@ function desiredSideForBucket(bucket: FocusBucket): Exclude<TerminalSide, 'auto'
       return 'right'
     case 'downstream':
       return 'left'
-    case 'peer':
     default:
       return 'top'
   }
@@ -764,18 +696,6 @@ function normalizeRotation(value: number) {
 function shortestAngleDelta(from: number, to: number) {
   const normalized = ((to - from + 540) % 360) - 180
   return normalized
-}
-
-function isSourceLike(direction: TerminalDirection) {
-  return direction === 'output' || direction === 'power-out'
-}
-
-function isSinkLike(direction: TerminalDirection) {
-  return direction === 'input' || direction === 'power-in' || direction === 'ground'
-}
-
-function isFlexible(direction: TerminalDirection) {
-  return !isSourceLike(direction) && !isSinkLike(direction)
 }
 
 function sortDevices(left: DerivedDevice, right: DerivedDevice) {

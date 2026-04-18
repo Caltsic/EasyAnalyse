@@ -3,12 +3,18 @@ import {
   getDeviceReference,
   getDeviceView,
   getNetworkLineView,
+  getTerminalLabelIntent,
   getTerminalDisplayLabel,
+  getTerminalFlowDirection,
+  inferPeerLabelIntent,
   inferSideFromDirection,
+  isSourceLikeDirection,
+  resolveSharedLabelBucket,
   normalizeRotationDeg,
   normalizeTerminalLabel,
 } from './document'
-import { getBoundsCenter, getSignalPoint } from './geometry'
+import { getDeviceVisualPreset, type DeviceVisualKind } from './deviceSymbols'
+import { getBoundsCenter, getSignalPoint, getStoredTerminalAnchor, projectPointToShapeEdge } from './geometry'
 import { translate } from './i18n'
 import type {
   DeviceDefinition,
@@ -48,7 +54,6 @@ const SPECIAL_LABEL_COLORS: Record<string, string> = {
   MISO: '#8B5CF6',
 }
 
-const PASSIVE_BORDER_GRAY = '#94A3B8'
 const COLOR_BLACK = '#000000'
 const COLOR_WHITE = '#FFFFFF'
 
@@ -64,6 +69,7 @@ export interface DerivedTerminal {
   id: string
   deviceId: string
   direction: TerminalDirection
+  flowDirection: TerminalDirection
   side: TerminalSide
   displayLabel: string
   connectionLabel: string | null
@@ -97,7 +103,9 @@ export interface DerivedDevice {
   id: string
   reference: string
   title: string
+  parameterSummary: string | null
   kind: string
+  visualKind: DeviceVisualKind
   shape: DeviceShape
   rotationDeg: number
   bounds: { x: number; y: number; width: number; height: number }
@@ -112,7 +120,6 @@ export interface DeviceRelationSummary {
   title: string
   upstreamDeviceIds: string[]
   downstreamDeviceIds: string[]
-  peerDeviceIds: string[]
   relatedTerminalIds: string[]
   connectionKeys: string[]
   connectionLabels: string[]
@@ -385,21 +392,12 @@ function buildDerivedDevice(
   layouts: Map<string, Point>,
 ): DerivedDevice {
   const view = getDeviceView(document, device.id)
+  const visualPreset = getDeviceVisualPreset(device)
   const shape = view.shape ?? getDefaultShape(device.kind)
-  const width = Math.max(150, view.size?.width ?? DEFAULT_WIDTH)
-  const height = Math.max(96, view.size?.height ?? DEFAULT_HEIGHT)
-  const position = layouts.get(device.id) ?? { x: MARGIN_X, y: MARGIN_Y }
-  const rotationDeg = normalizeRotationDeg(view.rotationDeg ?? 0)
-  const bounds = {
-    x: position.x,
-    y: position.y,
-    width,
-    height,
-  }
 
   const terminalsBySide = new Map<TerminalSide, TerminalDefinition[]>()
   for (const terminal of device.terminals) {
-    const side = terminal.side ?? inferSideFromDirection(terminal.direction)
+    const side = terminal.side ?? inferSideFromDirection(getTerminalFlowDirection(terminal))
     const bucket = terminalsBySide.get(side) ?? []
     bucket.push({ ...terminal, side })
     terminalsBySide.set(side, bucket)
@@ -413,17 +411,58 @@ function buildDerivedDevice(
     })
   }
 
+  const leftCount = terminalsBySide.get('left')?.length ?? 0
+  const rightCount = terminalsBySide.get('right')?.length ?? 0
+  const topCount = terminalsBySide.get('top')?.length ?? 0
+  const bottomCount = terminalsBySide.get('bottom')?.length ?? 0
+  const maxVerticalCount = Math.max(leftCount, rightCount)
+  const maxHorizontalCount = Math.max(topCount, bottomCount)
+  const width = Math.max(
+    150,
+    view.size?.width ?? visualPreset.defaultSize.width ?? DEFAULT_WIDTH,
+    maxHorizontalCount > 2 ? 112 + maxHorizontalCount * 64 : 0,
+  )
+  const height = Math.max(
+    96,
+    view.size?.height ?? visualPreset.defaultSize.height ?? DEFAULT_HEIGHT,
+    maxVerticalCount > 2 ? 88 + maxVerticalCount * 26 : 0,
+  )
+  const position = layouts.get(device.id) ?? { x: MARGIN_X, y: MARGIN_Y }
+  const rotationDeg = normalizeRotationDeg(view.rotationDeg ?? 0)
+  const bounds = {
+    x: position.x,
+    y: position.y,
+    width,
+    height,
+  }
+
   const terminals = device.terminals.map((terminal) => {
-    const side = terminal.side ?? inferSideFromDirection(terminal.direction)
+    const flowDirection = getTerminalFlowDirection(terminal)
+    const side = terminal.side ?? inferSideFromDirection(flowDirection)
     const bucket = terminalsBySide.get(side) ?? [terminal]
     const index = bucket.findIndex((candidate) => candidate.id === terminal.id)
-    const point = getSignalPoint(bounds, shape, side, Math.max(0, index), bucket.length)
+    const storedAnchor = getStoredTerminalAnchor(terminal)
+    const placement = storedAnchor
+      ? projectPointToShapeEdge(
+          {
+            x: bounds.x + storedAnchor.x * bounds.width,
+            y: bounds.y + storedAnchor.y * bounds.height,
+          },
+          bounds,
+          shape,
+          visualPreset.key,
+        )
+      : null
+    const resolvedSide = placement?.side ?? side
+    const point =
+      placement?.point ?? getSignalPoint(bounds, shape, side, Math.max(0, index), bucket.length, visualPreset.key)
 
     return {
       id: terminal.id,
       deviceId: device.id,
       direction: terminal.direction,
-      side,
+      flowDirection,
+      side: resolvedSide,
       displayLabel: getTerminalDisplayLabel(terminal),
       connectionLabel: normalizeTerminalLabel(terminal.label),
       name: terminal.name,
@@ -434,6 +473,7 @@ function buildDerivedDevice(
   })
 
   const reference = getDeviceReference(device, document)
+  const parameterSummary = summarizeDeviceParameter(device, document)
   const connectionLabels = [
     ...new Set(
       terminals
@@ -446,7 +486,9 @@ function buildDerivedDevice(
     id: device.id,
     reference,
     title: `${reference} ${device.name}`,
+    parameterSummary,
     kind: device.kind,
+    visualKind: visualPreset.key,
     shape,
     rotationDeg,
     bounds,
@@ -455,6 +497,104 @@ function buildDerivedDevice(
     connectionLabels,
     source: device,
   }
+}
+
+function summarizeDeviceParameter(device: DeviceDefinition, document: DocumentFile) {
+  const properties = device.properties
+  const direct =
+    getPropertyText(properties?.value) ??
+    getPropertyText(properties?.frequency) ??
+    getPropertyText(properties?.outputVoltage) ??
+    getPropertyText(properties?.nominalVoltage) ??
+    getPropertyText(properties?.voltage)
+
+  if (direct) {
+    return direct
+  }
+
+  const powerSummaries = device.terminals
+    .filter((terminal) => isPowerLikeLabel(terminal.label))
+    .map((terminal) => summarizePowerLabel(terminal.label, document))
+    .filter((label): label is string => Boolean(label))
+
+  const uniquePowerSummaries = [...new Set(powerSummaries)]
+  if (uniquePowerSummaries.length === 0) {
+    return null
+  }
+
+  return uniquePowerSummaries.slice(0, 2).join(' / ')
+}
+
+function getPropertyText(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function summarizePowerLabel(label: string | undefined, document: DocumentFile) {
+  const normalized = normalizeTerminalLabel(label)
+  if (!normalized) {
+    return null
+  }
+
+  const explicit = inferVoltageFromText(normalized)
+  if (explicit) {
+    return explicit
+  }
+
+  const sources = document.devices.flatMap((candidate) =>
+    candidate.terminals
+      .filter(
+        (terminal) =>
+          normalizeTerminalLabel(terminal.label) === normalized &&
+          isSourceLikeDirection(getTerminalFlowDirection(terminal)),
+      )
+      .map(() => candidate),
+  )
+
+  const propertyVoltages = sources
+    .map(
+      (source) =>
+        getPropertyText(source.properties?.outputVoltage) ??
+        getPropertyText(source.properties?.nominalVoltage) ??
+        getPropertyText(source.properties?.voltage),
+    )
+    .filter((value): value is string => Boolean(value))
+
+  const uniqueVoltages = [...new Set(propertyVoltages)]
+  if (uniqueVoltages.length > 0) {
+    return uniqueVoltages.join(' / ')
+  }
+
+  return normalized
+}
+
+function inferVoltageFromText(value: string) {
+  const normalized = value.trim().toUpperCase().replace(/[_\s-]+/g, '')
+  if (!normalized) {
+    return null
+  }
+
+  if (/^[+-]?\d+(\.\d+)?(V|MV)$/.test(normalized)) {
+    return normalized
+  }
+
+  return null
+}
+
+function isPowerLikeLabel(label: string | undefined) {
+  const normalized = normalizeTerminalLabel(label)?.toUpperCase()
+  if (!normalized) {
+    return false
+  }
+
+  return (
+    normalized === 'GND' ||
+    normalized === 'VCC' ||
+    normalized === 'VDD' ||
+    normalized === 'VIN' ||
+    normalized === 'VBAT' ||
+    normalized.includes('VREF') ||
+    Boolean(inferVoltageFromText(normalized))
+  )
 }
 
 function deriveNetworkLines(document: DocumentFile) {
@@ -544,7 +684,6 @@ function deriveDeviceRelations(
         title: device.title,
         upstreamDeviceIds: [],
         downstreamDeviceIds: [],
-        peerDeviceIds: [],
         relatedTerminalIds: [],
         connectionKeys: [],
         connectionLabels: [],
@@ -561,11 +700,14 @@ function deriveDeviceRelations(
     const terminals = group.terminalIds
       .map((terminalId) => terminalById[terminalId])
       .filter((terminal): terminal is DerivedTerminal => Boolean(terminal))
+    const allDeviceIds = [...new Set(terminals.map((terminal) => terminal.deviceId))].sort()
+    const terminalsByDevice = new Map<string, DerivedTerminal[]>()
 
-    const sourceLike = terminals.filter((terminal) => isSourceLike(terminal.direction))
-    const sinkLike = terminals.filter((terminal) => isSinkLike(terminal.direction))
-    const flexible = terminals.filter((terminal) => !isSourceLike(terminal.direction) && !isSinkLike(terminal.direction))
-    const allDeviceIds = [...new Set(terminals.map((terminal) => terminal.deviceId))]
+    for (const terminal of terminals) {
+      const bucket = terminalsByDevice.get(terminal.deviceId) ?? []
+      bucket.push(terminal)
+      terminalsByDevice.set(terminal.deviceId, bucket)
+    }
 
     for (const terminal of terminals) {
       const relation = relations[terminal.deviceId]
@@ -578,42 +720,26 @@ function deriveDeviceRelations(
       addUnique(relation.connectionLabels, group.label)
     }
 
-    if (sourceLike.length) {
-      const targets = [...sinkLike]
-      for (const source of sourceLike) {
-        for (const target of targets) {
-          if (source.deviceId === target.deviceId) {
-            continue
-          }
-
-          addUnique(relations[source.deviceId]!.downstreamDeviceIds, target.deviceId)
-          addUnique(relations[target.deviceId]!.upstreamDeviceIds, source.deviceId)
-        }
+    for (const anchorId of allDeviceIds) {
+      const anchorTerminals = terminalsByDevice.get(anchorId) ?? []
+      const intent = getTerminalLabelIntent(anchorTerminals) ?? inferPeerLabelIntent(terminals)
+      if (!intent) {
+        continue
       }
-    }
 
-    if (flexible.length && allDeviceIds.length > 1) {
-      const flexibleDeviceIds = [...new Set(flexible.map((terminal) => terminal.deviceId))]
-      for (const deviceId of flexibleDeviceIds) {
-        for (const peerId of allDeviceIds) {
-          if (peerId !== deviceId) {
-            addUnique(relations[deviceId]!.peerDeviceIds, peerId)
-            addUnique(relations[peerId]!.peerDeviceIds, deviceId)
-          }
+      for (const otherId of allDeviceIds) {
+        if (otherId === anchorId) {
+          continue
         }
-      }
-    }
 
-    if (sourceLike.length) {
-      continue
-    }
-
-    if (allDeviceIds.length > 1) {
-      for (const deviceId of allDeviceIds) {
-        for (const peerId of allDeviceIds) {
-          if (peerId !== deviceId) {
-            addUnique(relations[deviceId]!.peerDeviceIds, peerId)
-          }
+        const otherTerminals = terminalsByDevice.get(otherId) ?? []
+        const bucket = resolveSharedLabelBucket(intent, otherTerminals)
+        if (bucket === 'upstream') {
+          addUnique(relations[anchorId]!.upstreamDeviceIds, otherId)
+          addUnique(relations[otherId]!.downstreamDeviceIds, anchorId)
+        } else if (bucket === 'downstream') {
+          addUnique(relations[anchorId]!.downstreamDeviceIds, otherId)
+          addUnique(relations[otherId]!.upstreamDeviceIds, anchorId)
         }
       }
     }
@@ -622,13 +748,9 @@ function deriveDeviceRelations(
   for (const relation of Object.values(relations)) {
     relation.upstreamDeviceIds.sort()
     relation.downstreamDeviceIds.sort()
-    relation.peerDeviceIds = relation.peerDeviceIds
-      .filter(
-        (deviceId) =>
-          !relation.upstreamDeviceIds.includes(deviceId) &&
-          !relation.downstreamDeviceIds.includes(deviceId),
-      )
-      .sort()
+    relation.upstreamDeviceIds = relation.upstreamDeviceIds.filter(
+      (deviceId) => !relation.downstreamDeviceIds.includes(deviceId),
+    )
     relation.relatedTerminalIds.sort()
     relation.connectionKeys.sort()
     relation.connectionLabels.sort((left, right) => left.localeCompare(right))
@@ -642,15 +764,6 @@ function deriveDeviceRelations(
 
   return relations
 }
-
-function isSourceLike(direction: TerminalDirection) {
-  return direction === 'output' || direction === 'power-out'
-}
-
-function isSinkLike(direction: TerminalDirection) {
-  return direction === 'input' || direction === 'power-in' || direction === 'ground'
-}
-
 function addUnique(values: string[], value: string) {
   if (!values.includes(value)) {
     values.push(value)
@@ -724,14 +837,12 @@ function buildDistinctColorCandidates(targetCount: number) {
     if (
       color === COLOR_BLACK ||
       color === COLOR_WHITE ||
-      color === PASSIVE_BORDER_GRAY ||
       candidates.includes(color)
     ) {
       continue
     }
 
     if (
-      colorDistance(color, PASSIVE_BORDER_GRAY) < 86 ||
       colorDistance(color, COLOR_BLACK) < 118 ||
       colorDistance(color, COLOR_WHITE) < 128
     ) {

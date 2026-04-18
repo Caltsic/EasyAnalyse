@@ -53,6 +53,12 @@
   justify-content: flex-end;
 }
 
+.topbar__template-select {
+  width: min(220px, 100%);
+  min-width: 180px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
 .status-chip {
   display: inline-flex;
   align-items: center;

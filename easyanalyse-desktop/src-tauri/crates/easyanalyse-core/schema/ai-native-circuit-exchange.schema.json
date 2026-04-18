@@ -151,6 +151,9 @@
         "direction": {
           "$ref": "#/$defs/terminalDirection"
         },
+        "logicalDirection": {
+          "$ref": "#/$defs/terminalDirection"
+        },
         "role": {
           "type": "string"
         },
@@ -171,6 +174,44 @@
         },
         "extensions": {
           "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "deviceProperties": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "voltage": {
+          "type": "string",
+          "minLength": 1
+        },
+        "outputVoltage": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nominalVoltage": {
+          "type": "string",
+          "minLength": 1
+        },
+        "frequency": {
+          "type": "string",
+          "minLength": 1
+        },
+        "partNumber": {
+          "type": "string",
+          "minLength": 1
+        },
+        "package": {
+          "type": "string",
+          "minLength": 1
+        },
+        "topology": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },
@@ -212,7 +253,7 @@
           }
         },
         "properties": {
-          "$ref": "#/$defs/extensions"
+          "$ref": "#/$defs/deviceProperties"
         },
         "terminals": {
           "type": "array",
@@ -223,7 +264,93 @@
         "extensions": {
           "$ref": "#/$defs/extensions"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "resistor"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "properties"
+            ],
+            "properties": {
+              "properties": {
+                "required": [
+                  "value"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "capacitor"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "properties"
+            ],
+            "properties": {
+              "properties": {
+                "required": [
+                  "value"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "inductor"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "properties"
+            ],
+            "properties": {
+              "properties": {
+                "required": [
+                  "value"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "crystal"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "properties"
+            ],
+            "properties": {
+              "properties": {
+                "required": [
+                  "frequency"
+                ]
+              }
+            }
+          }
+        }
+      ]
     },
     "point": {
       "type": "object",

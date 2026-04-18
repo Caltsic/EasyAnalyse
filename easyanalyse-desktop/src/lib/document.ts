@@ -1,7 +1,9 @@
 import { makeId } from './ids'
 import { translate } from './i18n'
+import { getDefaultShapeForKind, getReferencePrefixForKind } from './deviceSymbols'
 import type {
   DeviceDefinition,
+  DeviceProperties,
   DeviceShape,
   DeviceViewDefinition,
   DocumentFile,
@@ -79,6 +81,7 @@ export function normalizeDocumentLocal(document: DocumentFile): DocumentFile {
       description: cleanOptionalString(device.description),
       reference: cleanOptionalString(device.reference),
       tags: uniqueNonEmptyStrings(device.tags),
+      properties: normalizeDeviceProperties(device.properties),
       terminals: [...device.terminals]
         .map((terminal) => normalizeTerminal(terminal))
         .sort(compareTerminals),
@@ -109,18 +112,36 @@ export function normalizeDocumentLocal(document: DocumentFile): DocumentFile {
 }
 
 function normalizeTerminal(terminal: TerminalDefinition): TerminalDefinition {
+  const flowDirection = getTerminalFlowDirection(terminal)
   return {
     ...terminal,
     name: ensureRequiredString(terminal.name, terminal.id),
     label: cleanOptionalString(terminal.label),
     role: cleanOptionalString(terminal.role),
     description: cleanOptionalString(terminal.description),
-    side: terminal.side ?? inferSideFromDirection(terminal.direction),
+    side: terminal.side ?? inferSideFromDirection(flowDirection),
     order:
       typeof terminal.order === 'number' && Number.isFinite(terminal.order)
         ? terminal.order
         : undefined,
   }
+}
+
+function normalizeDeviceProperties(properties: DeviceProperties | undefined) {
+  if (!properties) {
+    return undefined
+  }
+
+  const entries = Object.entries(properties).flatMap(([key, value]) => {
+    if (typeof value !== 'string') {
+      return [[key, value] as const]
+    }
+
+    const trimmed = value.trim()
+    return trimmed ? [[key, trimmed] as const] : []
+  })
+
+  return entries.length ? (Object.fromEntries(entries) as DeviceProperties) : undefined
 }
 
 function normalizeDeviceView(view: DeviceViewDefinition): DeviceViewDefinition {
@@ -226,30 +247,126 @@ function inferSideRank(side: TerminalDefinition['side']) {
 }
 
 export function inferSideFromDirection(direction: TerminalDirection) {
-  switch (direction) {
-    case 'input':
-    case 'power-in':
-    case 'ground':
-      return 'left' as const
-    case 'output':
-    case 'power-out':
-      return 'right' as const
-    case 'bidirectional':
-      return 'top' as const
-    case 'passive':
-    case 'shield':
-    case 'unspecified':
-    default:
-      return 'bottom' as const
+  if (isSourceLikeDirection(direction)) {
+    return 'right' as const
   }
+
+  return 'left' as const
+}
+
+export function collapseTerminalDirection(direction: TerminalDirection) {
+  if (direction === 'output' || direction === 'power-out') {
+    return 'output' as const
+  }
+
+  if (direction === 'input' || direction === 'power-in' || direction === 'ground') {
+    return 'input' as const
+  }
+
+  return null
+}
+
+export function getTerminalFlowDirection(
+  terminal: Pick<TerminalDefinition, 'direction' | 'logicalDirection'>,
+): TerminalDirection {
+  return terminal.logicalDirection ?? terminal.direction
+}
+
+export function isSourceLikeDirection(direction: TerminalDirection) {
+  return collapseTerminalDirection(direction) === 'output'
+}
+
+export function isSinkLikeDirection(direction: TerminalDirection) {
+  return collapseTerminalDirection(direction) === 'input'
+}
+
+export function isFlexibleDirection(direction: TerminalDirection) {
+  return !isSourceLikeDirection(direction) && !isSinkLikeDirection(direction)
+}
+
+export function getTerminalLabelIntent(
+  terminals: Array<{ flowDirection: TerminalDirection }>,
+): 'upstream' | 'downstream' | null {
+  const hasSource = terminals.some((terminal) => isSourceLikeDirection(terminal.flowDirection))
+  const hasSink = terminals.some((terminal) => isSinkLikeDirection(terminal.flowDirection))
+
+  if (hasSink && !hasSource) {
+    return 'upstream'
+  }
+
+  if (hasSource && !hasSink) {
+    return 'downstream'
+  }
+
+  return null
+}
+
+export function inferPeerLabelIntent(
+  terminals: Array<{ direction: TerminalDirection }>,
+): 'upstream' | 'downstream' | null {
+  const hasSource = terminals.some((terminal) => isSourceLikeDirection(terminal.direction))
+  const hasSink = terminals.some((terminal) => isSinkLikeDirection(terminal.direction))
+
+  if (hasSource && !hasSink) {
+    return 'upstream'
+  }
+
+  if (hasSink && !hasSource) {
+    return 'downstream'
+  }
+
+  return null
+}
+
+export function resolveSharedLabelBucket(
+  intent: 'upstream' | 'downstream' | null,
+  terminals: Array<{ direction: TerminalDirection }>,
+): 'upstream' | 'downstream' | null {
+  if (!intent) {
+    return null
+  }
+
+  const hasSource = terminals.some((terminal) => isSourceLikeDirection(terminal.direction))
+  const hasSink = terminals.some((terminal) => isSinkLikeDirection(terminal.direction))
+  const hasFlexible = terminals.some((terminal) => isFlexibleDirection(terminal.direction))
+
+  if (intent === 'upstream') {
+    if (hasSource && !hasSink) {
+      return 'upstream'
+    }
+    if (!hasSource && !hasSink && hasFlexible) {
+      return 'upstream'
+    }
+    return null
+  }
+
+  if (hasSink && !hasSource) {
+    return 'downstream'
+  }
+  if (!hasSource && !hasSink && hasFlexible) {
+    return 'downstream'
+  }
+  return null
 }
 
 export function normalizeTerminalLabel(label: string | undefined) {
   return cleanOptionalString(label) ?? null
 }
 
+function getTerminalPinSummary(terminal: TerminalDefinition) {
+  const number = cleanOptionalString(terminal.pin?.number)
+  const name = cleanOptionalString(terminal.pin?.name)
+  if (!number && !name) {
+    return null
+  }
+
+  return [number, name].filter((value): value is string => Boolean(value)).join(':')
+}
+
 export function getTerminalDisplayLabel(terminal: TerminalDefinition) {
-  return terminal.label?.trim() || terminal.name
+  const base = terminal.label?.trim() || terminal.name
+  const pinSummary = getTerminalPinSummary(terminal)
+  return pinSummary ? `${base} [${pinSummary}]` : base
 }
 
 export function getDeviceReference(device: DeviceDefinition, document: DocumentFile) {
@@ -345,37 +462,7 @@ export function buildDefaultTerminalIdentity(
 }
 
 function inferReferencePrefix(device: DeviceDefinition) {
-  const haystack = [
-    device.kind,
-    device.category ?? '',
-    device.name,
-    ...(device.tags ?? []),
-  ]
-    .join(' ')
-    .toLowerCase()
-
-  if (/\b(res|resistor)\b/.test(haystack)) {
-    return 'R'
-  }
-  if (/\b(cap|capacitor)\b/.test(haystack)) {
-    return 'C'
-  }
-  if (/\b(ind|inductor|coil)\b/.test(haystack)) {
-    return 'L'
-  }
-  if (/\b(diode|led|tvs|zener)\b/.test(haystack)) {
-    return 'D'
-  }
-  if (/\b(connector|header|socket|jack|plug)\b/.test(haystack)) {
-    return 'J'
-  }
-  if (/\b(switch|button|relay)\b/.test(haystack)) {
-    return 'SW'
-  }
-  if (/\b(power|supply|regulator)\b/.test(haystack)) {
-    return 'PS'
-  }
-  return 'U'
+  return getReferencePrefixForKind(device)
 }
 
 export function getDeviceView(
@@ -429,8 +516,10 @@ export function findEntity(
       return document.document
     case 'device':
       return document.devices.find((device) => device.id === selection.id)
+    case 'deviceGroup':
+      return document.devices.filter((device) => selection.ids.includes(device.id))
     case 'networkLine':
-      return document.view.networkLines?.[selection.id ?? '']
+      return document.view.networkLines?.[selection.id]
     case 'terminal':
       return document.devices
         .flatMap((device) => device.terminals)
@@ -459,6 +548,10 @@ export function getEntityTitle(
     return device ? `${getDeviceReference(device, document)} ${device.name}` : id
   }
 
+  if (entityType === 'deviceGroup') {
+    return locale === 'zh-CN' ? '多器件选择' : 'Multiple devices'
+  }
+
   if (entityType === 'networkLine') {
     const networkLine = document.view.networkLines?.[id]
     return networkLine?.label?.trim() ? networkLine.label.trim() : id
@@ -475,12 +568,5 @@ export function getEntityTitle(
 }
 
 export function getDefaultShape(kind: string): DeviceShape {
-  const lower = kind.toLowerCase()
-  if (lower.includes('sensor') || lower.includes('amp') || lower.includes('comparator')) {
-    return 'triangle'
-  }
-  if (lower.includes('connector') || lower.includes('switch')) {
-    return 'circle'
-  }
-  return 'rectangle'
+  return getDefaultShapeForKind(kind)
 }

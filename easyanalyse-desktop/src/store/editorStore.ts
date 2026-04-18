@@ -5,10 +5,19 @@ import {
   buildDefaultTerminalIdentity,
   findNextDeviceReference,
   getDeviceReference,
+  getTerminalFlowDirection,
   inferSideFromDirection,
   normalizeDocumentLocal,
   normalizeRotationDeg,
 } from '../lib/document'
+import {
+  getDefaultShapeForKind,
+  getDefaultSizeForKind,
+  getDeviceTemplateDefinition,
+  getReferencePrefixForKind,
+  type DeviceVisualKind,
+} from '../lib/deviceSymbols'
+import { setStoredTerminalAnchor } from '../lib/geometry'
 import { getStoredLocale, translate } from '../lib/i18n'
 import { makeId } from '../lib/ids'
 import {
@@ -39,6 +48,8 @@ const FILE_FILTERS = [
   },
 ]
 
+const DEFAULT_DEVICE_SIZE = getDefaultSizeForKind('module')
+
 interface ViewportAnimationTarget {
   center: Point
   zoom: number
@@ -52,6 +63,8 @@ interface EditorState {
   locale: Locale
   validationReport: ValidationReport | null
   selection: EditorSelection | null
+  pendingDeviceShape: DeviceShape | null
+  pendingDeviceTemplateKey: DeviceVisualKind | null
   focusedDeviceId: string | null
   focusedLabelKey: string | null
   focusedNetworkLineId: string | null
@@ -66,12 +79,25 @@ interface EditorState {
   saveDocumentAs: () => Promise<void>
   revalidate: () => Promise<void>
   setSelection: (selection: EditorSelection | null) => void
-  addDevice: (shape?: DeviceShape) => void
+  setDeviceGroupSelection: (ids: string[]) => void
+  addDevice: (templateKey?: DeviceVisualKind) => void
+  applyDeviceTemplate: (id: string, templateKey: DeviceVisualKind) => void
+  placePendingDevice: (position?: Point) => string | null
+  cancelPendingDevicePlacement: () => void
   addNetworkLine: (label?: string) => void
   updateDevice: (id: string, patch: Partial<DeviceDefinition>) => void
   updateDeviceView: (id: string, patch: Partial<DeviceViewDefinition>) => void
   updateNetworkLine: (id: string, patch: Partial<NetworkLineViewDefinition>) => void
   moveDevice: (id: string, position: Point) => void
+  moveDevices: (ids: string[], delta: Point) => void
+  repositionTerminal: (
+    deviceId: string,
+    terminalId: string,
+    side: TerminalDefinition['side'],
+    insertIndex: number,
+    point?: Point,
+    bounds?: { width: number; height: number },
+  ) => void
   rotateDevice: (id: string, deltaDeg?: number) => void
   rotateSelection: () => void
   addTerminal: (deviceId: string, direction: TerminalDirection) => void
@@ -143,6 +169,22 @@ function getSaveStatusMessage(locale: Locale, path: string, report: ValidationRe
   return withLocale(locale, 'statusSaved', { path })
 }
 
+function buildDeviceSelection(ids: string[]): EditorSelection {
+  const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))]
+  if (unique.length === 0) {
+    return { entityType: 'document' }
+  }
+
+  if (unique.length === 1) {
+    return { entityType: 'device', id: unique[0]! }
+  }
+
+  return {
+    entityType: 'deviceGroup',
+    ids: unique,
+  }
+}
+
 function nextDevicePosition(document: DocumentFile) {
   const index = document.devices.length
   const column = index % 4
@@ -201,7 +243,7 @@ function chooseDefaultNetworkLineLabel(document: DocumentFile) {
       .map((item) => item.label.trim())
       .filter(Boolean),
   )
-  const suggested = ['VCC', 'GND', '3V3', '5V', ...document.devices.flatMap((device) =>
+  const suggested = ['3V3', '5V', 'GND', '12V', ...document.devices.flatMap((device) =>
     device.terminals.map((terminal) => terminal.label?.trim() ?? ''),
   )]
     .filter(Boolean)
@@ -218,6 +260,62 @@ function chooseDefaultNetworkLineLabel(document: DocumentFile) {
     index += 1
   }
   return `NET_${index}`
+}
+
+function createDeviceFromTemplate(document: DocumentFile, templateKey: DeviceVisualKind) {
+  const template = getDeviceTemplateDefinition(templateKey)
+  const id = makeId('device')
+  const index = document.devices.length + 1
+  const referencePrefix = getReferencePrefixForKind(template.kind)
+
+  return {
+    id,
+    device: {
+      id,
+      name: `${template.defaultName} ${index}`,
+      kind: template.kind,
+      category: template.category,
+      description: '',
+      reference: findNextDeviceReference(document, referencePrefix),
+      tags: [],
+      terminals: [],
+    },
+    view: {
+      position: nextDevicePosition(document),
+      size: getDefaultSizeForKind(template.kind),
+      shape: getDefaultShapeForKind(template.kind),
+    } satisfies DeviceViewDefinition,
+    template,
+  }
+}
+
+function getNormalizedTerminalSide(
+  terminal: Pick<TerminalDefinition, 'side' | 'direction' | 'logicalDirection'>,
+) {
+  return terminal.side ?? inferSideFromDirection(getTerminalFlowDirection(terminal))
+}
+
+function inferNewTerminalSide(
+  device: Pick<DeviceDefinition, 'terminals'>,
+  direction: TerminalDirection,
+) {
+  if (direction !== 'passive' && direction !== 'bidirectional' && direction !== 'unspecified') {
+    return inferSideFromDirection(direction)
+  }
+
+  const leftCount = device.terminals.filter((terminal) => getNormalizedTerminalSide(terminal) === 'left').length
+  const rightCount = device.terminals.filter((terminal) => getNormalizedTerminalSide(terminal) === 'right').length
+  return leftCount <= rightCount ? ('left' as const) : ('right' as const)
+}
+
+function compareTerminalPlacement(left: TerminalDefinition, right: TerminalDefinition) {
+  const leftOrder = left.order ?? Number.MAX_SAFE_INTEGER
+  const rightOrder = right.order ?? Number.MAX_SAFE_INTEGER
+  return (
+    leftOrder - rightOrder ||
+    left.name.localeCompare(right.name) ||
+    left.id.localeCompare(right.id)
+  )
 }
 
 function nextNetworkLineView(document: DocumentFile, label: string): NetworkLineViewDefinition {
@@ -291,6 +389,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
       filePath: options?.filePath ?? state.filePath,
       dirty: options?.dirty ?? state.dirty,
       selection: options?.selection ?? state.selection,
+      pendingDeviceShape: null,
+      pendingDeviceTemplateKey: null,
       history: options?.resetHistory ? [] : state.history,
       future: options?.resetHistory ? [] : state.future,
       statusMessage:
@@ -317,13 +417,12 @@ export const useEditorStore = create<EditorState>((set, get) => {
       document: normalized,
       dirty: true,
       selection: selection ?? state.selection,
+      pendingDeviceShape: null,
+      pendingDeviceTemplateKey: null,
       history: [...state.history, state.document],
       future: [],
       viewportAnimationTarget: null,
-      focusedDeviceId:
-        selection?.entityType === 'device'
-          ? selection.id ?? state.focusedDeviceId
-          : state.focusedDeviceId,
+      focusedDeviceId: state.focusedDeviceId,
       focusedLabelKey: null,
       focusedNetworkLineId: null,
     }))
@@ -359,6 +458,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
     locale: getStoredLocale(),
     validationReport: null,
     selection: { entityType: 'document' },
+    pendingDeviceShape: null,
+    pendingDeviceTemplateKey: null,
     focusedDeviceId: null,
     focusedLabelKey: null,
     focusedNetworkLineId: null,
@@ -484,43 +585,86 @@ export const useEditorStore = create<EditorState>((set, get) => {
       void requestValidation(document)
     },
     setSelection: (selection) => set({ selection }),
-    addDevice: (shape = 'rectangle') => {
+    setDeviceGroupSelection: (ids) => set({ selection: buildDeviceSelection(ids) }),
+    addDevice: (templateKey = 'module') => {
       const state = get()
-      let createdId = ''
-
+      const template = getDeviceTemplateDefinition(templateKey)
+      const shape = getDefaultShapeForKind(template.kind)
+      set({
+        pendingDeviceShape: shape,
+        pendingDeviceTemplateKey: templateKey,
+        statusMessage: `${withLocale(state.locale, 'addDevice')} ${template.label}`,
+        focusedDeviceId: null,
+        focusedLabelKey: null,
+        focusedNetworkLineId: null,
+        viewportAnimationTarget: null,
+      })
+    },
+    applyDeviceTemplate: (id, templateKey) => {
       mutateDocument((draft) => {
-        const id = makeId('device')
-        createdId = id
-        const kind = shape === 'triangle' ? 'sensor' : shape === 'circle' ? 'connector' : 'module'
-        const index = draft.devices.length + 1
-        draft.devices.push({
-          id,
-          name: `${shape === 'triangle' ? 'Sensor' : shape === 'circle' ? 'Connector' : 'Module'} ${index}`,
-          kind,
-          category: shape === 'triangle' ? 'input' : undefined,
-          description: '',
-          reference: findNextDeviceReference(draft, shape === 'circle' ? 'J' : 'U'),
-          tags: [],
-          terminals: [],
-        })
+        const device = draft.devices.find((item) => item.id === id)
+        if (!device) {
+          return
+        }
+
+        const template = getDeviceTemplateDefinition(templateKey)
+        const currentName = device.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+        const currentKind = device.kind.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+
+        device.kind = template.kind
+        if (!device.category?.trim()) {
+          device.category = template.category
+        }
+        if (!device.reference?.trim()) {
+          device.reference = findNextDeviceReference(draft, getReferencePrefixForKind(template.kind))
+        }
+        if (!device.name.trim() || currentName === currentKind || currentName.startsWith(currentKind)) {
+          device.name = template.defaultName
+        }
+
         draft.view.devices = {
           ...(draft.view.devices ?? {}),
           [id]: {
-            position: nextDevicePosition(draft),
-            size: {
-              width: 220,
-              height: 136,
-            },
-            shape,
+            ...(draft.view.devices?.[id] ?? {}),
+            shape: getDefaultShapeForKind(template.kind),
+            size: getDefaultSizeForKind(template.kind),
+          },
+        }
+      }, { entityType: 'device', id })
+    },
+    placePendingDevice: (position) => {
+      const state = get()
+      const shape = state.pendingDeviceShape
+      if (!shape) {
+        return null
+      }
+
+      let createdId = ''
+      mutateDocument((draft) => {
+        const templateKey = state.pendingDeviceTemplateKey ?? 'module'
+        const created = createDeviceFromTemplate(draft, templateKey)
+        createdId = created.id
+        draft.devices.push(created.device)
+        draft.view.devices = {
+          ...(draft.view.devices ?? {}),
+          [created.id]: {
+            position: position ?? nextDevicePosition(draft),
+            size: created.view.size ?? DEFAULT_DEVICE_SIZE,
+            shape: created.view.shape ?? shape,
           },
         }
       }, { entityType: 'device', id: createdId })
 
       set({
         selection: { entityType: 'device', id: createdId },
-        statusMessage: `${withLocale(state.locale, 'addDevice')} ${translate(state.locale, shape)}`,
+        pendingDeviceShape: null,
+        pendingDeviceTemplateKey: null,
+        statusMessage: `${withLocale(state.locale, 'addDevice')} ${getDeviceTemplateDefinition(state.pendingDeviceTemplateKey ?? 'module').label}`,
       })
+
+      return createdId
     },
+    cancelPendingDevicePlacement: () => set({ pendingDeviceShape: null, pendingDeviceTemplateKey: null }),
     addNetworkLine: (label) => {
       const document = get().document
       const nextLabel = (label?.trim() || chooseDefaultNetworkLineLabel(document)).trim()
@@ -580,6 +724,76 @@ export const useEditorStore = create<EditorState>((set, get) => {
         }
       }, { entityType: 'device', id })
     },
+    moveDevices: (ids, delta) => {
+      const unique = [...new Set(ids)]
+      if (!unique.length) {
+        return
+      }
+
+      mutateDocument((draft) => {
+        draft.view.devices = { ...(draft.view.devices ?? {}) }
+        for (const id of unique) {
+          const current = draft.view.devices?.[id]
+          const position = current?.position ?? nextDevicePosition(draft)
+          draft.view.devices[id] = {
+            ...(current ?? {}),
+            position: {
+              x: position.x + delta.x,
+              y: position.y + delta.y,
+            },
+          }
+        }
+      }, buildDeviceSelection(unique))
+    },
+    repositionTerminal: (deviceId, terminalId, side, insertIndex, point, bounds) => {
+      mutateDocument((draft) => {
+        const device = draft.devices.find((item) => item.id === deviceId)
+        const terminal = device?.terminals.find((item) => item.id === terminalId)
+        if (!device || !terminal) {
+          return
+        }
+
+        const targetSide = side ?? inferSideFromDirection(getTerminalFlowDirection(terminal))
+        const remaining = device.terminals.filter((item) => item.id !== terminalId)
+        const orderedBySide = new Map<TerminalDefinition['side'], TerminalDefinition[]>()
+
+        for (const candidate of remaining) {
+          const candidateSide = getNormalizedTerminalSide(candidate)
+          const bucket = orderedBySide.get(candidateSide) ?? []
+          bucket.push(candidate)
+          orderedBySide.set(candidateSide, bucket)
+        }
+
+        for (const bucket of orderedBySide.values()) {
+          bucket.sort(compareTerminalPlacement)
+        }
+
+        const targetBucket = [...(orderedBySide.get(targetSide) ?? [])]
+        const clampedIndex = Math.max(0, Math.min(insertIndex, targetBucket.length))
+        targetBucket.splice(clampedIndex, 0, terminal)
+        orderedBySide.set(targetSide, targetBucket)
+
+        terminal.side = targetSide
+        setStoredTerminalAnchor(
+          terminal,
+          point ?? null,
+          point && bounds
+            ? {
+                x: 0,
+                y: 0,
+                width: bounds.width,
+                height: bounds.height,
+              }
+            : undefined,
+        )
+
+        for (const bucket of orderedBySide.values()) {
+          bucket.forEach((item, index) => {
+            item.order = index * 10
+          })
+        }
+      }, { entityType: 'terminal', id: terminalId })
+    },
     rotateDevice: (id, deltaDeg = 90) => {
       const selection = get().selection
       mutateDocument((draft) => {
@@ -595,12 +809,26 @@ export const useEditorStore = create<EditorState>((set, get) => {
     },
     rotateSelection: () => {
       const selection = get().selection
-      if (!selection?.id || selection.entityType === 'document') {
+      if (!selection || selection.entityType === 'document') {
         return
       }
 
       if (selection.entityType === 'device') {
         get().rotateDevice(selection.id)
+        return
+      }
+
+      if (selection.entityType === 'deviceGroup') {
+        mutateDocument((draft) => {
+          draft.view.devices = { ...(draft.view.devices ?? {}) }
+          for (const id of selection.ids) {
+            const current = draft.view.devices?.[id]?.rotationDeg ?? 0
+            draft.view.devices[id] = {
+              ...(draft.view.devices?.[id] ?? {}),
+              rotationDeg: normalizeRotationDeg(current + 90),
+            }
+          }
+        }, selection)
         return
       }
 
@@ -625,7 +853,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
         const id = makeId('terminal')
         createdId = id
-        const side = inferSideFromDirection(direction)
+        const side = inferNewTerminalSide(device, direction)
         const directionCount = device.terminals.filter(
           (terminal) => terminal.direction === direction,
         ).length
@@ -656,6 +884,9 @@ export const useEditorStore = create<EditorState>((set, get) => {
         }
 
         Object.assign(terminal, patch)
+        if (patch.side !== undefined || patch.order !== undefined) {
+          setStoredTerminalAnchor(terminal, null)
+        }
       }, { entityType: 'terminal', id: terminalId })
     },
     updateDocumentMeta: (patch) => {
@@ -677,17 +908,29 @@ export const useEditorStore = create<EditorState>((set, get) => {
     },
     deleteSelection: () => {
       const selection = get().selection
-      if (!selection || selection.entityType === 'document' || !selection.id) {
+      if (!selection || selection.entityType === 'document') {
         return
       }
-      const selectionId = selection.id
+      const selectedDeviceIds =
+        selection.entityType === 'device'
+          ? [selection.id]
+          : selection.entityType === 'deviceGroup'
+            ? selection.ids
+            : []
+      const selectionId =
+        selection.entityType === 'terminal' || selection.entityType === 'networkLine'
+          ? selection.id
+          : null
 
       mutateDocument((draft) => {
-        if (selection.entityType === 'device') {
-          draft.devices = draft.devices.filter((device) => device.id !== selectionId)
-          if (draft.view.devices?.[selectionId]) {
+        if (selection.entityType === 'device' || selection.entityType === 'deviceGroup') {
+          const selectedSet = new Set(selectedDeviceIds)
+          draft.devices = draft.devices.filter((device) => !selectedSet.has(device.id))
+          if (draft.view.devices) {
             const nextViews = { ...(draft.view.devices ?? {}) }
-            delete nextViews[selectionId]
+            for (const deviceId of selectedSet) {
+              delete nextViews[deviceId]
+            }
             draft.view.devices = nextViews
           }
           return
@@ -700,7 +943,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
           return
         }
 
-        if (selection.entityType === 'networkLine') {
+        if (selection.entityType === 'networkLine' && selectionId) {
           if (draft.view.networkLines?.[selectionId]) {
             const nextViews = { ...(draft.view.networkLines ?? {}) }
             delete nextViews[selectionId]
@@ -711,11 +954,17 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
       set((state) => ({
         selection: { entityType: 'document' },
+        pendingDeviceShape: null,
+        pendingDeviceTemplateKey: null,
         focusedDeviceId:
-          state.focusedDeviceId === selection.id ? null : state.focusedDeviceId,
+          state.focusedDeviceId && selectedDeviceIds.includes(state.focusedDeviceId)
+            ? null
+            : state.focusedDeviceId,
         focusedLabelKey: null,
         focusedNetworkLineId:
-          state.focusedNetworkLineId === selection.id ? null : state.focusedNetworkLineId,
+          state.focusedNetworkLineId && state.focusedNetworkLineId === selectionId
+            ? null
+            : state.focusedNetworkLineId,
         statusMessage: withLocale(state.locale, 'statusDeleted'),
       }))
     },
@@ -732,6 +981,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
         future: [state.document, ...state.future],
         dirty: true,
         selection: { entityType: 'document' },
+        pendingDeviceShape: null,
+        pendingDeviceTemplateKey: null,
         focusedDeviceId: null,
         focusedLabelKey: null,
         focusedNetworkLineId: null,
@@ -752,6 +1003,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
         future: state.future.slice(1),
         dirty: true,
         selection: { entityType: 'document' },
+        pendingDeviceShape: null,
+        pendingDeviceTemplateKey: null,
         focusedDeviceId: null,
         focusedLabelKey: null,
         focusedNetworkLineId: null,

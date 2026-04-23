@@ -77,8 +77,6 @@ pub struct TerminalDefinition {
     pub label: Option<String>,
     pub direction: TerminalDirection,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub logical_direction: Option<TerminalDirection>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -112,13 +110,6 @@ pub struct TerminalPin {
 pub enum TerminalDirection {
     Input,
     Output,
-    Bidirectional,
-    Passive,
-    PowerIn,
-    PowerOut,
-    Ground,
-    Shield,
-    Unspecified,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

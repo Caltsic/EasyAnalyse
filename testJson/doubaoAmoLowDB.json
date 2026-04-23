@@ -1,0 +1,433 @@
+{
+  "schemaVersion": "4.0.0",
+  "document": {
+    "id": "doc.low-noise-amplifier-57db",
+    "title": "通用型低噪声放大器（57dB增益）",
+    "description": "第一级JFE2140 FET分立元件输入级（高阻抗），第二级运算放大器，噪声1.54nV/Hz",
+    "createdAt": "2026-04-14T12:00:00.000Z",
+    "updatedAt": "2026-04-14T12:00:00.000Z",
+    "source": "ai",
+    "language": "zh-CN",
+    "tags": ["低噪声放大器", "LNA", "57dB增益", "JFE2140", "FET输入级", "高阻抗", "1.54nV/Hz"]
+  },
+  "devices": [
+    {
+      "id": "device.jfe2140",
+      "name": "JFE2140 FET输入级",
+      "kind": "fet-transistor",
+      "category": "active",
+      "reference": "Q1",
+      "description": "第一级低噪声FET，高阻抗信号接收，核心放大元件",
+      "tags": ["JFE2140", "FET", "输入级", "高阻抗", "低噪声"],
+      "properties": {
+        "partNumber": "JFE2140",
+        "package": "TO-92",
+        "noiseFigure": "1.54nV/Hz",
+        "inputImpedance": "10GΩ",
+        "gain": "27dB"
+      },
+      "terminals": [
+        {
+          "id": "terminal.jfe2140.gate",
+          "name": "INPUT_GATE_Q1",
+          "label": "IN_SIGNAL",
+          "direction": "input",
+          "side": "left",
+          "order": 0,
+          "description": "FET栅极，高阻抗信号输入",
+          "required": true,
+          "pin": {
+            "number": "1",
+            "name": "G"
+          }
+        },
+        {
+          "id": "terminal.jfe2140.source",
+          "name": "OUTPUT_SOURCE_Q1",
+          "label": "JFE2140_OUT",
+          "direction": "output",
+          "side": "right",
+          "order": 0,
+          "description": "FET源极，第一级放大输出",
+          "required": true,
+          "pin": {
+            "number": "2",
+            "name": "S"
+          }
+        },
+        {
+          "id": "terminal.jfe2140.drain",
+          "name": "INPUT_DRAIN_Q1",
+          "label": "VDD_12V",
+          "direction": "input",
+          "side": "top",
+          "order": 0,
+          "description": "FET漏极，12V供电",
+          "required": true,
+          "pin": {
+            "number": "3",
+            "name": "D"
+          }
+        },
+        {
+          "id": "terminal.jfe2140.gnd",
+          "name": "INPUT_GND_Q1",
+          "label": "GND",
+          "direction": "input",
+          "side": "bottom",
+          "order": 0,
+          "description": "FET地端",
+          "required": true,
+          "pin": {
+            "number": "4",
+            "name": "GND"
+          }
+        }
+      ]
+    },
+    {
+      "id": "device.r1",
+      "name": "源极偏置电阻",
+      "kind": "resistor",
+      "category": "passive",
+      "reference": "R1",
+      "description": "JFE2140源极偏置，稳定工作点",
+      "tags": ["偏置电阻", "源极电阻"],
+      "properties": {
+        "value": "220Ω",
+        "package": "0805"
+      },
+      "terminals": [
+        {
+          "id": "terminal.r1.in",
+          "name": "INPUT_1_R1",
+          "label": "JFE2140_OUT",
+          "direction": "input",
+          "side": "left",
+          "order": 0,
+          "description": "电阻输入端，接JFE2140源极"
+        },
+        {
+          "id": "terminal.r1.out",
+          "name": "OUTPUT_1_R1",
+          "label": "GND",
+          "direction": "output",
+          "side": "right",
+          "order": 0,
+          "description": "电阻输出端，接地"
+        }
+      ]
+    },
+    {
+      "id": "device.opamp",
+      "name": "运算放大器第二级",
+      "kind": "op-amp",
+      "category": "active",
+      "reference": "U1",
+      "description": "第二级放大，补充30dB增益，总增益57dB",
+      "tags": ["运算放大器", "第二级放大", "30dB增益"],
+      "properties": {
+        "partNumber": "OPA847",
+        "package": "SOIC-8",
+        "gain": "30dB",
+        "noiseFigure": "1.0nV/Hz",
+        "bandwidth": "1.1GHz"
+      },
+      "terminals": [
+        {
+          "id": "terminal.opamp.in+",
+          "name": "INPUT_IN+_U1",
+          "label": "JFE2140_OUT",
+          "direction": "input",
+          "side": "left",
+          "order": 0,
+          "description": "运放同相输入，接第一级输出",
+          "required": true,
+          "pin": {
+            "number": "3",
+            "name": "IN+"
+          }
+        },
+        {
+          "id": "terminal.opamp.in-",
+          "name": "INPUT_IN-_U1",
+          "label": "OPAMP_BIAS",
+          "direction": "input",
+          "side": "left",
+          "order": 1,
+          "description": "运放反相输入，偏置调节",
+          "required": true,
+          "pin": {
+            "number": "2",
+            "name": "IN-"
+          }
+        },
+        {
+          "id": "terminal.opamp.out",
+          "name": "OUTPUT_OUT_U1",
+          "label": "LNA_FINAL_OUT",
+          "direction": "output",
+          "side": "right",
+          "order": 0,
+          "description": "运放输出，最终57dB增益信号",
+          "required": true,
+          "pin": {
+            "number": "6",
+            "name": "OUT"
+          }
+        },
+        {
+          "id": "terminal.opamp.vcc+",
+          "name": "INPUT_VCC+_U1",
+          "label": "VDD_12V",
+          "direction": "input",
+          "side": "top",
+          "order": 0,
+          "description": "运放正电源12V",
+          "required": true,
+          "pin": {
+            "number": "7",
+            "name": "VCC+"
+          }
+        },
+        {
+          "id": "terminal.opamp.vcc-",
+          "name": "INPUT_VCC-_U1",
+          "label": "VSS_-12V",
+          "direction": "input",
+          "side": "bottom",
+          "order": 0,
+          "description": "运放负电源-12V",
+          "required": true,
+          "pin": {
+            "number": "4",
+            "name": "VCC-"
+          }
+        },
+        {
+          "id": "terminal.opamp.gnd",
+          "name": "INPUT_GND_U1",
+          "label": "GND",
+          "direction": "input",
+          "side": "bottom",
+          "order": 1,
+          "description": "运放地端",
+          "required": true,
+          "pin": {
+            "number": "1",
+            "name": "GND"
+          }
+        }
+      ]
+    },
+    {
+      "id": "device.r2",
+      "name": "反馈电阻（增益设定）",
+      "kind": "resistor",
+      "category": "passive",
+      "reference": "R2",
+      "description": "运放反相反馈，设定第二级30dB增益",
+      "tags": ["反馈电阻", "增益电阻"],
+      "properties": {
+        "value": "100kΩ",
+        "package": "0805"
+      },
+      "terminals": [
+        {
+          "id": "terminal.r2.in",
+          "name": "INPUT_1_R2",
+          "label": "OPAMP_BIAS",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.r2.out",
+          "name": "OUTPUT_1_R2",
+          "label": "LNA_FINAL_OUT",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.r3",
+      "name": "偏置电阻",
+      "kind": "resistor",
+      "category": "passive",
+      "reference": "R3",
+      "description": "运放反相端直流偏置",
+      "properties": {
+        "value": "10kΩ",
+        "package": "0805"
+      },
+      "terminals": [
+        {
+          "id": "terminal.r3.in",
+          "name": "INPUT_1_R3",
+          "label": "OPAMP_BIAS",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.r3.out",
+          "name": "OUTPUT_1_R3",
+          "label": "GND",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.power_12v",
+      "name": "12V正电源",
+      "kind": "power-source",
+      "category": "power",
+      "reference": "V1",
+      "description": "放大器正电源，12V供电",
+      "tags": ["12V电源", "正电源"],
+      "properties": {
+        "voltage": "12V",
+        "outputVoltage": "12V",
+        "package": "SMD"
+      },
+      "terminals": [
+        {
+          "id": "terminal.power_12v.out",
+          "name": "OUTPUT_VDD_V1",
+          "label": "VDD_12V",
+          "direction": "output",
+          "side": "right",
+          "order": 0,
+          "description": "12V输出"
+        },
+        {
+          "id": "terminal.power_12v.gnd",
+          "name": "INPUT_GND_V1",
+          "label": "GND",
+          "direction": "input",
+          "side": "left",
+          "order": 0,
+          "description": "电源地"
+        }
+      ]
+    },
+    {
+      "id": "device.power_neg12v",
+      "name": "-12V负电源",
+      "kind": "power-source",
+      "category": "power",
+      "reference": "V2",
+      "description": "放大器负电源，-12V供电",
+      "tags": ["-12V电源", "负电源"],
+      "properties": {
+        "voltage": "-12V",
+        "outputVoltage": "-12V",
+        "package": "SMD"
+      },
+      "terminals": [
+        {
+          "id": "terminal.power_neg12v.out",
+          "name": "OUTPUT_VSS_V2",
+          "label": "VSS_-12V",
+          "direction": "output",
+          "side": "right",
+          "order": 0,
+          "description": "-12V输出"
+        },
+        {
+          "id": "terminal.power_neg12v.gnd",
+          "name": "INPUT_GND_V2",
+          "label": "GND",
+          "direction": "input",
+          "side": "left",
+          "order": 0,
+          "description": "电源地"
+        }
+      ]
+    }
+  ],
+  "view": {
+    "canvas": {
+      "units": "px",
+      "grid": {
+        "enabled": true,
+        "size": 36,
+        "majorEvery": 5
+      },
+      "background": "grid"
+    },
+    "devices": {
+      "device.jfe2140": {
+        "position": { "x": 200, "y": 200 },
+        "size": { "width": 200, "height": 180 },
+        "rotationDeg": 0,
+        "shape": "rectangle"
+      },
+      "device.r1": {
+        "position": { "x": 420, "y": 240 },
+        "size": { "width": 80, "height": 40 },
+        "rotationDeg": 0,
+        "shape": "rectangle"
+      },
+      "device.opamp": {
+        "position": { "x": 520, "y": 200 },
+        "size": { "width": 220, "height": 200 },
+        "rotationDeg": 0,
+        "shape": "rectangle"
+      },
+      "device.r2": {
+        "position": { "x": 750, "y": 180 },
+        "size": { "width": 80, "height": 40 },
+        "rotationDeg": 90,
+        "shape": "rectangle"
+      },
+      "device.r3": {
+        "position": { "x": 750, "y": 240 },
+        "size": { "width": 80, "height": 40 },
+        "rotationDeg": 0,
+        "shape": "rectangle"
+      },
+      "device.power_12v": {
+        "position": { "x": 200, "y": 100 },
+        "size": { "width": 120, "height": 60 },
+        "rotationDeg": 0,
+        "shape": "rectangle"
+      },
+      "device.power_neg12v": {
+        "position": { "x": 200, "y": 400 },
+        "size": { "width": 120, "height": 60 },
+        "rotationDeg": 0,
+        "shape": "rectangle"
+      }
+    },
+    "networkLines": {
+      "network.vdd_12v": {
+        "label": "VDD_12V",
+        "position": { "x": 400, "y": 80 },
+        "length": 800,
+        "orientation": "horizontal"
+      },
+      "network.vss_-12v": {
+        "label": "VSS_-12V",
+        "position": { "x": 400, "y": 420 },
+        "length": 800,
+        "orientation": "horizontal"
+      },
+      "network.gnd": {
+        "label": "GND",
+        "position": { "x": 400, "y": 500 },
+        "length": 1000,
+        "orientation": "horizontal"
+      }
+    },
+    "focus": {
+      "defaultDeviceId": "device.jfe2140",
+      "preferredDirection": "left-to-right"
+    }
+  },
+  "extensions": {}
+}

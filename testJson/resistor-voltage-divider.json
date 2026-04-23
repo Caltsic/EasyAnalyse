@@ -1,206 +1,204 @@
-{
-  "schemaVersion": "4.0.0",
-  "document": {
-    "id": "doc.resistor-voltage-divider",
-    "title": "Resistor Voltage Divider",
-    "description": "Basic resistor divider for scaling an input voltage into an ADC-readable node.",
-    "source": "ai",
-    "language": "en-US",
-    "tags": [
-      "analog",
-      "divider",
-      "adc",
-      "resistor"
-    ]
-  },
-  "devices": [
-    {
-      "id": "device.input",
-      "name": "Input Terminal",
-      "kind": "connector",
-      "reference": "J1",
-      "properties": {
-        "voltage": "12V"
-      },
-      "terminals": [
-        {
-          "id": "terminal.input.vin",
-          "name": "OUTPUT_1_J1",
-          "label": "VIN",
-          "direction": "output",
-          "side": "right",
-          "order": 0
-        },
-        {
-          "id": "terminal.input.gnd",
-          "name": "INPUT_1_J1",
-          "label": "GND",
-          "direction": "input",
-          "side": "bottom",
-          "order": 1
-        }
-      ]
-    },
-    {
-      "id": "device.r1",
-      "name": "Upper Divider Resistor",
-      "kind": "resistor",
-      "reference": "R1",
-      "properties": {
-        "value": "100k"
-      },
-      "terminals": [
-        {
-          "id": "terminal.r1.a",
-          "name": "PASSIVE_1_R1",
-          "label": "VIN",
-          "direction": "passive",
-          "logicalDirection": "input",
-          "side": "left",
-          "order": 0
-        },
-        {
-          "id": "terminal.r1.b",
-          "name": "PASSIVE_2_R1",
-          "label": "DIV_OUT",
-          "direction": "passive",
-          "logicalDirection": "output",
-          "side": "right",
-          "order": 1
-        }
-      ]
-    },
-    {
-      "id": "device.r2",
-      "name": "Lower Divider Resistor",
-      "kind": "resistor",
-      "reference": "R2",
-      "properties": {
-        "value": "33k"
-      },
-      "terminals": [
-        {
-          "id": "terminal.r2.a",
-          "name": "PASSIVE_1_R2",
-          "label": "DIV_OUT",
-          "direction": "passive",
-          "side": "left",
-          "order": 0
-        },
-        {
-          "id": "terminal.r2.b",
-          "name": "PASSIVE_2_R2",
-          "label": "GND",
-          "direction": "passive",
-          "side": "right",
-          "order": 1
-        }
-      ]
-    },
-    {
-      "id": "device.adc",
-      "name": "ADC Header",
-      "kind": "connector",
-      "reference": "J2",
-      "terminals": [
-        {
-          "id": "terminal.adc.in",
-          "name": "INPUT_1_J2",
-          "label": "DIV_OUT",
-          "direction": "input",
-          "side": "left",
-          "order": 0
-        },
-        {
-          "id": "terminal.adc.gnd",
-          "name": "INPUT_2_J2",
-          "label": "GND",
-          "direction": "input",
-          "side": "bottom",
-          "order": 1
-        }
-      ]
-    }
-  ],
-  "view": {
-    "canvas": {
-      "units": "px",
-      "grid": {
-        "enabled": true,
-        "size": 36,
-        "majorEvery": 5
-      },
-      "background": "grid"
-    },
-    "devices": {
-      "device.input": {
-        "position": {
-          "x": 200,
-          "y": 260
-        },
-        "size": {
-          "width": 200,
-          "height": 120
-        },
-        "shape": "circle"
-      },
-      "device.r1": {
-        "position": {
-          "x": 520,
-          "y": 220
-        },
-        "size": {
-          "width": 220,
-          "height": 112
-        },
-        "shape": "rectangle"
-      },
-      "device.r2": {
-        "position": {
-          "x": 520,
-          "y": 420
-        },
-        "size": {
-          "width": 220,
-          "height": 112
-        },
-        "shape": "rectangle"
-      },
-      "device.adc": {
-        "position": {
-          "x": 920,
-          "y": 300
-        },
-        "size": {
-          "width": 220,
-          "height": 126
-        },
-        "shape": "circle"
-      }
-    },
-    "networkLines": {
-      "network.gnd": {
-        "label": "GND",
-        "position": {
-          "x": 660,
-          "y": 620
-        },
-        "length": 1040,
-        "orientation": "horizontal"
-      },
-      "network.vin": {
-        "label": "VIN",
-        "position": {
-          "x": 480,
-          "y": 100
-        },
-        "length": 620,
-        "orientation": "horizontal"
-      }
-    },
-    "focus": {
-      "defaultDeviceId": "device.r1",
-      "preferredDirection": "left-to-right"
-    }
-  }
+﻿{
+    "schemaVersion":  "4.0.0",
+    "document":  {
+                     "id":  "doc.resistor-voltage-divider",
+                     "title":  "Resistor Voltage Divider",
+                     "description":  "Basic resistor divider for scaling an input voltage into an ADC-readable node.",
+                     "source":  "ai",
+                     "language":  "en-US",
+                     "tags":  [
+                                  "analog",
+                                  "divider",
+                                  "adc",
+                                  "resistor"
+                              ]
+                 },
+    "devices":  [
+                    {
+                        "id":  "device.input",
+                        "name":  "Input Terminal",
+                        "kind":  "connector",
+                        "reference":  "J1",
+                        "properties":  {
+                                           "voltage":  "12V"
+                                       },
+                        "terminals":  [
+                                          {
+                                              "id":  "terminal.input.vin",
+                                              "name":  "OUTPUT_1_J1",
+                                              "label":  "VIN",
+                                              "direction":  "output",
+                                              "side":  "right",
+                                              "order":  0
+                                          },
+                                          {
+                                              "id":  "terminal.input.gnd",
+                                              "name":  "INPUT_1_J1",
+                                              "label":  "GND",
+                                              "direction":  "input",
+                                              "side":  "bottom",
+                                              "order":  1
+                                          }
+                                      ]
+                    },
+                    {
+                        "id":  "device.r1",
+                        "name":  "Upper Divider Resistor",
+                        "kind":  "resistor",
+                        "reference":  "R1",
+                        "properties":  {
+                                           "value":  "100k"
+                                       },
+                        "terminals":  [
+                                          {
+                                              "id":  "terminal.r1.a",
+                                              "name":  "INPUT_1_R1",
+                                              "label":  "VIN",
+                                              "direction":  "input",
+                                              "side":  "left",
+                                              "order":  0
+                                          },
+                                          {
+                                              "id":  "terminal.r1.b",
+                                              "name":  "OUTPUT_2_R1",
+                                              "label":  "DIV_OUT",
+                                              "direction":  "output",
+                                              "side":  "right",
+                                              "order":  1
+                                          }
+                                      ]
+                    },
+                    {
+                        "id":  "device.r2",
+                        "name":  "Lower Divider Resistor",
+                        "kind":  "resistor",
+                        "reference":  "R2",
+                        "properties":  {
+                                           "value":  "33k"
+                                       },
+                        "terminals":  [
+                                          {
+                                              "id":  "terminal.r2.a",
+                                              "name":  "INPUT_1_R2",
+                                              "label":  "DIV_OUT",
+                                              "direction":  "input",
+                                              "side":  "left",
+                                              "order":  0
+                                          },
+                                          {
+                                              "id":  "terminal.r2.b",
+                                              "name":  "OUTPUT_2_R2",
+                                              "label":  "GND",
+                                              "direction":  "output",
+                                              "side":  "right",
+                                              "order":  1
+                                          }
+                                      ]
+                    },
+                    {
+                        "id":  "device.adc",
+                        "name":  "ADC Header",
+                        "kind":  "connector",
+                        "reference":  "J2",
+                        "terminals":  [
+                                          {
+                                              "id":  "terminal.adc.in",
+                                              "name":  "INPUT_1_J2",
+                                              "label":  "DIV_OUT",
+                                              "direction":  "input",
+                                              "side":  "left",
+                                              "order":  0
+                                          },
+                                          {
+                                              "id":  "terminal.adc.gnd",
+                                              "name":  "INPUT_2_J2",
+                                              "label":  "GND",
+                                              "direction":  "input",
+                                              "side":  "bottom",
+                                              "order":  1
+                                          }
+                                      ]
+                    }
+                ],
+    "view":  {
+                 "canvas":  {
+                                "units":  "px",
+                                "grid":  {
+                                             "enabled":  true,
+                                             "size":  36,
+                                             "majorEvery":  5
+                                         },
+                                "background":  "grid"
+                            },
+                 "devices":  {
+                                 "device.input":  {
+                                                      "position":  {
+                                                                       "x":  200,
+                                                                       "y":  260
+                                                                   },
+                                                      "size":  {
+                                                                   "width":  200,
+                                                                   "height":  120
+                                                               },
+                                                      "shape":  "circle"
+                                                  },
+                                 "device.r1":  {
+                                                   "position":  {
+                                                                    "x":  520,
+                                                                    "y":  220
+                                                                },
+                                                   "size":  {
+                                                                "width":  220,
+                                                                "height":  112
+                                                            },
+                                                   "shape":  "rectangle"
+                                               },
+                                 "device.r2":  {
+                                                   "position":  {
+                                                                    "x":  520,
+                                                                    "y":  420
+                                                                },
+                                                   "size":  {
+                                                                "width":  220,
+                                                                "height":  112
+                                                            },
+                                                   "shape":  "rectangle"
+                                               },
+                                 "device.adc":  {
+                                                    "position":  {
+                                                                     "x":  920,
+                                                                     "y":  300
+                                                                 },
+                                                    "size":  {
+                                                                 "width":  220,
+                                                                 "height":  126
+                                                             },
+                                                    "shape":  "circle"
+                                                }
+                             },
+                 "networkLines":  {
+                                      "network.gnd":  {
+                                                          "label":  "GND",
+                                                          "position":  {
+                                                                           "x":  660,
+                                                                           "y":  620
+                                                                       },
+                                                          "length":  1040,
+                                                          "orientation":  "horizontal"
+                                                      },
+                                      "network.vin":  {
+                                                          "label":  "VIN",
+                                                          "position":  {
+                                                                           "x":  480,
+                                                                           "y":  100
+                                                                       },
+                                                          "length":  620,
+                                                          "orientation":  "horizontal"
+                                                      }
+                                  },
+                 "focus":  {
+                               "defaultDeviceId":  "device.r1",
+                               "preferredDirection":  "left-to-right"
+                           }
+             }
 }

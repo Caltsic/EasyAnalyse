@@ -290,7 +290,7 @@ function createDeviceFromTemplate(document: DocumentFile, templateKey: DeviceVis
 }
 
 function getNormalizedTerminalSide(
-  terminal: Pick<TerminalDefinition, 'side' | 'direction' | 'logicalDirection'>,
+  terminal: Pick<TerminalDefinition, 'side' | 'direction'>,
 ) {
   return terminal.side ?? inferSideFromDirection(getTerminalFlowDirection(terminal))
 }
@@ -299,13 +299,20 @@ function inferNewTerminalSide(
   device: Pick<DeviceDefinition, 'terminals'>,
   direction: TerminalDirection,
 ) {
-  if (direction !== 'passive' && direction !== 'bidirectional' && direction !== 'unspecified') {
-    return inferSideFromDirection(direction)
+  const preferredSide = inferSideFromDirection(direction)
+  const sameSideCount = device.terminals.filter(
+    (terminal) => getNormalizedTerminalSide(terminal) === preferredSide,
+  ).length
+  const oppositeSide = preferredSide === 'left' ? 'right' : 'left'
+  const oppositeSideCount = device.terminals.filter(
+    (terminal) => getNormalizedTerminalSide(terminal) === oppositeSide,
+  ).length
+
+  if (sameSideCount <= oppositeSideCount + 1) {
+    return preferredSide
   }
 
-  const leftCount = device.terminals.filter((terminal) => getNormalizedTerminalSide(terminal) === 'left').length
-  const rightCount = device.terminals.filter((terminal) => getNormalizedTerminalSide(terminal) === 'right').length
-  return leftCount <= rightCount ? ('left' as const) : ('right' as const)
+  return oppositeSide
 }
 
 function compareTerminalPlacement(left: TerminalDefinition, right: TerminalDefinition) {

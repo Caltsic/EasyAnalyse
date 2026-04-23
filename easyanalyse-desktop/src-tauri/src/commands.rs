@@ -34,7 +34,8 @@ pub fn validate_document(document: Value) -> Result<ValidationReport, String> {
 
 #[tauri::command]
 pub fn open_document_from_path(path: String) -> Result<OpenDocumentResult, String> {
-    let json = fs::read_to_string(&path).map_err(error_to_string)?;
+    let bytes = fs::read(&path).map_err(error_to_string)?;
+    let json = decode_json_text(&bytes)?;
     let value: Value = serde_json::from_str(&json).map_err(error_to_string)?;
     let report = validate_value(value).map_err(error_to_string)?;
 
@@ -68,6 +69,45 @@ pub fn save_document_to_path(path: String, document: Value) -> Result<SaveDocume
         path: final_path.to_string_lossy().to_string(),
         report,
     })
+}
+
+fn decode_json_text(bytes: &[u8]) -> Result<String, String> {
+    if bytes.is_empty() {
+        return Err("Selected file is empty".to_string());
+    }
+
+    let text = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        String::from_utf8(bytes[3..].to_vec()).map_err(|error| error.to_string())?
+    } else if bytes.starts_with(&[0xFF, 0xFE]) {
+        decode_utf16_bytes(&bytes[2..], u16::from_le_bytes)?
+    } else if bytes.starts_with(&[0xFE, 0xFF]) {
+        decode_utf16_bytes(&bytes[2..], u16::from_be_bytes)?
+    } else {
+        String::from_utf8(bytes.to_vec()).map_err(|error| error.to_string())?
+    };
+
+    let normalized = text.trim_start_matches('\u{feff}').to_string();
+    if normalized.trim().is_empty() {
+        return Err("Selected file is empty".to_string());
+    }
+
+    Ok(normalized)
+}
+
+fn decode_utf16_bytes(
+    bytes: &[u8],
+    decode_unit: fn([u8; 2]) -> u16,
+) -> Result<String, String> {
+    let mut chunks = bytes.chunks_exact(2);
+    if !chunks.remainder().is_empty() {
+        return Err("Invalid UTF-16 byte length".to_string());
+    }
+
+    let units = chunks
+        .by_ref()
+        .map(|chunk| decode_unit([chunk[0], chunk[1]]))
+        .collect::<Vec<_>>();
+    String::from_utf16(&units).map_err(|error| error.to_string())
 }
 
 fn ensure_json_extension(path: &Path) -> PathBuf {
@@ -108,4 +148,38 @@ fn validation_summary(report: &ValidationReport) -> String {
         "Document failed validation before saving: {}",
         details.join("; ")
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_json_text;
+
+    #[test]
+    fn decodes_utf8_json_with_bom() {
+        let text = decode_json_text(&[0xEF, 0xBB, 0xBF, b'{', b'"', b'a', b'"', b':', b'1', b'}'])
+            .expect("utf-8 bom json should decode");
+        assert_eq!(text, "{\"a\":1}");
+    }
+
+    #[test]
+    fn decodes_utf16le_json_with_bom() {
+        let bytes = [
+            0xFF, 0xFE, 0x7B, 0x00, 0x22, 0x00, 0x61, 0x00, 0x22, 0x00, 0x3A, 0x00, 0x31,
+            0x00, 0x7D, 0x00,
+        ];
+        let text = decode_json_text(&bytes).expect("utf-16le bom json should decode");
+        assert_eq!(text, "{\"a\":1}");
+    }
+
+    #[test]
+    fn rejects_empty_files() {
+        let error = decode_json_text(&[]).expect_err("empty files should be rejected");
+        assert_eq!(error, "Selected file is empty");
+    }
+
+    #[test]
+    fn rejects_invalid_utf16_lengths() {
+        let error = decode_json_text(&[0xFF, 0xFE, 0x7B]).expect_err("odd utf-16 length should fail");
+        assert_eq!(error, "Invalid UTF-16 byte length");
+    }
 }

@@ -22,21 +22,6 @@ import type {
 const TERMINAL_DIRECTION_OPTIONS: TerminalDirection[] = [
   'input',
   'output',
-  'passive',
-  'bidirectional',
-  'power-in',
-  'power-out',
-  'ground',
-  'shield',
-  'unspecified',
-]
-
-const LOGICAL_DIRECTION_OPTIONS: Array<{ value: '' | TerminalDirection; labelKey: 'none' | TerminalDirection }> = [
-  { value: '', labelKey: 'none' },
-  { value: 'input', labelKey: 'input' },
-  { value: 'output', labelKey: 'output' },
-  { value: 'passive', labelKey: 'passive' },
-  { value: 'bidirectional', labelKey: 'bidirectional' },
 ]
 
 function Field({
@@ -98,12 +83,6 @@ function TerminalButtons({
       </button>
       <button className="ghost-button" onClick={() => onAddTerminal('output')}>
         {t('addOutput')}
-      </button>
-      <button className="ghost-button" onClick={() => onAddTerminal('passive')}>
-        {t('addPassive')}
-      </button>
-      <button className="ghost-button" onClick={() => onAddTerminal('bidirectional')}>
-        {t('addBidirectional')}
       </button>
     </div>
   )
@@ -543,24 +522,6 @@ export function Inspector() {
                         ))}
                       </select>
                     </Field>
-                    <Field label={t('logicalDirection')}>
-                      <select
-                        value={activeTerminal.logicalDirection ?? ''}
-                        onChange={(event) =>
-                          updateTerminal(activeDevice.id, activeTerminal.id, {
-                            logicalDirection: event.target.value
-                              ? (event.target.value as TerminalDirection)
-                              : undefined,
-                          })
-                        }
-                      >
-                        {LOGICAL_DIRECTION_OPTIONS.map((option) => (
-                          <option key={option.labelKey} value={option.value}>
-                            {t(option.labelKey)}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
                     <Field label={t('name')}>
                       <input
                         value={activeTerminal.name}
@@ -680,9 +641,7 @@ export function Inspector() {
                     </div>
                   )}
                 </div>
-              ) : (
-                <p className="inspector-hint">{t('selectTerminalHint')}</p>
-              )}
+              ) : null}
 
               <TerminalButtons
                 locale={locale}

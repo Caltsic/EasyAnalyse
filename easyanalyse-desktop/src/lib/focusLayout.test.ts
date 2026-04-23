@@ -9,7 +9,7 @@ function buildInsights(document: DocumentFile) {
 }
 
 describe('focusLayout', () => {
-  it('keeps focus results on the left and right only for an active anchor', () => {
+  it('keeps upstream and downstream neighbors on the sides while placing feedback devices below the anchor', () => {
     const insights = buildInsights({
       schemaVersion: '4.0.0',
       document: {
@@ -84,19 +84,17 @@ describe('focusLayout', () => {
           terminals: [
             {
               id: 'terminal.feedback.out',
-              name: 'PASSIVE_1_R2',
+              name: 'INPUT_1_R2',
               label: 'NODE_OUT',
-              direction: 'passive',
-              logicalDirection: 'output',
+              direction: 'input',
               side: 'left',
               order: 0,
             },
             {
               id: 'terminal.feedback.in',
-              name: 'PASSIVE_2_R2',
+              name: 'OUTPUT_1_R2',
               label: 'NODE_IN',
-              direction: 'passive',
-              logicalDirection: 'input',
+              direction: 'output',
               side: 'right',
               order: 1,
             },
@@ -167,18 +165,14 @@ describe('focusLayout', () => {
     )
 
     const anchorX = states.get('device.anchor')!.center.x
+    const anchorY = states.get('device.anchor')!.center.y
     expect(states.get('device.source')!.center.x).toBeLessThan(anchorX)
-    expect(states.get('device.feedback')!.center.x).toBeGreaterThan(anchorX)
     expect(states.get('device.sink')!.center.x).toBeGreaterThan(anchorX)
+    expect(states.get('device.feedback')!.center.y).toBeGreaterThan(anchorY)
     expect(states.has('device.same')).toBe(false)
-    expect(
-      [...states.entries()]
-        .filter(([deviceId]) => deviceId !== 'device.anchor')
-        .every(([, placement]) => placement.center.x !== anchorX),
-    ).toBe(true)
   })
 
-  it('uses logicalDirection to focus a passive anchor without losing flexible neighbors', () => {
+  it('uses input/output terminal roles to focus a resistor anchor without losing neighbors', () => {
     const insights = buildInsights({
       schemaVersion: '4.0.0',
       document: {
@@ -213,19 +207,17 @@ describe('focusLayout', () => {
           terminals: [
             {
               id: 'terminal.anchor.a',
-              name: 'PASSIVE_1_R1',
+              name: 'INPUT_1_R1',
               label: 'VIN',
-              direction: 'passive',
-              logicalDirection: 'input',
+              direction: 'input',
               side: 'left',
               order: 0,
             },
             {
               id: 'terminal.anchor.b',
-              name: 'PASSIVE_2_R1',
+              name: 'OUTPUT_1_R1',
               label: 'DIV_OUT',
-              direction: 'passive',
-              logicalDirection: 'output',
+              direction: 'output',
               side: 'right',
               order: 1,
             },
@@ -242,19 +234,17 @@ describe('focusLayout', () => {
           terminals: [
             {
               id: 'terminal.lower.a',
-              name: 'PASSIVE_1_R2',
+              name: 'INPUT_1_R2',
               label: 'DIV_OUT',
-              direction: 'passive',
-              logicalDirection: 'input',
+              direction: 'input',
               side: 'left',
               order: 0,
             },
             {
               id: 'terminal.lower.b',
-              name: 'PASSIVE_2_R2',
+              name: 'OUTPUT_1_R2',
               label: 'GND',
-              direction: 'passive',
-              logicalDirection: 'output',
+              direction: 'output',
               side: 'right',
               order: 1,
             },
@@ -319,5 +309,202 @@ describe('focusLayout', () => {
     expect(states.get('device.source')!.center.x).toBeLessThan(anchorX)
     expect(states.get('device.lower')!.center.x).toBeGreaterThan(anchorX)
     expect(states.get('device.adc')!.center.x).toBeGreaterThan(anchorX)
+  })
+
+  it('places shared feedback components in a row below the focused butterworth stage', () => {
+    const insights = buildInsights({
+      schemaVersion: '4.0.0',
+      document: {
+        id: 'doc.butterworth-focus',
+        title: 'Butterworth Focus',
+      },
+      devices: [
+        {
+          id: 'device.input',
+          name: 'Signal Input',
+          kind: 'connector',
+          reference: 'J1',
+          terminals: [
+            {
+              id: 'terminal.input.vin',
+              name: 'OUTPUT_1_J1',
+              label: 'VIN',
+              direction: 'output',
+              side: 'right',
+              order: 0,
+            },
+          ],
+        },
+        {
+          id: 'device.stage1',
+          name: 'MFB Filter Stage 1',
+          kind: 'op-amp',
+          reference: 'U1A',
+          terminals: [
+            {
+              id: 'terminal.stage1.neg',
+              name: 'INPUT_1_U1A',
+              label: 'STAGE1_NEG',
+              direction: 'input',
+              side: 'left',
+              order: 0,
+            },
+            {
+              id: 'terminal.stage1.out',
+              name: 'OUTPUT_1_U1A',
+              label: 'STAGE1_OUT',
+              direction: 'output',
+              side: 'right',
+              order: 0,
+            },
+          ],
+        },
+        {
+          id: 'device.r1',
+          name: 'Input Resistor R1',
+          kind: 'resistor',
+          reference: 'R1',
+          terminals: [
+            {
+              id: 'terminal.r1.a',
+              name: 'INPUT_1_R1',
+              label: 'VIN',
+              direction: 'input',
+              side: 'left',
+              order: 0,
+            },
+            {
+              id: 'terminal.r1.b',
+              name: 'OUTPUT_1_R1',
+              label: 'STAGE1_NEG',
+              direction: 'output',
+              side: 'right',
+              order: 1,
+            },
+          ],
+        },
+        {
+          id: 'device.r2',
+          name: 'Feedback Resistor R2',
+          kind: 'resistor',
+          reference: 'R2',
+          terminals: [
+            {
+              id: 'terminal.r2.a',
+              name: 'INPUT_1_R2',
+              label: 'STAGE1_OUT',
+              direction: 'input',
+              side: 'left',
+              order: 0,
+            },
+            {
+              id: 'terminal.r2.b',
+              name: 'OUTPUT_1_R2',
+              label: 'STAGE1_NEG',
+              direction: 'output',
+              side: 'right',
+              order: 1,
+            },
+          ],
+        },
+        {
+          id: 'device.c1',
+          name: 'Feedback Capacitor C1',
+          kind: 'capacitor',
+          reference: 'C1',
+          terminals: [
+            {
+              id: 'terminal.c1.a',
+              name: 'INPUT_1_C1',
+              label: 'STAGE1_OUT',
+              direction: 'input',
+              side: 'left',
+              order: 0,
+            },
+            {
+              id: 'terminal.c1.b',
+              name: 'OUTPUT_1_C1',
+              label: 'STAGE1_NEG',
+              direction: 'output',
+              side: 'right',
+              order: 1,
+            },
+          ],
+        },
+        {
+          id: 'device.output',
+          name: 'Stage Output',
+          kind: 'connector',
+          reference: 'J2',
+          terminals: [
+            {
+              id: 'terminal.output.in',
+              name: 'INPUT_1_J2',
+              label: 'STAGE1_OUT',
+              direction: 'input',
+              side: 'left',
+              order: 0,
+            },
+          ],
+        },
+      ],
+      view: {
+        canvas: {
+          units: 'px',
+        },
+        devices: {
+          'device.input': {
+            position: { x: 100, y: 240 },
+            size: { width: 160, height: 100 },
+            shape: 'circle',
+          },
+          'device.stage1': {
+            position: { x: 420, y: 240 },
+            size: { width: 240, height: 180 },
+            shape: 'triangle',
+          },
+          'device.r1': {
+            position: { x: 120, y: 360 },
+            size: { width: 180, height: 96 },
+            shape: 'rectangle',
+          },
+          'device.r2': {
+            position: { x: 760, y: 180 },
+            size: { width: 180, height: 96 },
+            shape: 'rectangle',
+          },
+          'device.c1': {
+            position: { x: 760, y: 320 },
+            size: { width: 180, height: 96 },
+            shape: 'rectangle',
+          },
+          'device.output': {
+            position: { x: 780, y: 360 },
+            size: { width: 160, height: 100 },
+            shape: 'circle',
+          },
+        },
+        networkLines: {},
+        focus: {
+          defaultDeviceId: 'device.stage1',
+          preferredDirection: 'left-to-right',
+        },
+      },
+    })
+
+    const layout = deriveFocusLayout(insights, { type: 'device', id: 'device.stage1' })
+    expect(layout).not.toBeNull()
+
+    const states = layout!.states
+    const anchor = states.get('device.stage1')!
+    const feedbackResistor = states.get('device.r2')!
+    const feedbackCapacitor = states.get('device.c1')!
+
+    expect(states.get('device.r1')!.center.x).toBeLessThan(anchor.center.x)
+    expect(states.get('device.output')!.center.x).toBeGreaterThan(anchor.center.x)
+    expect(feedbackResistor.center.y).toBeGreaterThan(anchor.center.y)
+    expect(feedbackCapacitor.center.y).toBeGreaterThan(anchor.center.y)
+    expect(feedbackResistor.center.y).toBe(feedbackCapacitor.center.y)
+    expect(Math.abs(feedbackResistor.center.x - feedbackCapacitor.center.x)).toBeGreaterThan(0)
   })
 })

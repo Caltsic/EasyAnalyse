@@ -17,8 +17,10 @@ import {
   lerpPoint,
 } from '../lib/geometry'
 import { translate } from '../lib/i18n'
+import { getCanvasTheme } from '../lib/canvasTheme'
 import { useEditorStore } from '../store/editorStore'
 import type { Point, TerminalDefinition, TerminalDirection, TerminalSide } from '../types/document'
+import type { ThemeMode } from '../lib/theme'
 
 const INITIAL_OFFSET = 96
 const MIN_ZOOM = 0.32
@@ -523,10 +525,10 @@ function getTerminalInsertIndex(
   return Math.max(0, Math.min(siblingCount, Math.round(ratio * siblingCount)))
 }
 
-function getTerminalRoleStroke(direction: TerminalDirection) {
+function getTerminalRoleStroke(direction: TerminalDirection, sourceStroke = '#111827') {
   if (isSourceLikeDirection(direction)) {
     return {
-      baseStroke: '#111827',
+      baseStroke: sourceStroke,
       baseStrokeWidth: 2.3,
       outerStroke: null as { color: string; width: number; radiusOffset: number } | null,
     }
@@ -679,7 +681,11 @@ function buildInfiniteGrid(
   }
 }
 
-export function CanvasView() {
+interface CanvasViewProps {
+  theme: ThemeMode
+}
+
+export function CanvasView({ theme }: CanvasViewProps) {
   const wrapperRef = useRef<HTMLDivElement | null>(null)
   const panRef = useRef({ x: INITIAL_OFFSET, y: INITIAL_OFFSET })
   const zoomRef = useRef(0.84)
@@ -697,6 +703,8 @@ export function CanvasView() {
   const panStartRef = useRef<{ pointer: Point; pan: Point } | null>(null)
   const selectionBoxRef = useRef<SelectionBoxState | null>(null)
   const suppressClickRef = useRef(false)
+  const canvasTheme = useMemo(() => getCanvasTheme(theme), [theme])
+  const darkCanvas = theme === 'dark'
 
   const document = useEditorStore((state) => state.document)
   const selection = useEditorStore((state) => state.selection)
@@ -1039,7 +1047,7 @@ export function CanvasView() {
               anchor: point,
               side: rotateTerminalSide(previewTerminalSide, state.rotationDeg),
               text: terminal.displayLabel,
-              fill: color.text,
+              fill: darkCanvas ? color.fill : color.text,
               fontStyle,
               opacity: state.opacity,
               priority: selectedTerminal ? 2 : sameConnection || sameFocusedLabel ? 1 : 0,
@@ -1063,6 +1071,7 @@ export function CanvasView() {
       display.states,
       activeDragSelectionPreview,
       focusedLabelKey,
+      darkCanvas,
       insights.devices,
       insights.terminalColorsById,
       previewDeviceBounds,
@@ -1315,7 +1324,7 @@ export function CanvasView() {
           onClick={handleStageClick}
         >
           <Layer listening={false}>
-            <Rect x={0} y={0} width={viewport.width} height={viewport.height} fill="#ffffff" />
+            <Rect x={0} y={0} width={viewport.width} height={viewport.height} fill={canvasTheme.background} />
           </Layer>
 
           <Layer x={pan.x} y={pan.y} scaleX={zoom} scaleY={zoom}>
@@ -1323,7 +1332,7 @@ export function CanvasView() {
               <Line
                 key={`grid-minor-${index}`}
                 points={points}
-                stroke={`rgba(203, 213, 225, ${0.34 * gridOpacity})`}
+                stroke={`${canvasTheme.gridMinor}${0.34 * gridOpacity})`}
                 strokeWidth={1}
                 listening={false}
               />
@@ -1338,8 +1347,8 @@ export function CanvasView() {
                   points={points}
                   stroke={
                     isVerticalAxis || isHorizontalAxis
-                      ? `rgba(148, 163, 184, ${0.96 * gridOpacity})`
-                      : `rgba(148, 163, 184, ${0.5 * gridOpacity})`
+                      ? `${canvasTheme.gridAxis}${0.96 * gridOpacity})`
+                      : `${canvasTheme.gridMajor}${0.5 * gridOpacity})`
                   }
                   strokeWidth={isVerticalAxis || isHorizontalAxis ? 1.8 : 1.1}
                   listening={false}
@@ -1352,8 +1361,8 @@ export function CanvasView() {
               y={gridPrimitives.world.top}
               width={gridPrimitives.world.right - gridPrimitives.world.left}
               height={gridPrimitives.world.bottom - gridPrimitives.world.top}
-              fill="#ffffff"
-              opacity={focusProgress * 0.52}
+              fill={canvasTheme.focusOverlay}
+              opacity={focusProgress * canvasTheme.focusOverlayOpacity}
               listening={false}
             />
 
@@ -1519,7 +1528,7 @@ export function CanvasView() {
                       networkLine.end.x,
                       networkLine.end.y,
                     ]}
-                    stroke={focused ? color?.stroke ?? '#1d4ed8' : color?.fill ?? '#60a5fa'}
+                    stroke={focused ? color?.stroke ?? canvasTheme.labelFocused : color?.fill ?? canvasTheme.labelFallback}
                     strokeWidth={focused ? 7 : selected ? 6 : 4}
                     lineCap="round"
                     opacity={0.92}
@@ -1537,7 +1546,7 @@ export function CanvasView() {
                     }
                     width={160}
                     text={networkLine.label}
-                    fill={focused ? color?.text ?? '#1d4ed8' : color?.text ?? '#2563eb'}
+                    fill={focused ? (darkCanvas ? color?.fill : color?.text) ?? canvasTheme.labelFocused : (darkCanvas ? color?.fill : color?.text) ?? canvasTheme.labelFallback}
                     fontSize={16}
                     fontStyle={focused || selected ? 'bold' : 'normal'}
                     align={networkLine.orientation === 'horizontal' ? 'center' : 'left'}
@@ -1558,7 +1567,7 @@ export function CanvasView() {
                     focusLayout.rail.end.x,
                     focusLayout.rail.end.y,
                   ]}
-                  stroke={focusRailTerminal?.fill ?? '#2563eb'}
+                  stroke={focusRailTerminal?.fill ?? canvasTheme.labelFallback}
                   strokeWidth={4}
                   lineCap="round"
                   dash={[18, 12]}
@@ -1568,7 +1577,7 @@ export function CanvasView() {
                   y={focusLayout.rail.textPoint.y}
                   width={144}
                   text={focusLayout.rail.label}
-                  fill={focusRailTerminal?.text ?? '#1d4ed8'}
+                  fill={(darkCanvas ? focusRailTerminal?.fill : focusRailTerminal?.text) ?? canvasTheme.labelFocused}
                   fontSize={18}
                   fontStyle="bold"
                   align="center"
@@ -1599,47 +1608,47 @@ export function CanvasView() {
                 height: device.bounds.height,
               }
               const strokeColor = focusAnchor
-                ? '#111827'
+                ? canvasTheme.terminalEmphasis
                 : focusedLabelKey && focusActive
-                  ? '#2563eb'
+                  ? canvasTheme.labelFallback
                   : relationRole === 'upstream'
                     ? '#dc2626'
-                    : relationRole === 'downstream'
-                      ? '#16a34a'
-                      : selected || connectionActive
-                        ? '#2563eb'
-                        : '#d0d5dd'
-              const fillColor = focusActive
-                ? '#eaf2ff'
-                : relationRole === 'upstream'
-                  ? '#fde8e8'
                   : relationRole === 'downstream'
-                    ? '#e4f5e8'
+                      ? '#16a34a'
+                    : selected || connectionActive
+                        ? canvasTheme.labelFallback
+                        : canvasTheme.deviceStroke
+              const fillColor = focusActive
+                ? canvasTheme.deviceSurface.focusFill
+                : relationRole === 'upstream'
+                  ? canvasTheme.deviceSurface.upstreamFill
+                  : relationRole === 'downstream'
+                    ? canvasTheme.deviceSurface.downstreamFill
                     : connectionActive
-                      ? '#e3eeff'
-                      : '#e7edf5'
+                      ? canvasTheme.deviceSurface.connectionFill
+                      : canvasTheme.deviceSurface.normalFill
               const surfaceTop = focusAnchor
-                ? '#f8fbff'
+                ? canvasTheme.deviceSurface.focusTop
                 : focusedLabelKey && focusActive
-                  ? '#f4f8ff'
+                  ? canvasTheme.deviceSurface.labelTop
                   : relationRole === 'upstream'
-                    ? '#fff7f7'
+                    ? canvasTheme.deviceSurface.upstreamTop
                     : relationRole === 'downstream'
-                      ? '#f4fff6'
+                      ? canvasTheme.deviceSurface.downstreamTop
                       : connectionActive
-                        ? '#f3f8ff'
-                        : '#f6f9fc'
+                        ? canvasTheme.deviceSurface.connectionTop
+                        : canvasTheme.deviceSurface.normalTop
               const surfaceBottom = focusAnchor
-                ? '#d8e5fb'
+                ? canvasTheme.deviceSurface.focusBottom
                 : focusedLabelKey && focusActive
-                  ? '#dce9ff'
+                  ? canvasTheme.deviceSurface.labelBottom
                   : relationRole === 'upstream'
-                    ? '#f7cfd1'
+                    ? canvasTheme.deviceSurface.upstreamBottom
                     : relationRole === 'downstream'
-                      ? '#cfe6d6'
+                      ? canvasTheme.deviceSurface.downstreamBottom
                       : connectionActive
-                        ? '#cfdfff'
-                        : '#d6dee9'
+                        ? canvasTheme.deviceSurface.connectionBottom
+                        : canvasTheme.deviceSurface.normalBottom
               const baseStrokeWidth = focusAnchor
                 ? 1.33
                 : focusActive
@@ -1648,16 +1657,16 @@ export function CanvasView() {
                     ? 3
                     : 2
               const shadowColor = focusAnchor
-                ? 'rgba(15, 23, 42, 0.22)'
+                ? canvasTheme.shadowNeutral
                 : focusedLabelKey && focusActive
-                  ? 'rgba(37, 99, 235, 0.24)'
+                  ? canvasTheme.shadowFocus
                   : relationRole === 'upstream'
-                    ? 'rgba(185, 28, 28, 0.16)'
+                    ? canvasTheme.shadowUpstream
                     : relationRole === 'downstream'
-                      ? 'rgba(21, 128, 61, 0.16)'
+                      ? canvasTheme.shadowDownstream
                       : connectionActive
-                        ? 'rgba(37, 99, 235, 0.18)'
-                        : 'rgba(15, 23, 42, 0.16)'
+                        ? canvasTheme.shadowConnection
+                        : canvasTheme.shadowNeutral
               const shadowBlur = focusActive ? 26 : selected || relationRole || connectionActive ? 20 : 16
               const shadowOffsetY = focusActive ? 15 : selected || relationRole || connectionActive ? 11 : 9
               const hasDedicatedSymbol = hasDedicatedDeviceSymbol(device.visualKind)
@@ -1784,17 +1793,17 @@ export function CanvasView() {
                         fillLinearGradientEndPoint={{ x: 0, y: localBounds.height * 0.48 }}
                         fillLinearGradientColorStops={[
                           0,
-                          'rgba(255,255,255,0.68)',
+                          canvasTheme.glassFillStrong,
                           0.42,
-                          'rgba(255,255,255,0.18)',
+                          canvasTheme.glassFillSoft,
                           1,
-                          'rgba(255,255,255,0)',
+                          canvasTheme.glassFillNone,
                         ]}
                         listening={false}
                       />
                       <Line
                         points={[14, 13, localBounds.width - 14, 13]}
-                        stroke="rgba(255,255,255,0.62)"
+                        stroke={canvasTheme.glassLine}
                         strokeWidth={1.4}
                         lineCap="round"
                         listening={false}
@@ -1822,7 +1831,7 @@ export function CanvasView() {
                         x={localBounds.width / 2 - Math.min(localBounds.width, localBounds.height) * 0.16}
                         y={localBounds.height / 2 - Math.min(localBounds.width, localBounds.height) * 0.19}
                         radius={Math.min(localBounds.width, localBounds.height) * 0.2}
-                        fill="rgba(255,255,255,0.2)"
+                        fill={canvasTheme.glassFillSoft}
                         listening={false}
                       />
                     </>
@@ -1858,11 +1867,11 @@ export function CanvasView() {
                         fillLinearGradientEndPoint={{ x: localBounds.width / 2, y: localBounds.height * 0.42 }}
                         fillLinearGradientColorStops={[
                           0,
-                          'rgba(255,255,255,0.56)',
+                          canvasTheme.glassFillStrong,
                           0.65,
-                          'rgba(255,255,255,0.14)',
+                          canvasTheme.glassFillSoft,
                           1,
-                          'rgba(255,255,255,0)',
+                          canvasTheme.glassFillNone,
                         ]}
                         listening={false}
                       />
@@ -1893,7 +1902,7 @@ export function CanvasView() {
                         visualKind={device.visualKind}
                         width={localBounds.width}
                         height={localBounds.height}
-                        stroke="#0F172A"
+                        stroke={canvasTheme.symbolStroke}
                         accent={symbolAccent}
                       />
                     </>
@@ -1904,11 +1913,11 @@ export function CanvasView() {
                     y={hasDedicatedSymbol ? 10 : 16}
                     width={localBounds.width - (hasDedicatedSymbol ? 28 : 36)}
                     text={device.reference}
-                    fill="rgba(71, 85, 105, 0.92)"
+                    fill={canvasTheme.referenceText}
                     fontSize={hasDedicatedSymbol ? 13 : 12}
                     fontStyle="bold"
                     align={hasDedicatedSymbol ? 'center' : 'left'}
-                    shadowColor={hasDedicatedSymbol ? 'rgba(255,255,255,0.96)' : undefined}
+                    shadowColor={hasDedicatedSymbol ? (darkCanvas ? 'rgba(0,0,0,0.72)' : 'rgba(255,255,255,0.96)') : undefined}
                     shadowBlur={hasDedicatedSymbol ? 10 : 0}
                   />
                   <Text
@@ -1923,14 +1932,14 @@ export function CanvasView() {
                     width={localBounds.width - (hasDedicatedSymbol ? 40 : 36)}
                     height={hasDedicatedSymbol ? 20 : 28}
                     text={device.source.name}
-                    fill="#0f172a"
+                    fill={canvasTheme.deviceText}
                     fontSize={hasDedicatedSymbol ? 13 : 18}
                     fontStyle="bold"
                     align="center"
                     verticalAlign="middle"
                     wrap="none"
                     ellipsis
-                    shadowColor={hasDedicatedSymbol ? 'rgba(255,255,255,0.96)' : undefined}
+                    shadowColor={hasDedicatedSymbol ? (darkCanvas ? 'rgba(0,0,0,0.72)' : 'rgba(255,255,255,0.96)') : undefined}
                     shadowBlur={hasDedicatedSymbol ? 12 : 0}
                   />
                   {device.parameterSummary && (
@@ -1940,14 +1949,14 @@ export function CanvasView() {
                       width={localBounds.width - (hasDedicatedSymbol ? 40 : 36)}
                       height={hasDedicatedSymbol ? 16 : 24}
                       text={device.parameterSummary}
-                      fill="rgba(15, 23, 42, 0.78)"
+                      fill={canvasTheme.deviceMutedText}
                       fontSize={hasDedicatedSymbol ? 12 : 14}
                       fontStyle="bold"
                       align="center"
                       verticalAlign="middle"
                       wrap="none"
                       ellipsis
-                      shadowColor={hasDedicatedSymbol ? 'rgba(255,255,255,0.96)' : undefined}
+                      shadowColor={hasDedicatedSymbol ? (darkCanvas ? 'rgba(0,0,0,0.72)' : 'rgba(255,255,255,0.96)') : undefined}
                       shadowBlur={hasDedicatedSymbol ? 12 : 0}
                     />
                   )}
@@ -1975,11 +1984,11 @@ export function CanvasView() {
                       terminal.connectionLabel &&
                       focusedLabelKey === terminal.connectionLabel
                     const emphasisStroke = selectedTerminal
-                      ? '#111827'
+                      ? canvasTheme.terminalEmphasis
                       : sameConnection || sameFocusedLabel
-                        ? '#2563eb'
+                        ? canvasTheme.labelFallback
                         : null
-                    const roleStroke = getTerminalRoleStroke(terminal.flowDirection)
+                    const roleStroke = getTerminalRoleStroke(terminal.flowDirection, canvasTheme.terminalEmphasis)
                     const baseRadius = selectedTerminal || sameConnection || sameFocusedLabel ? 8 : 6
 
                     return (
@@ -2095,8 +2104,8 @@ export function CanvasView() {
             {selectionBox && (
               <Rect
                 {...normalizeSelectionBox(selectionBox)}
-                fill="rgba(37, 99, 235, 0.14)"
-                stroke="rgba(37, 99, 235, 0.92)"
+                fill={canvasTheme.highlightFill}
+                stroke={canvasTheme.highlightStroke}
                 strokeWidth={1.4}
                 dash={[10, 8]}
                 listening={false}
@@ -2109,7 +2118,7 @@ export function CanvasView() {
               <Group key={`terminal-label-${label.id}`} opacity={label.opacity}>
                 <Line
                   points={label.leaderPoints}
-                  stroke="rgba(71, 85, 105, 0.42)"
+                  stroke={canvasTheme.labelLeader}
                   strokeWidth={1}
                   lineCap="round"
                 />

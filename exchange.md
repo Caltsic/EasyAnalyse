@@ -197,30 +197,16 @@ Allowed `direction` values:
 
 - `input`
 - `output`
-- `bidirectional`
-- `passive`
-- `power-in`
-- `power-out`
-- `ground`
-- `shield`
-- `unspecified`
 
-`direction` is the persisted physical terminal role.
-
-Optional persisted flow hint:
-
-- `logicalDirection`
-
-Use `logicalDirection` only when the physical terminal is still `passive` or `bidirectional`, but the document needs a readable upstream/downstream intent for focus and default side inference.
-It is a reading hint, not a second connectivity model.
+`direction` is the persisted terminal flow role. The project now stores only two terminal types so every saved terminal must resolve to either sink-like `input` or source-like `output`.
 
 Examples:
 
-- I2C `SCL` and `SDA`: prefer `bidirectional`; add `logicalDirection` only when the current document has a clear readable master/slave flow
+- I2C `SCL` and `SDA`: choose `output` on the current signal-driving side and `input` on the receiving side
 - UART `TX`: `output` on the transmitter side
 - UART `RX`: `input` on the receiver side
-- two-terminal passive parts, crystals, ferrite beads, and simple switches should use `passive`
-- power entry pins may use `power-in`, regulators or rails may use `power-out`, and ground pins may use `ground`
+- two-terminal passive parts, crystals, ferrite beads, and simple switches should still use explicit `input` / `output` to express the readable left-to-right signal path
+- power entry pins and ground pins should usually be `input`; regulated rails and driven nets should usually be `output`
 
 ### 6.2 Layout Hints
 
@@ -233,10 +219,8 @@ These are the only persisted placement hints for a terminal. The current editor 
 
 Default side behavior when `side` is omitted:
 
-- source-like flow (`output`, `power-out`) -> `right`
-- sink-like flow (`input`, `power-in`, `ground`) -> `left`
-- flexible physical roles (`passive`, `bidirectional`, `shield`, `unspecified`) -> `left` unless `side` is explicit
-- if `logicalDirection` is present and source-like or sink-like, omitted `side` may follow that readable flow
+- `output` -> `right`
+- `input` -> `left`
 
 Authoring advice:
 
@@ -263,8 +247,8 @@ For new terminals, default `name` and `label` should be device-specific to avoid
 
 - `INPUT_1_U1`
 - `INPUT_1_U2`
-- `PASSIVE_1_R1`
-- `BIDIRECTIONAL_1_U3`
+- `INPUT_1_R1`
+- `OUTPUT_1_U3`
 
 After that, the user or AI can replace the label with a semantic value such as `SCL`, `SDA`, `TX`, or `GND`.
 
@@ -276,9 +260,9 @@ This makes the built-in symbol renderings immediately readable.
 Recommended conventions:
 
 - Two-terminal passives and crystals:
-  persist `direction = passive`, keep left terminal `side = left`, right terminal `side = right`
+  persist left terminal as `direction = input`, right terminal as `direction = output`, and keep `side = left` / `side = right`
 - Resistors, inductors, ferrite beads, switches, and crystals:
-  prefer neutral terminal names such as `PASSIVE_1_R1` and `PASSIVE_2_R1`, or concise names such as `1` and `2`
+  prefer explicit readable names such as `INPUT_1_R1` and `OUTPUT_1_R1`, or concise names such as `IN` / `OUT`, `1` / `2`
 - Capacitors:
   use `1` / `2` for non-polar parts; for electrolytics prefer `+` and `-` or `POS` and `NEG`
 - Diodes and LEDs:
@@ -291,9 +275,6 @@ Recommended conventions:
   prefer `IN-`, `IN+`, and `OUT`; use `side = left` for both inputs with stable `order`, and `side = right` for the output
 - Optional op-amp power pins:
   if you include them, prefer `side = top` / `bottom` and keep them clearly named, for example `V+`, `V-`, `VCC`, or `VEE`
-
-If readability during device focus matters, passive or bidirectional parts may add `logicalDirection` to express a readable path.
-For pure shunt or decoupling parts with no stable left-to-right meaning, omitting `logicalDirection` is acceptable.
 
 If published readability matters, set `side` and `order` explicitly instead of relying only on `direction`.
 
@@ -428,7 +409,7 @@ Current normalization behavior includes at least:
 - optional strings such as descriptions, labels, references, and device properties are trimmed; empty strings are removed
 - `document.tags` and `device.tags` are deduplicated and sorted
 - terminals are sorted by `order`, then `name`, then `id`
-- missing terminal side defaults are derived from source-like or sink-like `logicalDirection` when present, otherwise from `direction`
+- missing terminal side defaults are derived directly from `direction`
 - `view.canvas.units` is forced to `px`
 - `view.canvas.background` is forced to `grid`
 - `view.canvas.grid.majorEvery` is clamped to at least `2`
@@ -494,9 +475,9 @@ Current expectations:
 The repository includes multiple saveable semantic v4 examples intended for AI prompting and regression checks:
 
 - `testJson/semantic-v4-demo.json`: minimal label-based I2C example
-- `testJson/butterworth-4th-order-lowpass.json`: analog multi-stage filter with passives, active stages, power rails, and rotated view metadata
-- `testJson/rc-low-pass-filter.json`: simple passive filter example with explicit resistor and capacitor values
-- `testJson/resistor-voltage-divider.json`: minimal passive divider with explicit source voltage
+- `testJson/butterworth-4th-order-lowpass.json`: analog multi-stage filter with explicit input/output terminals, active stages, power rails, and rotated view metadata
+- `testJson/rc-low-pass-filter.json`: simple RC low-pass example with explicit resistor and capacitor values
+- `testJson/resistor-voltage-divider.json`: minimal divider with explicit source voltage
 - `testJson/lm358-noninverting-amplifier.json`: operational-amplifier example with explicit power and signal labels
 - `testJson/ripple-carry-adder-4bit.json`: digital arithmetic with repeated adder slices, carry-chain labels, and multi-bit I/O organization
 - `testJson/stm32f103c8t6-minimum-system.json`: MCU minimum system board with regulator, reset, clock, SWD, and UART headers

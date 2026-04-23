@@ -1,0 +1,341 @@
+{
+  "schemaVersion": "4.0.0",
+  "document": {
+    "id": "doc.mcu-24v-fan-driver",
+    "title": "MCU IO Controlled 24V Fan Low-Side Driver",
+    "description": "3.3V MCU GPIO drives a 24V fan through a logic-level NMOS low-side switch with gate pull-down, flyback diode, and bulk decoupling.",
+    "source": "ai",
+    "language": "zh-CN",
+    "tags": ["fan", "nmos", "low-side", "24v", "gpio"]
+  },
+  "devices": [
+    {
+      "id": "device.vcc24",
+      "name": "24V Supply",
+      "kind": "power-source",
+      "reference": "P1",
+      "description": "External 24V fan supply rail",
+      "properties": {
+        "outputVoltage": "24V",
+        "nominalVoltage": "24V"
+      },
+      "terminals": [
+        {
+          "id": "terminal.vcc24.pos",
+          "name": "OUTPUT_1_P1",
+          "label": "24V",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.vcc24.neg",
+          "name": "OUTPUT_2_P1",
+          "label": "GND",
+          "direction": "output",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.mcu",
+      "name": "MCU",
+      "kind": "controller",
+      "reference": "U1",
+      "description": "Host microcontroller; 3.3V GPIO drives fan enable",
+      "properties": {
+        "nominalVoltage": "3V3",
+        "partNumber": "generic-mcu"
+      },
+      "terminals": [
+        {
+          "id": "terminal.mcu.vdd",
+          "name": "INPUT_1_U1",
+          "label": "3V3",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.mcu.gnd",
+          "name": "INPUT_2_U1",
+          "label": "GND",
+          "direction": "input",
+          "side": "left",
+          "order": 1
+        },
+        {
+          "id": "terminal.mcu.fan_ctrl",
+          "name": "OUTPUT_1_U1",
+          "label": "FAN_CTRL",
+          "direction": "output",
+          "description": "GPIO push-pull output, high = fan on",
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.vcc33",
+      "name": "3V3 Rail",
+      "kind": "power-source",
+      "reference": "P2",
+      "description": "MCU logic supply rail",
+      "properties": {
+        "outputVoltage": "3V3",
+        "nominalVoltage": "3V3"
+      },
+      "terminals": [
+        {
+          "id": "terminal.vcc33.pos",
+          "name": "OUTPUT_1_P2",
+          "label": "3V3",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.r1",
+      "name": "Gate Series Resistor",
+      "kind": "resistor",
+      "reference": "R1",
+      "description": "Damps gate drive ringing and limits inrush charge into Cgs",
+      "properties": {
+        "value": "100"
+      },
+      "terminals": [
+        {
+          "id": "terminal.r1.a",
+          "name": "INPUT_1_R1",
+          "label": "FAN_CTRL",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.r1.b",
+          "name": "OUTPUT_1_R1",
+          "label": "GATE",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.r2",
+      "name": "Gate Pull-down",
+      "kind": "resistor",
+      "reference": "R2",
+      "description": "Ensures Q1 is off when MCU GPIO is floating or in reset",
+      "properties": {
+        "value": "10k"
+      },
+      "terminals": [
+        {
+          "id": "terminal.r2.a",
+          "name": "INPUT_1_R2",
+          "label": "GATE",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.r2.b",
+          "name": "OUTPUT_1_R2",
+          "label": "GND",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.q1",
+      "name": "Low-side Switch",
+      "kind": "nmos",
+      "reference": "Q1",
+      "description": "Logic-level N-MOSFET, VGS(th) ~1V so 3.3V GPIO fully enhances it",
+      "properties": {
+        "partNumber": "AO3400",
+        "package": "SOT-23"
+      },
+      "terminals": [
+        {
+          "id": "terminal.q1.g",
+          "name": "G",
+          "label": "GATE",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.q1.d",
+          "name": "D",
+          "label": "FAN_NEG",
+          "direction": "input",
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.q1.s",
+          "name": "S",
+          "label": "GND",
+          "direction": "output",
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.fan",
+      "name": "24V DC Fan",
+      "kind": "load",
+      "reference": "M1",
+      "description": "Brushless 24V cooling fan, inductive load",
+      "properties": {
+        "nominalVoltage": "24V",
+        "partNumber": "generic-24v-fan"
+      },
+      "terminals": [
+        {
+          "id": "terminal.fan.pos",
+          "name": "INPUT_1_M1",
+          "label": "24V",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.fan.neg",
+          "name": "OUTPUT_1_M1",
+          "label": "FAN_NEG",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.d1",
+      "name": "Flyback Diode",
+      "kind": "flyback-diode",
+      "reference": "D1",
+      "description": "Schottky diode across the fan coil; cathode to 24V, anode to drain, clamps turn-off kickback",
+      "properties": {
+        "partNumber": "SS34",
+        "package": "SMA"
+      },
+      "terminals": [
+        {
+          "id": "terminal.d1.a",
+          "name": "ANODE",
+          "label": "FAN_NEG",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.d1.k",
+          "name": "CATHODE",
+          "label": "24V",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.c1",
+      "name": "Bulk Decoupling",
+      "kind": "electrolytic-capacitor",
+      "reference": "C1",
+      "description": "Absorbs fan switching transients on the 24V rail",
+      "properties": {
+        "value": "100uF",
+        "voltage": "35V"
+      },
+      "terminals": [
+        {
+          "id": "terminal.c1.pos",
+          "name": "+",
+          "label": "24V",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.c1.neg",
+          "name": "-",
+          "label": "GND",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        }
+      ]
+    }
+  ],
+  "view": {
+    "canvas": {
+      "units": "px",
+      "grid": {
+        "enabled": true,
+        "size": 36,
+        "majorEvery": 5
+      },
+      "background": "grid"
+    },
+    "devices": {
+      "device.vcc24": {
+        "position": { "x": 120, "y": 140 }
+      },
+      "device.vcc33": {
+        "position": { "x": 120, "y": 320 }
+      },
+      "device.mcu": {
+        "position": { "x": 120, "y": 520 },
+        "size": { "width": 240, "height": 150 },
+        "shape": "rectangle"
+      },
+      "device.c1": {
+        "position": { "x": 540, "y": 140 }
+      },
+      "device.r1": {
+        "position": { "x": 540, "y": 520 }
+      },
+      "device.r2": {
+        "position": { "x": 900, "y": 640 }
+      },
+      "device.q1": {
+        "position": { "x": 900, "y": 520 }
+      },
+      "device.fan": {
+        "position": { "x": 1260, "y": 260 }
+      },
+      "device.d1": {
+        "position": { "x": 1260, "y": 400 }
+      }
+    },
+    "networkLines": {
+      "network.24v": {
+        "label": "24V",
+        "position": { "x": 780, "y": 60 },
+        "length": 1320,
+        "orientation": "horizontal"
+      },
+      "network.gnd": {
+        "label": "GND",
+        "position": { "x": 780, "y": 820 },
+        "length": 1320,
+        "orientation": "horizontal"
+      }
+    },
+    "focus": {
+      "defaultDeviceId": "device.q1",
+      "preferredDirection": "left-to-right"
+    }
+  }
+}

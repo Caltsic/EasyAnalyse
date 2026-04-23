@@ -111,17 +111,21 @@ function deriveDeviceFocusLayout(insights: CircuitInsights, focusDeviceId: strin
     rotationDeg: anchorRotation,
   })
 
-  const buildBucketItems = (bucket: FocusBucket) =>
-    [...relationByDevice.entries()]
-      .filter(([, relation]) => relation[`${bucket}LabelKeys`].size > 0)
-      .map(([deviceId, relation]) => {
+  const buildBucketItems = (
+    deviceIds: string[],
+    getRelevantLabels: (relation: FocusDeviceRelation) => string[],
+    getRotation: (device: DerivedDevice, relevantTerminals: DerivedTerminal[]) => number,
+  ) =>
+    deviceIds
+      .map((deviceId) => {
+        const relation = relationByDevice.get(deviceId)!
         const device = insights.deviceById[deviceId]!
-        const relevantLabels = [...relation[`${bucket}LabelKeys`]]
+        const relevantLabels = getRelevantLabels(relation)
         const relevantTerminals = device.terminals.filter(
           (terminal) =>
             terminal.connectionLabel && relevantLabels.includes(terminal.connectionLabel),
         )
-        const rotationDeg = chooseDeviceRotation(device, relevantTerminals, desiredSideForBucket(bucket))
+        const rotationDeg = getRotation(device, relevantTerminals)
         return {
           deviceId,
           device,
@@ -131,8 +135,30 @@ function deriveDeviceFocusLayout(insights: CircuitInsights, focusDeviceId: strin
       })
       .sort((left, right) => sortDevices(left.device, right.device))
 
-  const upstreamItems = buildBucketItems('upstream')
-  const downstreamItems = buildBucketItems('downstream')
+  const feedbackDeviceIds = [...relationByDevice.entries()]
+    .filter(([, relation]) => isFeedbackRelation(relation))
+    .map(([deviceId]) => deviceId)
+
+  const upstreamItems = buildBucketItems(
+    [...relationByDevice.entries()]
+      .filter(([, relation]) => relation.upstreamLabelKeys.size > 0 && !relation.downstreamLabelKeys.size)
+      .map(([deviceId]) => deviceId),
+    (relation) => [...relation.upstreamLabelKeys],
+    (device, relevantTerminals) => chooseDeviceRotation(device, relevantTerminals, desiredSideForBucket('upstream')),
+  )
+  const downstreamItems = buildBucketItems(
+    [...relationByDevice.entries()]
+      .filter(([, relation]) => relation.downstreamLabelKeys.size > 0 && !relation.upstreamLabelKeys.size)
+      .map(([deviceId]) => deviceId),
+    (relation) => [...relation.downstreamLabelKeys],
+    (device, relevantTerminals) => chooseDeviceRotation(device, relevantTerminals, desiredSideForBucket('downstream')),
+  )
+  const feedbackItems = buildBucketItems(
+    feedbackDeviceIds,
+    (relation) => [...new Set([...relation.upstreamLabelKeys, ...relation.downstreamLabelKeys])],
+    (device, relevantTerminals) => chooseAnchorRotation(device, relevantTerminals),
+  )
+
   placeVerticalColumn(
     states,
     upstreamItems,
@@ -147,6 +173,17 @@ function deriveDeviceFocusLayout(insights: CircuitInsights, focusDeviceId: strin
     anchor.center.y,
     'right',
   )
+  if (feedbackItems.length) {
+    const existingBounds = calculateFocusBounds(insights, states)
+    const feedbackColumns = Math.min(4, Math.max(1, feedbackItems.length))
+    placeWrappedRow(
+      states,
+      feedbackItems,
+      anchor.center.x,
+      existingBounds.y + existingBounds.height + FOCUS_GRID_GAP_Y,
+      feedbackColumns,
+    )
+  }
 
   return {
     states,
@@ -289,17 +326,11 @@ function buildDeviceFocusRelations(
     }
   }
 
-  for (const relation of relations.values()) {
-    if (relation.upstreamLabelKeys.size && relation.downstreamLabelKeys.size) {
-      if (relation.upstreamLabelKeys.size > relation.downstreamLabelKeys.size) {
-        relation.downstreamLabelKeys.clear()
-      } else {
-        relation.upstreamLabelKeys.clear()
-      }
-    }
-  }
-
   return relations
+}
+
+function isFeedbackRelation(relation: FocusDeviceRelation) {
+  return relation.upstreamLabelKeys.size > 0 && relation.downstreamLabelKeys.size > 0
 }
 
 function placeVerticalColumn(

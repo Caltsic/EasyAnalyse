@@ -1,6 +1,6 @@
 [package]
 name = "easyanalyse-desktop"
-version = "0.1.0"
+version = "1.1.0"
 description = "AI Native Circuit Expression and Restoration desktop application"
 edition = "2021"
 
@@ -10,7 +10,11 @@ edition = "2021"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+chrono = { version = "0.4", features = ["serde"] }
 easyanalyse-core = { path = "crates/easyanalyse-core" }
+local-ip-address = "0.6.11"
+qrcodegen = "1"
+rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }

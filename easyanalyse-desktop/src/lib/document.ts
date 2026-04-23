@@ -247,29 +247,17 @@ function inferSideRank(side: TerminalDefinition['side']) {
 }
 
 export function inferSideFromDirection(direction: TerminalDirection) {
-  if (isSourceLikeDirection(direction)) {
-    return 'right' as const
-  }
-
-  return 'left' as const
+  return direction === 'output' ? ('right' as const) : ('left' as const)
 }
 
 export function collapseTerminalDirection(direction: TerminalDirection) {
-  if (direction === 'output' || direction === 'power-out') {
-    return 'output' as const
-  }
-
-  if (direction === 'input' || direction === 'power-in' || direction === 'ground') {
-    return 'input' as const
-  }
-
-  return null
+  return direction
 }
 
 export function getTerminalFlowDirection(
-  terminal: Pick<TerminalDefinition, 'direction' | 'logicalDirection'>,
+  terminal: Pick<TerminalDefinition, 'direction'>,
 ): TerminalDirection {
-  return terminal.logicalDirection ?? terminal.direction
+  return terminal.direction
 }
 
 export function isSourceLikeDirection(direction: TerminalDirection) {

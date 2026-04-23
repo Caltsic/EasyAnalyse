@@ -3,9 +3,15 @@ import './App.css'
 import { CanvasView } from './components/CanvasView'
 import { Inspector } from './components/Inspector'
 import { CloudBackground } from './components/layout/CloudBackground'
+import { MobileSharePanel } from './components/share/MobileSharePanel'
 import { getDeviceTemplateOptions, type DeviceVisualKind } from './lib/deviceSymbols'
+import { normalizeDocumentLocal } from './lib/document'
 import { translate } from './lib/i18n'
+import { deriveMobileRenderSnapshot } from './lib/mobileSnapshot'
+import { isTauriRuntime, startMobileShare, stopMobileShare } from './lib/tauri'
+import { useTheme } from './lib/useTheme'
 import { useEditorStore } from './store/editorStore'
+import type { MobileShareSession, ValidationReport } from './types/document'
 
 function isEditableTarget(target: EventTarget | null) {
   return (
@@ -17,8 +23,24 @@ function isEditableTarget(target: EventTarget | null) {
   )
 }
 
+function buildLocalShareReport(document: ReturnType<typeof normalizeDocumentLocal>): ValidationReport {
+  return {
+    detectedFormat: 'semantic-v4',
+    schemaValid: true,
+    semanticValid: true,
+    issueCount: 0,
+    issues: [],
+    normalizedDocument: document,
+  }
+}
+
 function App() {
+  const { theme, isDarkTheme, toggleTheme } = useTheme()
   const [deviceTemplateKey, setDeviceTemplateKey] = useState<DeviceVisualKind>('module')
+  const [mobileShareOpen, setMobileShareOpen] = useState(false)
+  const [mobileShareBusy, setMobileShareBusy] = useState(false)
+  const [mobileShareError, setMobileShareError] = useState<string | null>(null)
+  const [mobileShareSession, setMobileShareSession] = useState<MobileShareSession | null>(null)
   const document = useEditorStore((state) => state.document)
   const filePath = useEditorStore((state) => state.filePath)
   const dirty = useEditorStore((state) => state.dirty)
@@ -154,6 +176,49 @@ function App() {
     : true
   const deviceTemplateOptions = useMemo(() => getDeviceTemplateOptions(), [])
 
+  const refreshMobileShare = async () => {
+    if (!isTauriRuntime()) {
+      setMobileShareError(t('shareUnavailable'))
+      return
+    }
+
+    try {
+      setMobileShareBusy(true)
+      setMobileShareError(null)
+      const normalizedDocument = normalizeDocumentLocal(document)
+      const snapshot = deriveMobileRenderSnapshot(
+        normalizedDocument,
+        validationReport ?? buildLocalShareReport(normalizedDocument),
+        locale,
+      )
+      const session = await startMobileShare(normalizedDocument, snapshot)
+      setMobileShareSession(session)
+    } catch (error) {
+      setMobileShareError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setMobileShareBusy(false)
+    }
+  }
+
+  const handleOpenMobileShare = () => {
+    setMobileShareOpen(true)
+    if (!mobileShareSession && !mobileShareBusy) {
+      void refreshMobileShare()
+    }
+  }
+
+  const handleStopMobileShare = async () => {
+    try {
+      if (isTauriRuntime()) {
+        await stopMobileShare()
+      }
+      setMobileShareSession(null)
+      setMobileShareError(null)
+    } catch (error) {
+      setMobileShareError(error instanceof Error ? error.message : String(error))
+    }
+  }
+
   return (
     <div className="shell">
       <CloudBackground />
@@ -186,6 +251,14 @@ function App() {
             <button className="ghost-button" onClick={() => void revalidate()}>
               {t('revalidate')}
             </button>
+            <button className="ghost-button" onClick={toggleTheme}>
+              {t(isDarkTheme ? 'themeLight' : 'themeDark')}
+            </button>
+            {isTauriRuntime() && (
+              <button className="ghost-button" onClick={handleOpenMobileShare}>
+                {t('shareToPhone')}
+              </button>
+            )}
             <select
               className="topbar__template-select"
               aria-label="Device template"
@@ -206,12 +279,22 @@ function App() {
 
         <main className="workspace">
           <section className="workspace__canvas">
-            <CanvasView />
+            <CanvasView theme={theme} />
             {statusMessage && <div className="status-bar">{statusMessage}</div>}
           </section>
           <Inspector />
         </main>
       </div>
+      <MobileSharePanel
+        open={mobileShareOpen}
+        locale={locale}
+        loading={mobileShareBusy}
+        error={mobileShareError}
+        session={mobileShareSession}
+        onRefresh={() => void refreshMobileShare()}
+        onStop={() => void handleStopMobileShare()}
+        onClose={() => setMobileShareOpen(false)}
+      />
     </div>
   )
 }

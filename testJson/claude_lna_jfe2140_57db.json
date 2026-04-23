@@ -1,0 +1,815 @@
+{
+  "schemaVersion": "4.0.0",
+  "document": {
+    "id": "doc.lna-jfe2140-57db",
+    "title": "通用型低噪声放大器 — JFE2140 双级 57dB",
+    "description": "第一级采用 JFE2140 分立 JFET 差分输入级（FET 输入，适合超高阻抗信号源），第二级采用低噪声运算放大器增益级。总增益 57 dB，等效输入噪声密度 1.54 nV/√Hz，显著优于普通 FET 运放。",
+    "createdAt": "2026-04-15T08:00:00.000Z",
+    "updatedAt": "2026-04-15T08:00:00.000Z",
+    "source": "ai",
+    "language": "zh-CN",
+    "tags": ["lna", "jfe2140", "low-noise", "instrumentation", "analog"]
+  },
+  "devices": [
+    {
+      "id": "device.j1",
+      "name": "JFE2140 — JFET Q1（差分输入正端）",
+      "kind": "jfet",
+      "category": "analog",
+      "reference": "Q1",
+      "description": "N沟道结型场效应管，第一级差分对正端。极低门极电流 (<1 pA)，适合测量超高阻抗信号源。",
+      "tags": ["jfet", "input-stage", "differential"],
+      "properties": {
+        "partNumber": "JFE2140",
+        "package": "SOT-23",
+        "topology": "common-source differential pair"
+      },
+      "terminals": [
+        {
+          "id": "terminal.j1.gate",
+          "name": "GATE_Q1",
+          "label": "INP",
+          "direction": "input",
+          "logicalDirection": "input",
+          "description": "正端信号输入（高阻抗，门极电流 <1 pA）",
+          "required": true,
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.j1.drain",
+          "name": "DRAIN_Q1",
+          "label": "DRAIN_Q1",
+          "direction": "output",
+          "logicalDirection": "output",
+          "description": "漏极，连接至 Q1 漏极负载电阻",
+          "required": true,
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.j1.source",
+          "name": "SOURCE_Q1",
+          "label": "TAIL_NODE",
+          "direction": "passive",
+          "description": "源极，连接尾电流源",
+          "required": true,
+          "side": "bottom",
+          "order": 0
+        },
+        {
+          "id": "terminal.j1.vdd",
+          "name": "POWER_IN_Q1",
+          "label": "VDD_15V",
+          "direction": "power-in",
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.j1.gnd",
+          "name": "GROUND_Q1",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.j2",
+      "name": "JFE2140 — JFET Q2（差分输入负端）",
+      "kind": "jfet",
+      "category": "analog",
+      "reference": "Q2",
+      "description": "N沟道结型场效应管，第一级差分对负端（反相输入）。与 Q1 构成差分对以抑制共模噪声。",
+      "tags": ["jfet", "input-stage", "differential"],
+      "properties": {
+        "partNumber": "JFE2140",
+        "package": "SOT-23",
+        "topology": "common-source differential pair"
+      },
+      "terminals": [
+        {
+          "id": "terminal.j2.gate",
+          "name": "GATE_Q2",
+          "label": "INN",
+          "direction": "input",
+          "logicalDirection": "input",
+          "description": "负端信号输入（反相，同样高阻抗）",
+          "required": true,
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.j2.drain",
+          "name": "DRAIN_Q2",
+          "label": "DRAIN_Q2",
+          "direction": "output",
+          "logicalDirection": "output",
+          "description": "漏极，连接至 Q2 漏极负载电阻",
+          "required": true,
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.j2.source",
+          "name": "SOURCE_Q2",
+          "label": "TAIL_NODE",
+          "direction": "passive",
+          "description": "源极，与 Q1 源极共享尾电流源",
+          "required": true,
+          "side": "bottom",
+          "order": 0
+        },
+        {
+          "id": "terminal.j2.vdd",
+          "name": "POWER_IN_Q2",
+          "label": "VDD_15V",
+          "direction": "power-in",
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.j2.gnd",
+          "name": "GROUND_Q2",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.itail",
+      "name": "尾电流源 I_TAIL",
+      "kind": "current-source",
+      "category": "analog",
+      "reference": "I1",
+      "description": "差分对共模电流源，设定 Q1/Q2 静态工作点，典型值 2 mA。提高差分对共模抑制比。",
+      "tags": ["bias", "current-source", "cmrr"],
+      "properties": {
+        "value": "2mA"
+      },
+      "terminals": [
+        {
+          "id": "terminal.itail.pos",
+          "name": "POS_I1",
+          "label": "TAIL_NODE",
+          "direction": "passive",
+          "description": "电流源输出，连接 Q1/Q2 源极公共节点",
+          "required": true,
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.itail.neg",
+          "name": "NEG_I1",
+          "label": "VSS_15V",
+          "direction": "passive",
+          "description": "电流源参考，连接负电源",
+          "required": true,
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.rd1",
+      "name": "Q1 漏极负载电阻 RD1",
+      "kind": "resistor",
+      "category": "passive",
+      "reference": "RD1",
+      "description": "Q1 漏极负载，设定第一级增益及工作点。",
+      "properties": {
+        "value": "10k"
+      },
+      "terminals": [
+        {
+          "id": "terminal.rd1.a",
+          "name": "A_RD1",
+          "label": "VDD_15V",
+          "direction": "passive",
+          "required": true,
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.rd1.b",
+          "name": "B_RD1",
+          "label": "DRAIN_Q1",
+          "direction": "passive",
+          "required": true,
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.rd2",
+      "name": "Q2 漏极负载电阻 RD2",
+      "kind": "resistor",
+      "category": "passive",
+      "reference": "RD2",
+      "description": "Q2 漏极负载，与 RD1 匹配以保持差分对称性。",
+      "properties": {
+        "value": "10k"
+      },
+      "terminals": [
+        {
+          "id": "terminal.rd2.a",
+          "name": "A_RD2",
+          "label": "VDD_15V",
+          "direction": "passive",
+          "required": true,
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.rd2.b",
+          "name": "B_RD2",
+          "label": "DRAIN_Q2",
+          "direction": "passive",
+          "required": true,
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.u1",
+      "name": "OPA1611 — 第二级增益运放",
+      "kind": "opamp",
+      "category": "analog",
+      "reference": "U1",
+      "description": "低噪声运算放大器，第二级。接收第一级差分输出（单端化后），提供剩余增益以凑足 57 dB 总增益。典型噪声 1.1 nV/√Hz，贡献折算到输入后可忽略。",
+      "tags": ["opamp", "second-stage", "gain"],
+      "properties": {
+        "partNumber": "OPA1611",
+        "package": "SO-8",
+        "topology": "inverting amplifier"
+      },
+      "terminals": [
+        {
+          "id": "terminal.u1.inp",
+          "name": "INP_U1",
+          "label": "STAGE1_OUT",
+          "direction": "input",
+          "logicalDirection": "input",
+          "description": "同相输入，接第一级输出",
+          "required": true,
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.u1.inn",
+          "name": "INN_U1",
+          "label": "FB_NODE",
+          "direction": "input",
+          "logicalDirection": "input",
+          "description": "反相输入，接反馈网络",
+          "required": true,
+          "side": "left",
+          "order": 1
+        },
+        {
+          "id": "terminal.u1.out",
+          "name": "OUT_U1",
+          "label": "VOUT",
+          "direction": "output",
+          "logicalDirection": "output",
+          "description": "放大器输出",
+          "required": true,
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.u1.vpos",
+          "name": "VPOS_U1",
+          "label": "VDD_15V",
+          "direction": "power-in",
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.u1.vneg",
+          "name": "VNEG_U1",
+          "label": "VSS_15V",
+          "direction": "power-in",
+          "side": "top",
+          "order": 1
+        },
+        {
+          "id": "terminal.u1.gnd",
+          "name": "GROUND_U1",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.rc1",
+      "name": "级间耦合电阻 RC1",
+      "kind": "resistor",
+      "category": "passive",
+      "reference": "RC1",
+      "description": "第一级差分输出到第二级同相端的级间连接电阻，实现单端化过渡。",
+      "properties": {
+        "value": "10k"
+      },
+      "terminals": [
+        {
+          "id": "terminal.rc1.a",
+          "name": "A_RC1",
+          "label": "DRAIN_Q1",
+          "direction": "passive",
+          "required": true,
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.rc1.b",
+          "name": "B_RC1",
+          "label": "STAGE1_OUT",
+          "direction": "passive",
+          "required": true,
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.rg",
+      "name": "增益设置电阻 RG",
+      "kind": "resistor",
+      "category": "passive",
+      "reference": "RG",
+      "description": "第二级增益电阻（反馈网络分母），与 RF 共同确定第二级增益 = RF/RG，使总增益达 57 dB。",
+      "properties": {
+        "value": "1k"
+      },
+      "terminals": [
+        {
+          "id": "terminal.rg.a",
+          "name": "A_RG",
+          "label": "GND",
+          "direction": "passive",
+          "required": true,
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.rg.b",
+          "name": "B_RG",
+          "label": "FB_NODE",
+          "direction": "passive",
+          "required": true,
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.rf",
+      "name": "反馈电阻 RF",
+      "kind": "resistor",
+      "category": "passive",
+      "reference": "RF",
+      "description": "第二级反馈电阻，与 RG 共同确定第二级增益。RF/RG ≈ 22.4 → 第二级增益 ≈ 27 dB，配合第一级约 30 dB，合计 57 dB。",
+      "properties": {
+        "value": "22.4k"
+      },
+      "terminals": [
+        {
+          "id": "terminal.rf.a",
+          "name": "A_RF",
+          "label": "FB_NODE",
+          "direction": "passive",
+          "required": true,
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.rf.b",
+          "name": "B_RF",
+          "label": "VOUT",
+          "direction": "passive",
+          "required": true,
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.cf",
+      "name": "频率补偿电容 CF",
+      "kind": "capacitor",
+      "category": "passive",
+      "reference": "CF",
+      "description": "跨接在反馈电阻两端，形成极点以限制带宽、改善稳定性。",
+      "properties": {
+        "value": "10pF"
+      },
+      "terminals": [
+        {
+          "id": "terminal.cf.a",
+          "name": "A_CF",
+          "label": "FB_NODE",
+          "direction": "passive",
+          "required": true,
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.cf.b",
+          "name": "B_CF",
+          "label": "VOUT",
+          "direction": "passive",
+          "required": true,
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.cvdd1",
+      "name": "VDD 去耦电容 C_VDD1",
+      "kind": "capacitor",
+      "category": "passive",
+      "reference": "C1",
+      "description": "VDD 电源去耦，抑制高频干扰进入第一级。",
+      "properties": {
+        "value": "100nF"
+      },
+      "terminals": [
+        {
+          "id": "terminal.cvdd1.a",
+          "name": "A_CVDD1",
+          "label": "VDD_15V",
+          "direction": "passive",
+          "required": true,
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.cvdd1.b",
+          "name": "B_CVDD1",
+          "label": "GND",
+          "direction": "passive",
+          "required": true,
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.cvss1",
+      "name": "VSS 去耦电容 C_VSS1",
+      "kind": "capacitor",
+      "category": "passive",
+      "reference": "C2",
+      "description": "VSS 电源去耦，抑制负电源高频干扰。",
+      "properties": {
+        "value": "100nF"
+      },
+      "terminals": [
+        {
+          "id": "terminal.cvss1.a",
+          "name": "A_CVSS1",
+          "label": "VSS_15V",
+          "direction": "passive",
+          "required": true,
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.cvss1.b",
+          "name": "B_CVSS1",
+          "label": "GND",
+          "direction": "passive",
+          "required": true,
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.cvdd2",
+      "name": "VDD 大容量去耦 C_VDD2",
+      "kind": "capacitor",
+      "category": "passive",
+      "reference": "C3",
+      "description": "VDD 低频储能电容，稳定电源轨。",
+      "properties": {
+        "value": "10uF"
+      },
+      "terminals": [
+        {
+          "id": "terminal.cvdd2.a",
+          "name": "A_CVDD2",
+          "label": "VDD_15V",
+          "direction": "passive",
+          "required": true,
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.cvdd2.b",
+          "name": "B_CVDD2",
+          "label": "GND",
+          "direction": "passive",
+          "required": true,
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.cvss2",
+      "name": "VSS 大容量去耦 C_VSS2",
+      "kind": "capacitor",
+      "category": "passive",
+      "reference": "C4",
+      "description": "VSS 低频储能电容，稳定负电源轨。",
+      "properties": {
+        "value": "10uF"
+      },
+      "terminals": [
+        {
+          "id": "terminal.cvss2.a",
+          "name": "A_CVSS2",
+          "label": "VSS_15V",
+          "direction": "passive",
+          "required": true,
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.cvss2.b",
+          "name": "B_CVSS2",
+          "label": "GND",
+          "direction": "passive",
+          "required": true,
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.pwr_vdd",
+      "name": "+15V 电源",
+      "kind": "power-supply",
+      "category": "power",
+      "reference": "PWR1",
+      "description": "正电源轨 +15V，为 JFET 差分对及运放提供正电源。",
+      "properties": {
+        "voltage": "15V"
+      },
+      "terminals": [
+        {
+          "id": "terminal.pwr_vdd.out",
+          "name": "OUT_PWR1",
+          "label": "VDD_15V",
+          "direction": "power-out",
+          "required": true,
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.pwr_vdd.gnd",
+          "name": "GND_PWR1",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.pwr_vss",
+      "name": "−15V 电源",
+      "kind": "power-supply",
+      "category": "power",
+      "reference": "PWR2",
+      "description": "负电源轨 −15V，为尾电流源及运放提供负电源。",
+      "properties": {
+        "voltage": "-15V"
+      },
+      "terminals": [
+        {
+          "id": "terminal.pwr_vss.out",
+          "name": "OUT_PWR2",
+          "label": "VSS_15V",
+          "direction": "power-out",
+          "required": true,
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.pwr_vss.gnd",
+          "name": "GND_PWR2",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.inp_connector",
+      "name": "信号输入连接器 J_IN",
+      "kind": "connector",
+      "category": "interface",
+      "reference": "J1",
+      "description": "差分信号输入端口，适合高阻抗信号源（传感器、麦克风、皮克安培级电流源等）。",
+      "tags": ["input", "connector"],
+      "terminals": [
+        {
+          "id": "terminal.j_in.inp",
+          "name": "INP_CONN",
+          "label": "INP",
+          "direction": "input",
+          "logicalDirection": "input",
+          "required": true,
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.j_in.inn",
+          "name": "INN_CONN",
+          "label": "INN",
+          "direction": "input",
+          "logicalDirection": "input",
+          "required": true,
+          "side": "right",
+          "order": 1
+        },
+        {
+          "id": "terminal.j_in.gnd",
+          "name": "SHIELD_CONN",
+          "label": "GND",
+          "direction": "shield",
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.out_connector",
+      "name": "信号输出连接器 J_OUT",
+      "kind": "connector",
+      "category": "interface",
+      "reference": "J2",
+      "description": "放大后输出端口，57 dB 增益，可直接驱动 ADC 或后级处理电路。",
+      "tags": ["output", "connector"],
+      "terminals": [
+        {
+          "id": "terminal.j_out.sig",
+          "name": "VOUT_CONN",
+          "label": "VOUT",
+          "direction": "output",
+          "logicalDirection": "output",
+          "required": true,
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.j_out.gnd",
+          "name": "GND_CONN",
+          "label": "GND",
+          "direction": "ground",
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    }
+  ],
+  "view": {
+    "canvas": {
+      "units": "px",
+      "grid": {
+        "enabled": true,
+        "size": 36,
+        "majorEvery": 5
+      },
+      "background": "grid"
+    },
+    "devices": {
+      "device.inp_connector": {
+        "position": { "x": 80, "y": 340 },
+        "size": { "width": 180, "height": 150 },
+        "shape": "rectangle"
+      },
+      "device.j1": {
+        "position": { "x": 360, "y": 180 },
+        "size": { "width": 200, "height": 180 },
+        "shape": "triangle"
+      },
+      "device.j2": {
+        "position": { "x": 360, "y": 460 },
+        "size": { "width": 200, "height": 180 },
+        "shape": "triangle"
+      },
+      "device.rd1": {
+        "position": { "x": 480, "y": 80 },
+        "size": { "width": 140, "height": 80 },
+        "shape": "rectangle"
+      },
+      "device.rd2": {
+        "position": { "x": 480, "y": 640 },
+        "size": { "width": 140, "height": 80 },
+        "shape": "rectangle"
+      },
+      "device.itail": {
+        "position": { "x": 380, "y": 680 },
+        "size": { "width": 160, "height": 80 },
+        "shape": "circle"
+      },
+      "device.rc1": {
+        "position": { "x": 680, "y": 230 },
+        "size": { "width": 140, "height": 72 },
+        "shape": "rectangle"
+      },
+      "device.u1": {
+        "position": { "x": 900, "y": 300 },
+        "size": { "width": 220, "height": 180 },
+        "shape": "triangle"
+      },
+      "device.rg": {
+        "position": { "x": 880, "y": 520 },
+        "size": { "width": 140, "height": 72 },
+        "shape": "rectangle"
+      },
+      "device.rf": {
+        "position": { "x": 1040, "y": 520 },
+        "size": { "width": 140, "height": 72 },
+        "shape": "rectangle"
+      },
+      "device.cf": {
+        "position": { "x": 1040, "y": 620 },
+        "size": { "width": 140, "height": 72 },
+        "shape": "rectangle"
+      },
+      "device.out_connector": {
+        "position": { "x": 1260, "y": 340 },
+        "size": { "width": 180, "height": 120 },
+        "shape": "rectangle"
+      },
+      "device.pwr_vdd": {
+        "position": { "x": 80, "y": 80 },
+        "size": { "width": 180, "height": 100 },
+        "shape": "rectangle"
+      },
+      "device.pwr_vss": {
+        "position": { "x": 80, "y": 760 },
+        "size": { "width": 180, "height": 100 },
+        "shape": "rectangle"
+      },
+      "device.cvdd1": {
+        "position": { "x": 740, "y": 80 },
+        "size": { "width": 120, "height": 72 },
+        "shape": "rectangle"
+      },
+      "device.cvss1": {
+        "position": { "x": 740, "y": 760 },
+        "size": { "width": 120, "height": 72 },
+        "shape": "rectangle"
+      },
+      "device.cvdd2": {
+        "position": { "x": 900, "y": 80 },
+        "size": { "width": 120, "height": 72 },
+        "shape": "rectangle"
+      },
+      "device.cvss2": {
+        "position": { "x": 900, "y": 760 },
+        "size": { "width": 120, "height": 72 },
+        "shape": "rectangle"
+      }
+    },
+    "networkLines": {
+      "network.vdd": {
+        "label": "VDD_15V",
+        "position": { "x": 760, "y": 48 },
+        "length": 1200,
+        "orientation": "horizontal"
+      },
+      "network.vss": {
+        "label": "VSS_15V",
+        "position": { "x": 760, "y": 880 },
+        "length": 1200,
+        "orientation": "horizontal"
+      },
+      "network.gnd": {
+        "label": "GND",
+        "position": { "x": 760, "y": 960 },
+        "length": 1200,
+        "orientation": "horizontal"
+      }
+    },
+    "focus": {
+      "defaultDeviceId": "device.j1",
+      "preferredDirection": "left-to-right"
+    }
+  }
+}

@@ -1,0 +1,279 @@
+{
+  "schemaVersion": "4.0.0",
+  "document": {
+    "id": "doc.pwm-fan-control",
+    "title": "PWM-Controlled 24V Fan",
+    "description": "MCU PWM signal drives a low-side N-MOSFET to control a 24V DC fan with flyback diode and gate drive components.",
+    "createdAt": "2026-04-19T10:00:00.000Z",
+    "updatedAt": "2026-04-19T10:00:00.000Z",
+    "source": "ai",
+    "language": "zh-CN",
+    "tags": ["pwm", "fan", "mosfet", "24v"]
+  },
+  "devices": [
+    {
+      "id": "device.mcu",
+      "name": "Microcontroller (PWM Output)",
+      "kind": "controller",
+      "reference": "U1",
+      "description": "Generates PWM signal from an I/O pin",
+      "properties": {
+        "partNumber": "STM32F103C8T6"
+      },
+      "terminals": [
+        {
+          "id": "terminal.mcu.pwm",
+          "name": "PWM_OUT",
+          "label": "PWM",
+          "direction": "output",
+          "description": "PWM control signal (3.3V/5V logic)",
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.rgate",
+      "name": "Gate Series Resistor",
+      "kind": "resistor",
+      "reference": "R1",
+      "description": "Limits gate charge current and dampens ringing",
+      "properties": {
+        "value": "100Ω"
+      },
+      "terminals": [
+        {
+          "id": "terminal.rgate.pwm",
+          "name": "IN",
+          "label": "PWM",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.rgate.gate",
+          "name": "OUT",
+          "label": "GATE",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.rpull",
+      "name": "Gate Pull-Down Resistor",
+      "kind": "resistor",
+      "reference": "R2",
+      "description": "Ensures MOSFET is off when MCU pin is high-impedance",
+      "properties": {
+        "value": "10kΩ"
+      },
+      "terminals": [
+        {
+          "id": "terminal.rpull.gate",
+          "name": "IN",
+          "label": "GATE",
+          "direction": "input",
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.rpull.gnd",
+          "name": "OUT",
+          "label": "GND",
+          "direction": "output",
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.mosfet",
+      "name": "N-Channel Power MOSFET",
+      "kind": "nmos",
+      "reference": "Q1",
+      "description": "Low-side switch for fan",
+      "properties": {
+        "partNumber": "IRLZ44N"
+      },
+      "terminals": [
+        {
+          "id": "terminal.mosfet.gate",
+          "name": "G",
+          "label": "GATE",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.mosfet.source",
+          "name": "S",
+          "label": "GND",
+          "direction": "output",
+          "side": "bottom",
+          "order": 0
+        },
+        {
+          "id": "terminal.mosfet.drain",
+          "name": "D",
+          "label": "DRAIN",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.fan",
+      "name": "24V DC Fan",
+      "kind": "dc-motor",
+      "reference": "M1",
+      "description": "Brushless or brushed DC fan",
+      "properties": {
+        "voltage": "24V",
+        "current": "0.2A"
+      },
+      "terminals": [
+        {
+          "id": "terminal.fan.pos",
+          "name": "V+",
+          "label": "24V",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.fan.neg",
+          "name": "V-",
+          "label": "DRAIN",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.diode",
+      "name": "Flyback Diode",
+      "kind": "flyback-diode",
+      "reference": "D1",
+      "description": "Suppresses inductive kickback when fan is switched off",
+      "properties": {
+        "partNumber": "1N4007"
+      },
+      "terminals": [
+        {
+          "id": "terminal.diode.anode",
+          "name": "A",
+          "label": "DRAIN",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.diode.cathode",
+          "name": "K",
+          "label": "24V",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.psu",
+      "name": "24V Power Supply",
+      "kind": "power-supply",
+      "reference": "PS1",
+      "description": "Main DC power source for fan and logic (GND shared)",
+      "properties": {
+        "voltage": "24V"
+      },
+      "terminals": [
+        {
+          "id": "terminal.psu.24v",
+          "name": "VOUT",
+          "label": "24V",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.psu.gnd",
+          "name": "GND",
+          "label": "GND",
+          "direction": "output",
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    }
+  ],
+  "view": {
+    "canvas": {
+      "units": "px",
+      "grid": {
+        "enabled": true,
+        "size": 36,
+        "majorEvery": 5
+      },
+      "background": "grid"
+    },
+    "devices": {
+      "device.mcu": {
+        "position": { "x": 100, "y": 280 },
+        "size": { "width": 160, "height": 100 },
+        "shape": "rectangle"
+      },
+      "device.rgate": {
+        "position": { "x": 320, "y": 290 },
+        "size": { "width": 80, "height": 40 },
+        "shape": "rectangle"
+      },
+      "device.rpull": {
+        "position": { "x": 360, "y": 380 },
+        "size": { "width": 80, "height": 40 },
+        "shape": "rectangle"
+      },
+      "device.mosfet": {
+        "position": { "x": 480, "y": 260 },
+        "size": { "width": 120, "height": 140 },
+        "shape": "rectangle"
+      },
+      "device.fan": {
+        "position": { "x": 680, "y": 280 },
+        "size": { "width": 160, "height": 100 },
+        "shape": "circle"
+      },
+      "device.diode": {
+        "position": { "x": 640, "y": 400 },
+        "size": { "width": 80, "height": 60 },
+        "shape": "rectangle"
+      },
+      "device.psu": {
+        "position": { "x": 680, "y": 40 },
+        "size": { "width": 140, "height": 100 },
+        "shape": "rectangle"
+      }
+    },
+    "networkLines": {
+      "network.24v": {
+        "label": "24V",
+        "position": { "x": 560, "y": 120 },
+        "length": 600,
+        "orientation": "horizontal"
+      },
+      "network.gnd": {
+        "label": "GND",
+        "position": { "x": 560, "y": 560 },
+        "length": 600,
+        "orientation": "horizontal"
+      }
+    },
+    "focus": {
+      "defaultDeviceId": "device.mcu",
+      "preferredDirection": "left-to-right"
+    }
+  }
+}

@@ -111,9 +111,10 @@ pub fn default_document(title: &str) -> DocumentFile {
 }
 
 pub fn validate_value(value: Value) -> Result<ValidationReport, CoreError> {
-    let schema_issues = validate_schema(&value)?;
+    let normalized_value = normalize_legacy_value(value);
+    let schema_issues = validate_schema(&normalized_value)?;
 
-    if let Ok(mut document) = serde_json::from_value::<DocumentFile>(value.clone()) {
+    if let Ok(mut document) = serde_json::from_value::<DocumentFile>(normalized_value.clone()) {
         normalize_document(&mut document);
         let semantic_issues = validate_semantics(&document);
         let mut issues = schema_issues;
@@ -385,6 +386,69 @@ fn validate_semantics(document: &DocumentFile) -> Vec<ValidationIssue> {
     issues
 }
 
+fn normalize_legacy_value(mut value: Value) -> Value {
+    let Some(devices) = value.get_mut("devices").and_then(Value::as_array_mut) else {
+        return value;
+    };
+
+    for device in devices {
+        let Some(terminals) = device.get_mut("terminals").and_then(Value::as_array_mut) else {
+            continue;
+        };
+
+        for terminal in terminals {
+            normalize_legacy_terminal_value(terminal);
+        }
+    }
+
+    value
+}
+
+fn normalize_legacy_terminal_value(terminal: &mut Value) {
+    let Some(object) = terminal.as_object_mut() else {
+        return;
+    };
+
+    let direction = object
+        .get("direction")
+        .and_then(Value::as_str)
+        .unwrap_or("input");
+    let logical_direction = object.get("logicalDirection").and_then(Value::as_str);
+    let side = object.get("side").and_then(Value::as_str);
+    let normalized = normalize_legacy_direction_value(direction, logical_direction, side);
+
+    object.insert("direction".to_string(), Value::String(normalized.to_string()));
+    object.remove("logicalDirection");
+}
+
+fn normalize_legacy_direction_value(
+    direction: &str,
+    logical_direction: Option<&str>,
+    side: Option<&str>,
+) -> &'static str {
+    if let Some(normalized) = collapse_legacy_direction_name(logical_direction) {
+        return normalized;
+    }
+
+    match direction {
+        "output" | "power-out" => "output",
+        "input" | "power-in" | "ground" => "input",
+        "passive" | "bidirectional" | "shield" | "unspecified" => match side {
+            Some("right") | Some("bottom") => "output",
+            _ => "input",
+        },
+        _ => "input",
+    }
+}
+
+fn collapse_legacy_direction_name(direction: Option<&str>) -> Option<&'static str> {
+    match direction? {
+        "output" | "power-out" => Some("output"),
+        "input" | "power-in" | "ground" => Some("input"),
+        _ => None,
+    }
+}
+
 fn normalize_label(value: Option<&str>) -> Option<String> {
     value.and_then(|item| {
         let trimmed = item.trim().to_string();
@@ -396,25 +460,8 @@ fn normalize_label(value: Option<&str>) -> Option<String> {
     })
 }
 
-fn collapse_terminal_direction_value(direction: &TerminalDirection) -> Option<TerminalDirection> {
-    match direction {
-        TerminalDirection::Input | TerminalDirection::Ground | TerminalDirection::PowerIn => {
-            Some(TerminalDirection::Input)
-        }
-        TerminalDirection::Output | TerminalDirection::PowerOut => Some(TerminalDirection::Output),
-        TerminalDirection::Bidirectional
-        | TerminalDirection::Passive
-        | TerminalDirection::Shield
-        | TerminalDirection::Unspecified => None,
-    }
-}
-
-fn terminal_flow_direction(terminal: &TerminalDefinition) -> Option<TerminalDirection> {
-    terminal
-        .logical_direction
-        .as_ref()
-        .and_then(collapse_terminal_direction_value)
-        .or_else(|| collapse_terminal_direction_value(&terminal.direction))
+fn terminal_flow_direction(terminal: &TerminalDefinition) -> TerminalDirection {
+    terminal.direction.clone()
 }
 
 fn validate_device_parameters(device: &DeviceDefinition, issues: &mut Vec<ValidationIssue>) {
@@ -569,7 +616,7 @@ fn has_non_empty_property(device: &DeviceDefinition, keys: &[&str]) -> bool {
 
 fn has_concrete_voltage_source(members: &[(&DeviceDefinition, &TerminalDefinition)]) -> bool {
     members.iter().any(|(device, terminal)| {
-        terminal_flow_direction(terminal) == Some(TerminalDirection::Output)
+        terminal_flow_direction(terminal) == TerminalDirection::Output
             && has_non_empty_property(device, &["voltage", "outputVoltage", "nominalVoltage"])
     })
 }
@@ -643,7 +690,7 @@ fn unique_non_empty(values: Vec<String>) -> Vec<String> {
 }
 
 fn default_side_for_terminal(terminal: &TerminalDefinition) -> TerminalSide {
-    if terminal_flow_direction(terminal) == Some(TerminalDirection::Output) {
+    if terminal_flow_direction(terminal) == TerminalDirection::Output {
         TerminalSide::Right
     } else {
         TerminalSide::Left
@@ -735,7 +782,6 @@ mod tests {
                         name: "I2C1_SCL".into(),
                         label: Some("SCL".into()),
                         direction: TerminalDirection::Output,
-                        logical_direction: None,
                         role: None,
                         description: None,
                         pin: None,
@@ -760,7 +806,6 @@ mod tests {
                         name: "SCL".into(),
                         label: Some("SCL".into()),
                         direction: TerminalDirection::Input,
-                        logical_direction: None,
                         role: None,
                         description: None,
                         pin: None,
@@ -948,7 +993,7 @@ mod tests {
     }
 
     #[test]
-    fn preserves_extended_terminal_directions_and_logical_direction() {
+    fn normalizes_legacy_terminal_directions_into_input_output() {
         let value = json!({
             "schemaVersion": "4.0.0",
             "document": {
@@ -996,19 +1041,16 @@ mod tests {
             }
         });
 
-        let mut document = serde_json::from_value::<DocumentFile>(value).expect("legacy document should parse");
-        normalize_document(&mut document);
+        let report = validate_value(value).expect("legacy document should normalize");
+        let document = report.normalized_document.expect("normalized document should exist");
 
         let terminals = &document.devices[0].terminals;
-        assert_eq!(terminals[0].direction, TerminalDirection::Passive);
-        assert_eq!(terminals[0].logical_direction, Some(TerminalDirection::Input));
+        assert_eq!(terminals[0].direction, TerminalDirection::Input);
         assert_eq!(terminals[0].side, Some(TerminalSide::Left));
-        assert_eq!(terminals[1].direction, TerminalDirection::Passive);
-        assert_eq!(terminals[1].logical_direction, Some(TerminalDirection::Output));
+        assert_eq!(terminals[1].direction, TerminalDirection::Output);
         assert_eq!(terminals[1].side, Some(TerminalSide::Right));
-        assert_eq!(terminals[2].direction, TerminalDirection::Bidirectional);
-        assert_eq!(terminals[2].logical_direction, Some(TerminalDirection::Output));
-        assert_eq!(terminals[2].side, Some(TerminalSide::Right));
+        assert_eq!(terminals[2].direction, TerminalDirection::Output);
+        assert_eq!(terminals[2].side, Some(TerminalSide::Top));
     }
 
     #[test]

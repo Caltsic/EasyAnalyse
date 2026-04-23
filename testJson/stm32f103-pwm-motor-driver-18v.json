@@ -1,561 +1,561 @@
-{
-  "schemaVersion": "4.0.0",
-  "document": {
-    "id": "doc.stm32f103.pwm-motor-driver-18v",
-    "title": "STM32F103 PWM 18V Motor Driver",
-    "description": "STM32F103C8T6 PWM output drives a logic-level NMOS low-side stage to control an 18V brushed DC motor from a regulated 18V supply.",
-    "source": "ai",
-    "language": "en-US",
-    "tags": [
-      "18v",
-      "motor",
-      "mosfet",
-      "pwm",
-      "stm32",
-      "stm32f103"
-    ]
-  },
-  "devices": [
-    {
-      "id": "device.supply18v",
-      "name": "18V Regulated Supply",
-      "kind": "power-supply",
-      "reference": "PS1",
-      "properties": {
-        "outputVoltage": "18V"
-      },
-      "terminals": [
-        {
-          "id": "terminal.supply18v.out",
-          "name": "OUTPUT_1_PS1",
-          "label": "18V",
-          "direction": "output",
-          "side": "right",
-          "order": 0
-        },
-        {
-          "id": "terminal.supply18v.gnd",
-          "name": "INPUT_1_PS1",
-          "label": "GND",
-          "direction": "input",
-          "side": "bottom",
-          "order": 1
-        }
-      ]
-    },
-    {
-      "id": "device.regulator3v3",
-      "name": "3.3V Buck Regulator",
-      "kind": "regulator",
-      "reference": "U2",
-      "properties": {
-        "partNumber": "MP1584EN",
-        "outputVoltage": "3.3V"
-      },
-      "terminals": [
-        {
-          "id": "terminal.regulator3v3.vin",
-          "name": "INPUT_1_U2",
-          "label": "18V",
-          "direction": "input",
-          "side": "left",
-          "order": 0
-        },
-        {
-          "id": "terminal.regulator3v3.gnd",
-          "name": "INPUT_2_U2",
-          "label": "GND",
-          "direction": "input",
-          "side": "bottom",
-          "order": 0
-        },
-        {
-          "id": "terminal.regulator3v3.vout",
-          "name": "OUTPUT_1_U2",
-          "label": "3V3",
-          "direction": "output",
-          "side": "right",
-          "order": 0
-        }
-      ]
-    },
-    {
-      "id": "device.c1",
-      "name": "18V Input Bulk Capacitor",
-      "kind": "capacitor",
-      "reference": "C1",
-      "properties": {
-        "value": "220uF"
-      },
-      "terminals": [
-        {
-          "id": "terminal.c1.a",
-          "name": "INPUT_1_C1",
-          "label": "18V",
-          "direction": "input",
-          "side": "left",
-          "order": 0
-        },
-        {
-          "id": "terminal.c1.b",
-          "name": "OUTPUT_1_C1",
-          "label": "GND",
-          "direction": "output",
-          "side": "right",
-          "order": 1
-        }
-      ]
-    },
-    {
-      "id": "device.c2",
-      "name": "Regulator Output Capacitor",
-      "kind": "capacitor",
-      "reference": "C2",
-      "properties": {
-        "value": "22uF"
-      },
-      "terminals": [
-        {
-          "id": "terminal.c2.a",
-          "name": "INPUT_1_C2",
-          "label": "3V3",
-          "direction": "input",
-          "side": "left",
-          "order": 0
-        },
-        {
-          "id": "terminal.c2.b",
-          "name": "OUTPUT_1_C2",
-          "label": "GND",
-          "direction": "output",
-          "side": "right",
-          "order": 1
-        }
-      ]
-    },
-    {
-      "id": "device.c3",
-      "name": "MCU Decoupling Capacitor",
-      "kind": "capacitor",
-      "reference": "C3",
-      "properties": {
-        "value": "100nF"
-      },
-      "terminals": [
-        {
-          "id": "terminal.c3.a",
-          "name": "INPUT_1_C3",
-          "label": "3V3",
-          "direction": "input",
-          "side": "left",
-          "order": 0
-        },
-        {
-          "id": "terminal.c3.b",
-          "name": "OUTPUT_1_C3",
-          "label": "GND",
-          "direction": "output",
-          "side": "right",
-          "order": 1
-        }
-      ]
-    },
-    {
-      "id": "device.mcu",
-      "name": "STM32F103C8T6",
-      "kind": "microcontroller",
-      "reference": "U1",
-      "properties": {
-        "partNumber": "STM32F103C8T6",
-        "package": "LQFP-48"
-      },
-      "terminals": [
-        {
-          "id": "terminal.mcu.vdd",
-          "name": "INPUT_1_U1",
-          "label": "3V3",
-          "direction": "input",
-          "side": "left",
-          "order": 0
-        },
-        {
-          "id": "terminal.mcu.vss",
-          "name": "INPUT_2_U1",
-          "label": "GND",
-          "direction": "input",
-          "side": "left",
-          "order": 1
-        },
-        {
-          "id": "terminal.mcu.pwm",
-          "name": "OUTPUT_1_U1",
-          "label": "PWM_TIM1_CH1",
-          "direction": "output",
-          "side": "right",
-          "order": 0
-        }
-      ]
-    },
-    {
-      "id": "device.r1",
-      "name": "Gate Resistor",
-      "kind": "resistor",
-      "reference": "R1",
-      "properties": {
-        "value": "100R"
-      },
-      "terminals": [
-        {
-          "id": "terminal.r1.a",
-          "name": "INPUT_1_R1",
-          "label": "PWM_TIM1_CH1",
-          "direction": "input",
-          "side": "left",
-          "order": 0
-        },
-        {
-          "id": "terminal.r1.b",
-          "name": "OUTPUT_1_R1",
-          "label": "PWM_GATE",
-          "direction": "output",
-          "side": "right",
-          "order": 1
-        }
-      ]
-    },
-    {
-      "id": "device.r2",
-      "name": "Gate Pull-Down",
-      "kind": "resistor",
-      "reference": "R2",
-      "properties": {
-        "value": "10k"
-      },
-      "terminals": [
-        {
-          "id": "terminal.r2.a",
-          "name": "INPUT_1_R2",
-          "label": "PWM_GATE",
-          "direction": "input",
-          "side": "left",
-          "order": 0
-        },
-        {
-          "id": "terminal.r2.b",
-          "name": "OUTPUT_1_R2",
-          "label": "GND",
-          "direction": "output",
-          "side": "right",
-          "order": 1
-        }
-      ]
-    },
-    {
-      "id": "device.q1",
-      "name": "Logic-Level N-MOSFET",
-      "kind": "mosfet",
-      "reference": "Q1",
-      "properties": {
-        "partNumber": "FQP30N06L",
-        "package": "TO-220"
-      },
-      "terminals": [
-        {
-          "id": "terminal.q1.gate",
-          "name": "INPUT_1_Q1",
-          "label": "PWM_GATE",
-          "direction": "input",
-          "pin": {
-            "number": "1",
-            "name": "G"
-          },
-          "side": "left",
-          "order": 0
-        },
-        {
-          "id": "terminal.q1.drain",
-          "name": "INPUT_2_Q1",
-          "label": "MOTOR_LOW",
-          "direction": "input",
-          "pin": {
-            "number": "2",
-            "name": "D"
-          },
-          "side": "top",
-          "order": 0
-        },
-        {
-          "id": "terminal.q1.source",
-          "name": "OUTPUT_1_Q1",
-          "label": "GND",
-          "direction": "output",
-          "pin": {
-            "number": "3",
-            "name": "S"
-          },
-          "side": "bottom",
-          "order": 0
-        }
-      ]
-    },
-    {
-      "id": "device.motor",
-      "name": "Brushed DC Motor",
-      "kind": "motor",
-      "reference": "M1",
-      "properties": {
-        "nominalVoltage": "18V"
-      },
-      "terminals": [
-        {
-          "id": "terminal.motor.pos",
-          "name": "INPUT_1_M1",
-          "label": "18V",
-          "direction": "input",
-          "side": "left",
-          "order": 0
-        },
-        {
-          "id": "terminal.motor.neg",
-          "name": "OUTPUT_1_M1",
-          "label": "MOTOR_LOW",
-          "direction": "output",
-          "side": "right",
-          "order": 1
-        }
-      ]
-    },
-    {
-      "id": "device.d1",
-      "name": "Flyback Diode",
-      "kind": "diode",
-      "reference": "D1",
-      "properties": {
-        "partNumber": "SS54"
-      },
-      "terminals": [
-        {
-          "id": "terminal.d1.anode",
-          "name": "INPUT_1_D1",
-          "label": "MOTOR_LOW",
-          "direction": "input",
-          "side": "left",
-          "order": 0
-        },
-        {
-          "id": "terminal.d1.cathode",
-          "name": "OUTPUT_1_D1",
-          "label": "18V",
-          "direction": "output",
-          "side": "right",
-          "order": 1
-        }
-      ]
-    },
-    {
-      "id": "device.c4",
-      "name": "Motor Rail Decoupling Capacitor",
-      "kind": "capacitor",
-      "reference": "C4",
-      "properties": {
-        "value": "100uF"
-      },
-      "terminals": [
-        {
-          "id": "terminal.c4.a",
-          "name": "INPUT_1_C4",
-          "label": "18V",
-          "direction": "input",
-          "side": "left",
-          "order": 0
-        },
-        {
-          "id": "terminal.c4.b",
-          "name": "OUTPUT_1_C4",
-          "label": "GND",
-          "direction": "output",
-          "side": "right",
-          "order": 1
-        }
-      ]
-    }
-  ],
-  "view": {
-    "canvas": {
-      "units": "px",
-      "grid": {
-        "enabled": true,
-        "size": 36,
-        "majorEvery": 5
-      },
-      "background": "grid"
-    },
-    "devices": {
-      "device.supply18v": {
-        "position": {
-          "x": 80,
-          "y": 80
-        },
-        "size": {
-          "width": 160,
-          "height": 160
-        },
-        "shape": "circle"
-      },
-      "device.regulator3v3": {
-        "position": {
-          "x": 340,
-          "y": 100
-        },
-        "size": {
-          "width": 220,
-          "height": 130
-        },
-        "shape": "rectangle"
-      },
-      "device.c1": {
-        "position": {
-          "x": 320,
-          "y": 340
-        },
-        "size": {
-          "width": 190,
-          "height": 100
-        },
-        "shape": "rectangle"
-      },
-      "device.c2": {
-        "position": {
-          "x": 600,
-          "y": 340
-        },
-        "size": {
-          "width": 190,
-          "height": 100
-        },
-        "shape": "rectangle"
-      },
-      "device.c3": {
-        "position": {
-          "x": 900,
-          "y": 340
-        },
-        "size": {
-          "width": 190,
-          "height": 100
-        },
-        "shape": "rectangle"
-      },
-      "device.mcu": {
-        "position": {
-          "x": 900,
-          "y": 80
-        },
-        "size": {
-          "width": 320,
-          "height": 220
-        },
-        "shape": "rectangle"
-      },
-      "device.r1": {
-        "position": {
-          "x": 1290,
-          "y": 120
-        },
-        "size": {
-          "width": 200,
-          "height": 100
-        },
-        "shape": "rectangle"
-      },
-      "device.r2": {
-        "position": {
-          "x": 1290,
-          "y": 340
-        },
-        "size": {
-          "width": 190,
-          "height": 100
-        },
-        "shape": "rectangle"
-      },
-      "device.q1": {
-        "position": {
-          "x": 1580,
-          "y": 220
-        },
-        "size": {
-          "width": 220,
-          "height": 140
-        },
-        "shape": "rectangle"
-      },
-      "device.motor": {
-        "position": {
-          "x": 1880,
-          "y": 90
-        },
-        "size": {
-          "width": 180,
-          "height": 180
-        },
-        "shape": "circle"
-      },
-      "device.d1": {
-        "position": {
-          "x": 1880,
-          "y": 340
-        },
-        "size": {
-          "width": 180,
-          "height": 100
-        },
-        "shape": "rectangle"
-      },
-      "device.c4": {
-        "position": {
-          "x": 1570,
-          "y": 510
-        },
-        "size": {
-          "width": 190,
-          "height": 100
-        },
-        "shape": "rectangle"
-      }
-    },
-    "networkLines": {
-      "network.18v": {
-        "label": "18V",
-        "position": {
-          "x": 1040,
-          "y": 20
-        },
-        "length": 2080,
-        "orientation": "horizontal"
-      },
-      "network.3v3": {
-        "label": "3V3",
-        "position": {
-          "x": 770,
-          "y": 60
-        },
-        "length": 980,
-        "orientation": "horizontal"
-      },
-      "network.gnd": {
-        "label": "GND",
-        "position": {
-          "x": 1080,
-          "y": 700
-        },
-        "length": 2120,
-        "orientation": "horizontal"
-      }
-    },
-    "focus": {
-      "defaultDeviceId": "device.q1",
-      "preferredDirection": "left-to-right"
-    }
-  }
+﻿{
+    "schemaVersion":  "4.0.0",
+    "document":  {
+                     "id":  "doc.stm32f103.pwm-motor-driver-18v",
+                     "title":  "STM32F103 PWM 18V Motor Driver",
+                     "description":  "STM32F103C8T6 PWM output drives a logic-level NMOS low-side stage to control an 18V brushed DC motor from a regulated 18V supply.",
+                     "source":  "ai",
+                     "language":  "en-US",
+                     "tags":  [
+                                  "18v",
+                                  "motor",
+                                  "mosfet",
+                                  "pwm",
+                                  "stm32",
+                                  "stm32f103"
+                              ]
+                 },
+    "devices":  [
+                    {
+                        "id":  "device.supply18v",
+                        "name":  "18V Regulated Supply",
+                        "kind":  "power-supply",
+                        "reference":  "PS1",
+                        "properties":  {
+                                           "outputVoltage":  "18V"
+                                       },
+                        "terminals":  [
+                                          {
+                                              "id":  "terminal.supply18v.out",
+                                              "name":  "OUTPUT_1_PS1",
+                                              "label":  "18V",
+                                              "direction":  "output",
+                                              "side":  "right",
+                                              "order":  0
+                                          },
+                                          {
+                                              "id":  "terminal.supply18v.gnd",
+                                              "name":  "INPUT_1_PS1",
+                                              "label":  "GND",
+                                              "direction":  "input",
+                                              "side":  "bottom",
+                                              "order":  1
+                                          }
+                                      ]
+                    },
+                    {
+                        "id":  "device.regulator3v3",
+                        "name":  "3.3V Buck Regulator",
+                        "kind":  "regulator",
+                        "reference":  "U2",
+                        "properties":  {
+                                           "partNumber":  "MP1584EN",
+                                           "outputVoltage":  "3.3V"
+                                       },
+                        "terminals":  [
+                                          {
+                                              "id":  "terminal.regulator3v3.vin",
+                                              "name":  "INPUT_1_U2",
+                                              "label":  "18V",
+                                              "direction":  "input",
+                                              "side":  "left",
+                                              "order":  0
+                                          },
+                                          {
+                                              "id":  "terminal.regulator3v3.gnd",
+                                              "name":  "INPUT_2_U2",
+                                              "label":  "GND",
+                                              "direction":  "input",
+                                              "side":  "bottom",
+                                              "order":  0
+                                          },
+                                          {
+                                              "id":  "terminal.regulator3v3.vout",
+                                              "name":  "OUTPUT_1_U2",
+                                              "label":  "3V3",
+                                              "direction":  "output",
+                                              "side":  "right",
+                                              "order":  0
+                                          }
+                                      ]
+                    },
+                    {
+                        "id":  "device.c1",
+                        "name":  "18V Input Bulk Capacitor",
+                        "kind":  "capacitor",
+                        "reference":  "C1",
+                        "properties":  {
+                                           "value":  "220uF"
+                                       },
+                        "terminals":  [
+                                          {
+                                              "id":  "terminal.c1.a",
+                                              "name":  "INPUT_1_C1",
+                                              "label":  "18V",
+                                              "direction":  "input",
+                                              "side":  "left",
+                                              "order":  0
+                                          },
+                                          {
+                                              "id":  "terminal.c1.b",
+                                              "name":  "OUTPUT_1_C1",
+                                              "label":  "GND",
+                                              "direction":  "output",
+                                              "side":  "right",
+                                              "order":  1
+                                          }
+                                      ]
+                    },
+                    {
+                        "id":  "device.c2",
+                        "name":  "Regulator Output Capacitor",
+                        "kind":  "capacitor",
+                        "reference":  "C2",
+                        "properties":  {
+                                           "value":  "22uF"
+                                       },
+                        "terminals":  [
+                                          {
+                                              "id":  "terminal.c2.a",
+                                              "name":  "INPUT_1_C2",
+                                              "label":  "3V3",
+                                              "direction":  "input",
+                                              "side":  "left",
+                                              "order":  0
+                                          },
+                                          {
+                                              "id":  "terminal.c2.b",
+                                              "name":  "OUTPUT_1_C2",
+                                              "label":  "GND",
+                                              "direction":  "output",
+                                              "side":  "right",
+                                              "order":  1
+                                          }
+                                      ]
+                    },
+                    {
+                        "id":  "device.c3",
+                        "name":  "MCU Decoupling Capacitor",
+                        "kind":  "capacitor",
+                        "reference":  "C3",
+                        "properties":  {
+                                           "value":  "100nF"
+                                       },
+                        "terminals":  [
+                                          {
+                                              "id":  "terminal.c3.a",
+                                              "name":  "INPUT_1_C3",
+                                              "label":  "3V3",
+                                              "direction":  "input",
+                                              "side":  "left",
+                                              "order":  0
+                                          },
+                                          {
+                                              "id":  "terminal.c3.b",
+                                              "name":  "OUTPUT_1_C3",
+                                              "label":  "GND",
+                                              "direction":  "output",
+                                              "side":  "right",
+                                              "order":  1
+                                          }
+                                      ]
+                    },
+                    {
+                        "id":  "device.mcu",
+                        "name":  "STM32F103C8T6",
+                        "kind":  "microcontroller",
+                        "reference":  "U1",
+                        "properties":  {
+                                           "partNumber":  "STM32F103C8T6",
+                                           "package":  "LQFP-48"
+                                       },
+                        "terminals":  [
+                                          {
+                                              "id":  "terminal.mcu.vdd",
+                                              "name":  "INPUT_1_U1",
+                                              "label":  "3V3",
+                                              "direction":  "input",
+                                              "side":  "left",
+                                              "order":  0
+                                          },
+                                          {
+                                              "id":  "terminal.mcu.vss",
+                                              "name":  "INPUT_2_U1",
+                                              "label":  "GND",
+                                              "direction":  "input",
+                                              "side":  "left",
+                                              "order":  1
+                                          },
+                                          {
+                                              "id":  "terminal.mcu.pwm",
+                                              "name":  "OUTPUT_1_U1",
+                                              "label":  "PWM_TIM1_CH1",
+                                              "direction":  "output",
+                                              "side":  "right",
+                                              "order":  0
+                                          }
+                                      ]
+                    },
+                    {
+                        "id":  "device.r1",
+                        "name":  "Gate Resistor",
+                        "kind":  "resistor",
+                        "reference":  "R1",
+                        "properties":  {
+                                           "value":  "100R"
+                                       },
+                        "terminals":  [
+                                          {
+                                              "id":  "terminal.r1.a",
+                                              "name":  "INPUT_1_R1",
+                                              "label":  "PWM_TIM1_CH1",
+                                              "direction":  "input",
+                                              "side":  "left",
+                                              "order":  0
+                                          },
+                                          {
+                                              "id":  "terminal.r1.b",
+                                              "name":  "OUTPUT_1_R1",
+                                              "label":  "PWM_GATE",
+                                              "direction":  "output",
+                                              "side":  "right",
+                                              "order":  1
+                                          }
+                                      ]
+                    },
+                    {
+                        "id":  "device.r2",
+                        "name":  "Gate Pull-Down",
+                        "kind":  "resistor",
+                        "reference":  "R2",
+                        "properties":  {
+                                           "value":  "10k"
+                                       },
+                        "terminals":  [
+                                          {
+                                              "id":  "terminal.r2.a",
+                                              "name":  "INPUT_1_R2",
+                                              "label":  "PWM_GATE",
+                                              "direction":  "input",
+                                              "side":  "left",
+                                              "order":  0
+                                          },
+                                          {
+                                              "id":  "terminal.r2.b",
+                                              "name":  "OUTPUT_1_R2",
+                                              "label":  "GND",
+                                              "direction":  "output",
+                                              "side":  "right",
+                                              "order":  1
+                                          }
+                                      ]
+                    },
+                    {
+                        "id":  "device.q1",
+                        "name":  "Logic-Level N-MOSFET",
+                        "kind":  "mosfet",
+                        "reference":  "Q1",
+                        "properties":  {
+                                           "partNumber":  "FQP30N06L",
+                                           "package":  "TO-220"
+                                       },
+                        "terminals":  [
+                                          {
+                                              "id":  "terminal.q1.gate",
+                                              "name":  "INPUT_1_Q1",
+                                              "label":  "PWM_GATE",
+                                              "direction":  "input",
+                                              "pin":  {
+                                                          "number":  "1",
+                                                          "name":  "G"
+                                                      },
+                                              "side":  "left",
+                                              "order":  0
+                                          },
+                                          {
+                                              "id":  "terminal.q1.drain",
+                                              "name":  "INPUT_2_Q1",
+                                              "label":  "MOTOR_LOW",
+                                              "direction":  "input",
+                                              "pin":  {
+                                                          "number":  "2",
+                                                          "name":  "D"
+                                                      },
+                                              "side":  "top",
+                                              "order":  0
+                                          },
+                                          {
+                                              "id":  "terminal.q1.source",
+                                              "name":  "OUTPUT_1_Q1",
+                                              "label":  "GND",
+                                              "direction":  "output",
+                                              "pin":  {
+                                                          "number":  "3",
+                                                          "name":  "S"
+                                                      },
+                                              "side":  "bottom",
+                                              "order":  0
+                                          }
+                                      ]
+                    },
+                    {
+                        "id":  "device.motor",
+                        "name":  "Brushed DC Motor",
+                        "kind":  "motor",
+                        "reference":  "M1",
+                        "properties":  {
+                                           "nominalVoltage":  "18V"
+                                       },
+                        "terminals":  [
+                                          {
+                                              "id":  "terminal.motor.pos",
+                                              "name":  "INPUT_1_M1",
+                                              "label":  "18V",
+                                              "direction":  "input",
+                                              "side":  "left",
+                                              "order":  0
+                                          },
+                                          {
+                                              "id":  "terminal.motor.neg",
+                                              "name":  "OUTPUT_1_M1",
+                                              "label":  "MOTOR_LOW",
+                                              "direction":  "output",
+                                              "side":  "right",
+                                              "order":  1
+                                          }
+                                      ]
+                    },
+                    {
+                        "id":  "device.d1",
+                        "name":  "Flyback Diode",
+                        "kind":  "diode",
+                        "reference":  "D1",
+                        "properties":  {
+                                           "partNumber":  "SS54"
+                                       },
+                        "terminals":  [
+                                          {
+                                              "id":  "terminal.d1.anode",
+                                              "name":  "INPUT_1_D1",
+                                              "label":  "MOTOR_LOW",
+                                              "direction":  "input",
+                                              "side":  "left",
+                                              "order":  0
+                                          },
+                                          {
+                                              "id":  "terminal.d1.cathode",
+                                              "name":  "OUTPUT_1_D1",
+                                              "label":  "18V",
+                                              "direction":  "output",
+                                              "side":  "right",
+                                              "order":  1
+                                          }
+                                      ]
+                    },
+                    {
+                        "id":  "device.c4",
+                        "name":  "Motor Rail Decoupling Capacitor",
+                        "kind":  "capacitor",
+                        "reference":  "C4",
+                        "properties":  {
+                                           "value":  "100uF"
+                                       },
+                        "terminals":  [
+                                          {
+                                              "id":  "terminal.c4.a",
+                                              "name":  "INPUT_1_C4",
+                                              "label":  "18V",
+                                              "direction":  "input",
+                                              "side":  "left",
+                                              "order":  0
+                                          },
+                                          {
+                                              "id":  "terminal.c4.b",
+                                              "name":  "OUTPUT_1_C4",
+                                              "label":  "GND",
+                                              "direction":  "output",
+                                              "side":  "right",
+                                              "order":  1
+                                          }
+                                      ]
+                    }
+                ],
+    "view":  {
+                 "canvas":  {
+                                "units":  "px",
+                                "grid":  {
+                                             "enabled":  true,
+                                             "size":  36,
+                                             "majorEvery":  5
+                                         },
+                                "background":  "grid"
+                            },
+                 "devices":  {
+                                 "device.supply18v":  {
+                                                          "position":  {
+                                                                           "x":  80,
+                                                                           "y":  80
+                                                                       },
+                                                          "size":  {
+                                                                       "width":  160,
+                                                                       "height":  160
+                                                                   },
+                                                          "shape":  "circle"
+                                                      },
+                                 "device.regulator3v3":  {
+                                                             "position":  {
+                                                                              "x":  340,
+                                                                              "y":  100
+                                                                          },
+                                                             "size":  {
+                                                                          "width":  220,
+                                                                          "height":  130
+                                                                      },
+                                                             "shape":  "rectangle"
+                                                         },
+                                 "device.c1":  {
+                                                   "position":  {
+                                                                    "x":  320,
+                                                                    "y":  340
+                                                                },
+                                                   "size":  {
+                                                                "width":  190,
+                                                                "height":  100
+                                                            },
+                                                   "shape":  "rectangle"
+                                               },
+                                 "device.c2":  {
+                                                   "position":  {
+                                                                    "x":  600,
+                                                                    "y":  340
+                                                                },
+                                                   "size":  {
+                                                                "width":  190,
+                                                                "height":  100
+                                                            },
+                                                   "shape":  "rectangle"
+                                               },
+                                 "device.c3":  {
+                                                   "position":  {
+                                                                    "x":  900,
+                                                                    "y":  340
+                                                                },
+                                                   "size":  {
+                                                                "width":  190,
+                                                                "height":  100
+                                                            },
+                                                   "shape":  "rectangle"
+                                               },
+                                 "device.mcu":  {
+                                                    "position":  {
+                                                                     "x":  900,
+                                                                     "y":  80
+                                                                 },
+                                                    "size":  {
+                                                                 "width":  320,
+                                                                 "height":  220
+                                                             },
+                                                    "shape":  "rectangle"
+                                                },
+                                 "device.r1":  {
+                                                   "position":  {
+                                                                    "x":  1290,
+                                                                    "y":  120
+                                                                },
+                                                   "size":  {
+                                                                "width":  200,
+                                                                "height":  100
+                                                            },
+                                                   "shape":  "rectangle"
+                                               },
+                                 "device.r2":  {
+                                                   "position":  {
+                                                                    "x":  1290,
+                                                                    "y":  340
+                                                                },
+                                                   "size":  {
+                                                                "width":  190,
+                                                                "height":  100
+                                                            },
+                                                   "shape":  "rectangle"
+                                               },
+                                 "device.q1":  {
+                                                   "position":  {
+                                                                    "x":  1580,
+                                                                    "y":  220
+                                                                },
+                                                   "size":  {
+                                                                "width":  220,
+                                                                "height":  140
+                                                            },
+                                                   "shape":  "rectangle"
+                                               },
+                                 "device.motor":  {
+                                                      "position":  {
+                                                                       "x":  1880,
+                                                                       "y":  90
+                                                                   },
+                                                      "size":  {
+                                                                   "width":  180,
+                                                                   "height":  180
+                                                               },
+                                                      "shape":  "circle"
+                                                  },
+                                 "device.d1":  {
+                                                   "position":  {
+                                                                    "x":  1880,
+                                                                    "y":  340
+                                                                },
+                                                   "size":  {
+                                                                "width":  180,
+                                                                "height":  100
+                                                            },
+                                                   "shape":  "rectangle"
+                                               },
+                                 "device.c4":  {
+                                                   "position":  {
+                                                                    "x":  1570,
+                                                                    "y":  510
+                                                                },
+                                                   "size":  {
+                                                                "width":  190,
+                                                                "height":  100
+                                                            },
+                                                   "shape":  "rectangle"
+                                               }
+                             },
+                 "networkLines":  {
+                                      "network.18v":  {
+                                                          "label":  "18V",
+                                                          "position":  {
+                                                                           "x":  1040,
+                                                                           "y":  20
+                                                                       },
+                                                          "length":  2080,
+                                                          "orientation":  "horizontal"
+                                                      },
+                                      "network.3v3":  {
+                                                          "label":  "3V3",
+                                                          "position":  {
+                                                                           "x":  770,
+                                                                           "y":  60
+                                                                       },
+                                                          "length":  980,
+                                                          "orientation":  "horizontal"
+                                                      },
+                                      "network.gnd":  {
+                                                          "label":  "GND",
+                                                          "position":  {
+                                                                           "x":  1080,
+                                                                           "y":  700
+                                                                       },
+                                                          "length":  2120,
+                                                          "orientation":  "horizontal"
+                                                      }
+                                  },
+                 "focus":  {
+                               "defaultDeviceId":  "device.q1",
+                               "preferredDirection":  "left-to-right"
+                           }
+             }
 }

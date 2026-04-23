@@ -12,6 +12,13 @@
   --danger: #dc2626;
   --success: #15803d;
   --shadow: 0 20px 44px rgba(148, 163, 184, 0.1);
+  --control-bg: #ffffff;
+  --control-bg-soft: rgba(255, 255, 255, 0.72);
+  --item-bg: rgba(248, 250, 252, 0.72);
+  --item-active-bg: rgba(239, 246, 255, 0.88);
+  --modal-scrim: rgba(15, 23, 42, 0.28);
+  --danger-soft: rgba(220, 38, 38, 0.07);
+  --canvas-bg: #ffffff;
   --sans: 'Manrope', 'Segoe UI', sans-serif;
   --mono: 'Cascadia Code', 'Consolas', monospace;
   color: var(--text);
@@ -23,6 +30,29 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+[data-theme='dark'] {
+  --bg: #111315;
+  --panel: rgba(24, 28, 31, 0.94);
+  --panel-solid: #1b2024;
+  --border: #303840;
+  --border-strong: #44505a;
+  --ink: #f2f5f7;
+  --text: #cbd3da;
+  --muted: #8e9aa5;
+  --accent: #6ab2ff;
+  --accent-soft: rgba(106, 178, 255, 0.12);
+  --danger: #ff8d8d;
+  --success: #6ee7a1;
+  --shadow: 0 24px 54px rgba(0, 0, 0, 0.34);
+  --control-bg: #20262b;
+  --control-bg-soft: rgba(31, 37, 42, 0.76);
+  --item-bg: rgba(33, 39, 44, 0.78);
+  --item-active-bg: rgba(36, 67, 98, 0.82);
+  --modal-scrim: rgba(0, 0, 0, 0.54);
+  --danger-soft: rgba(255, 141, 141, 0.1);
+  --canvas-bg: #111416;
 }
 
 * {
@@ -50,7 +80,7 @@ select {
 
 button {
   border: 1px solid var(--border);
-  background: var(--panel-solid);
+  background: var(--control-bg);
   color: var(--ink);
   border-radius: 6px;
   padding: 9px 12px;
@@ -64,7 +94,7 @@ button {
 
 button:hover {
   border-color: var(--border-strong);
-  box-shadow: 0 10px 20px rgba(148, 163, 184, 0.08);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
   transform: translateY(-1px);
 }
 
@@ -77,11 +107,11 @@ select:focus-visible {
 }
 
 .ghost-button {
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--control-bg-soft);
 }
 
 .ghost-button.danger {
-  color: #b91c1c;
+  color: var(--danger);
   border-color: rgba(220, 38, 38, 0.22);
 }
 
@@ -89,7 +119,7 @@ input,
 textarea,
 select {
   width: 100%;
-  background: #ffffff;
+  background: var(--control-bg);
   color: var(--ink);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -139,4 +169,12 @@ strong {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: rgba(37, 99, 235, 0.8);
+}
+
+.boot-screen {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: var(--bg);
 }

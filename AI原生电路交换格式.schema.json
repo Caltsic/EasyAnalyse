@@ -90,14 +90,7 @@
       "type": "string",
       "enum": [
         "input",
-        "output",
-        "bidirectional",
-        "passive",
-        "power-in",
-        "power-out",
-        "ground",
-        "shield",
-        "unspecified"
+        "output"
       ]
     },
     "terminalSide": {
@@ -149,9 +142,6 @@
           "type": "string"
         },
         "direction": {
-          "$ref": "#/$defs/terminalDirection"
-        },
-        "logicalDirection": {
           "$ref": "#/$defs/terminalDirection"
         },
         "role": {

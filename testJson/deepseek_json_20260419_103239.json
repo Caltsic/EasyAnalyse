@@ -1,0 +1,437 @@
+{
+  "schemaVersion": "4.0.0",
+  "document": {
+    "id": "doc.lna.jfe2140.opamp",
+    "title": "1.54 nV/√Hz 超低噪声高阻抗放大器",
+    "description": "总增益57dB低噪声放大器。第一级基于JFE2140分立JFET，提供超高输入阻抗；第二级采用低噪声运算放大器，优化整体噪声系数。",
+    "createdAt": "2026-04-19T12:00:00.000Z",
+    "updatedAt": "2026-04-19T12:00:00.000Z",
+    "source": "ai",
+    "language": "zh-CN",
+    "tags": ["lna", "低噪声", "jfe2140", "高阻抗", "57db"]
+  },
+  "devices": [
+    {
+      "id": "device.input",
+      "name": "信号输入",
+      "kind": "connector",
+      "reference": "J1",
+      "description": "高阻抗信号源输入接口",
+      "terminals": [
+        {
+          "id": "terminal.input.signal",
+          "name": "INPUT_SIGNAL",
+          "label": "VIN",
+          "direction": "output",
+          "description": "输入信号节点",
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.r_gate",
+      "name": "栅极偏置电阻",
+      "kind": "resistor",
+      "reference": "R1",
+      "description": "为JFET栅极提供直流偏置路径，同时保持极高输入阻抗",
+      "properties": {
+        "value": "10M"
+      },
+      "terminals": [
+        {
+          "id": "terminal.r_gate.in",
+          "name": "INPUT",
+          "label": "VIN",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.r_gate.gnd",
+          "name": "GND",
+          "label": "GND",
+          "direction": "output",
+          "side": "right",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "id": "device.j1",
+      "name": "JFE2140 JFET",
+      "kind": "jfet",
+      "reference": "Q1",
+      "description": "N沟道JFET，提供超低噪声和超高输入阻抗",
+      "properties": {
+        "type": "n-channel",
+        "partNumber": "JFE2140"
+      },
+      "terminals": [
+        {
+          "id": "terminal.j1.gate",
+          "name": "GATE",
+          "label": "VIN",
+          "direction": "input",
+          "description": "栅极，极高阻抗输入",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.j1.source",
+          "name": "SOURCE",
+          "label": "J1_SOURCE",
+          "direction": "output",
+          "side": "bottom",
+          "order": 0
+        },
+        {
+          "id": "terminal.j1.drain",
+          "name": "DRAIN",
+          "label": "J1_DRAIN",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.r_source",
+      "name": "源极电阻",
+      "kind": "resistor",
+      "reference": "R2",
+      "description": "提供直流偏置稳定，未完全旁路以设置精确增益",
+      "properties": {
+        "value": "10"
+      },
+      "terminals": [
+        {
+          "id": "terminal.r_source.in",
+          "name": "INPUT",
+          "label": "J1_SOURCE",
+          "direction": "input",
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.r_source.out",
+          "name": "OUTPUT",
+          "label": "GND",
+          "direction": "output",
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.c_bypass",
+      "name": "源极旁路电容",
+      "kind": "capacitor",
+      "reference": "C1",
+      "description": "交流旁路源极电阻，最大化交流增益",
+      "properties": {
+        "value": "100µF"
+      },
+      "terminals": [
+        {
+          "id": "terminal.c_bypass.in",
+          "name": "POSITIVE",
+          "label": "J1_SOURCE",
+          "direction": "input",
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.c_bypass.out",
+          "name": "NEGATIVE",
+          "label": "GND",
+          "direction": "output",
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.r_drain",
+      "name": "漏极负载电阻",
+      "kind": "resistor",
+      "reference": "R3",
+      "description": "将JFET的电流变化转换为电压输出",
+      "properties": {
+        "value": "2.2k"
+      },
+      "terminals": [
+        {
+          "id": "terminal.r_drain.in",
+          "name": "INPUT",
+          "label": "VCC_12",
+          "direction": "input",
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.r_drain.out",
+          "name": "OUTPUT",
+          "label": "J1_DRAIN",
+          "direction": "output",
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.c_couple",
+      "name": "级间耦合电容",
+      "kind": "capacitor",
+      "reference": "C2",
+      "description": "隔离JFET级与运放级的直流偏置",
+      "properties": {
+        "value": "10µF"
+      },
+      "terminals": [
+        {
+          "id": "terminal.c_couple.in",
+          "name": "INPUT",
+          "label": "J1_DRAIN",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.c_couple.out",
+          "name": "OUTPUT",
+          "label": "OPAMP_IN",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.opamp",
+      "name": "低噪声运算放大器",
+      "kind": "op-amp",
+      "reference": "U1",
+      "description": "第二级放大，极低电压噪声密度（<1 nV/√Hz）",
+      "properties": {
+        "partNumber": "LT1028",
+        "topology": "低噪声精密运放"
+      },
+      "terminals": [
+        {
+          "id": "terminal.opamp.in_pos",
+          "name": "NON_INVERTING_INPUT",
+          "label": "OPAMP_IN",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.opamp.in_neg",
+          "name": "INVERTING_INPUT",
+          "label": "OPAMP_NEG",
+          "direction": "input",
+          "side": "left",
+          "order": 1
+        },
+        {
+          "id": "terminal.opamp.out",
+          "name": "OUTPUT",
+          "label": "OPAMP_OUT",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        },
+        {
+          "id": "terminal.opamp.vcc",
+          "name": "POSITIVE_POWER",
+          "label": "VCC_12",
+          "direction": "input",
+          "side": "top",
+          "order": 0
+        },
+        {
+          "id": "terminal.opamp.vee",
+          "name": "NEGATIVE_POWER",
+          "label": "VEE_12",
+          "direction": "input",
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.r_g1",
+      "name": "反相端接地电阻",
+      "kind": "resistor",
+      "reference": "R4",
+      "description": "设置运放级增益，与R5配合",
+      "properties": {
+        "value": "1k"
+      },
+      "terminals": [
+        {
+          "id": "terminal.r_g1.in",
+          "name": "INPUT",
+          "label": "OPAMP_NEG",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.r_g1.out",
+          "name": "OUTPUT",
+          "label": "GND",
+          "direction": "output",
+          "side": "right",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.r_f",
+      "name": "反馈电阻",
+      "kind": "resistor",
+      "reference": "R5",
+      "description": "设置运放级增益，与R4配合实现总增益57dB",
+      "properties": {
+        "value": "7.04k"
+      },
+      "terminals": [
+        {
+          "id": "terminal.r_f.in",
+          "name": "INPUT",
+          "label": "OPAMP_NEG",
+          "direction": "input",
+          "side": "bottom",
+          "order": 0
+        },
+        {
+          "id": "terminal.r_f.out",
+          "name": "OUTPUT",
+          "label": "OPAMP_OUT",
+          "direction": "output",
+          "side": "top",
+          "order": 0
+        }
+      ]
+    },
+    {
+      "id": "device.output",
+      "name": "信号输出",
+      "kind": "connector",
+      "reference": "J2",
+      "description": "放大后信号输出接口",
+      "terminals": [
+        {
+          "id": "terminal.output.signal",
+          "name": "OUTPUT_SIGNAL",
+          "label": "OPAMP_OUT",
+          "direction": "input",
+          "side": "left",
+          "order": 0
+        },
+        {
+          "id": "terminal.output.gnd",
+          "name": "OUTPUT_GND",
+          "label": "GND",
+          "direction": "input",
+          "side": "bottom",
+          "order": 0
+        }
+      ]
+    }
+  ],
+  "view": {
+    "canvas": {
+      "units": "px",
+      "grid": {
+        "enabled": true,
+        "size": 36,
+        "majorEvery": 5
+      },
+      "background": "grid"
+    },
+    "devices": {
+      "device.input": {
+        "position": { "x": 120, "y": 300 },
+        "size": { "width": 80, "height": 60 },
+        "shape": "rectangle"
+      },
+      "device.r_gate": {
+        "position": { "x": 260, "y": 280 },
+        "size": { "width": 100, "height": 60 },
+        "shape": "rectangle"
+      },
+      "device.j1": {
+        "position": { "x": 420, "y": 260 },
+        "size": { "width": 120, "height": 100 },
+        "shape": "triangle"
+      },
+      "device.r_source": {
+        "position": { "x": 560, "y": 400 },
+        "size": { "width": 80, "height": 60 },
+        "shape": "rectangle"
+      },
+      "device.c_bypass": {
+        "position": { "x": 560, "y": 480 },
+        "size": { "width": 80, "height": 60 },
+        "shape": "rectangle"
+      },
+      "device.r_drain": {
+        "position": { "x": 600, "y": 160 },
+        "size": { "width": 80, "height": 60 },
+        "shape": "rectangle"
+      },
+      "device.c_couple": {
+        "position": { "x": 780, "y": 280 },
+        "size": { "width": 80, "height": 60 },
+        "shape": "rectangle"
+      },
+      "device.opamp": {
+        "position": { "x": 920, "y": 240 },
+        "size": { "width": 140, "height": 100 },
+        "shape": "triangle"
+      },
+      "device.r_g1": {
+        "position": { "x": 1080, "y": 360 },
+        "size": { "width": 80, "height": 60 },
+        "shape": "rectangle"
+      },
+      "device.r_f": {
+        "position": { "x": 1080, "y": 160 },
+        "size": { "width": 80, "height": 60 },
+        "shape": "rectangle"
+      },
+      "device.output": {
+        "position": { "x": 1280, "y": 300 },
+        "size": { "width": 80, "height": 60 },
+        "shape": "rectangle"
+      }
+    },
+    "networkLines": {
+      "network.vcc": {
+        "label": "VCC_12",
+        "position": { "x": 700, "y": 80 },
+        "length": 800,
+        "orientation": "horizontal"
+      },
+      "network.vee": {
+        "label": "VEE_12",
+        "position": { "x": 700, "y": 580 },
+        "length": 800,
+        "orientation": "horizontal"
+      },
+      "network.gnd": {
+        "label": "GND",
+        "position": { "x": 700, "y": 540 },
+        "length": 800,
+        "orientation": "horizontal"
+      }
+    },
+    "focus": {
+      "defaultDeviceId": "device.j1",
+      "preferredDirection": "left-to-right"
+    }
+  }
+}

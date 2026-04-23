@@ -41,16 +41,7 @@ export interface CanvasViewDefinition {
 
 export type DeviceShape = 'rectangle' | 'circle' | 'triangle'
 
-export type TerminalDirection =
-  | 'input'
-  | 'output'
-  | 'bidirectional'
-  | 'passive'
-  | 'power-in'
-  | 'power-out'
-  | 'ground'
-  | 'shield'
-  | 'unspecified'
+export type TerminalDirection = 'input' | 'output'
 
 export type TerminalSide = 'left' | 'right' | 'top' | 'bottom' | 'auto'
 
@@ -66,7 +57,6 @@ export interface TerminalDefinition {
   name: string
   label?: string
   direction: TerminalDirection
-  logicalDirection?: TerminalDirection
   role?: string
   description?: string
   pin?: TerminalPin
@@ -169,6 +159,173 @@ export interface OpenDocumentResult {
 export interface SaveDocumentResult {
   path: string
   report: ValidationReport
+}
+
+export interface MobileShareSession {
+  url: string
+  appUrl: string
+  snapshotUrl: string
+  host: string
+  port: number
+  alternateUrls: string[]
+  expiresAt: string
+  createdAt: string
+  title: string
+  issueCount: number
+  schemaValid: boolean
+  semanticValid: boolean
+  qrSvg: string
+}
+
+export interface MobileSharePayload {
+  document: DocumentFile
+  report: ValidationReport
+  snapshot?: MobileRenderSnapshot
+  createdAt: string
+  expiresAt: string
+}
+
+export interface MobileRenderSnapshot {
+  schemaVersion: 'mobile-render-v1'
+  generatedAt: string
+  orientation: 'landscape'
+  sourceSchemaVersion: DocumentFile['schemaVersion']
+  document: Pick<DocumentMeta, 'id' | 'title' | 'description' | 'createdAt' | 'updatedAt'>
+  canvas: {
+    units: CanvasViewDefinition['units']
+    background?: CanvasViewDefinition['background']
+    grid?: CanvasGrid
+    worldBounds: { x: number; y: number; width: number; height: number }
+  }
+  devices: MobileSnapshotDevice[]
+  networkLines: MobileSnapshotNetworkLine[]
+  connectionGroups: MobileSnapshotConnectionGroup[]
+  relations: MobileSnapshotRelation[]
+  searchIndex: MobileSnapshotSearchItem[]
+  validation: {
+    schemaValid: boolean
+    semanticValid: boolean
+    issueCount: number
+    issues: ValidationIssue[]
+  }
+}
+
+export interface MobileSnapshotDevice {
+  id: string
+  reference: string
+  title: string
+  name: string
+  kind: string
+  visualKind: string
+  shape: DeviceShape
+  rotationDeg: number
+  bounds: { x: number; y: number; width: number; height: number }
+  center: Point
+  description?: string
+  properties?: DeviceProperties
+  symbolAccent?: string
+  symbolPrimitives?: MobileSymbolPrimitive[]
+  terminals: MobileSnapshotTerminal[]
+}
+
+export type MobileSymbolPrimitive =
+  | {
+      type: 'line'
+      points: number[]
+      stroke: 'stroke' | 'accent'
+      strokeWidth: number
+      closed?: boolean
+      fill?: 'stroke' | 'accent' | string
+      dash?: number[]
+      tension?: number
+    }
+  | {
+      type: 'rect'
+      x: number
+      y: number
+      width: number
+      height: number
+      radius?: number
+      stroke?: 'stroke' | 'accent'
+      strokeWidth?: number
+      fill?: 'stroke' | 'accent' | string
+    }
+  | {
+      type: 'circle'
+      x: number
+      y: number
+      radius: number
+      stroke?: 'stroke' | 'accent'
+      strokeWidth?: number
+      fill?: 'stroke' | 'accent' | string
+    }
+  | {
+      type: 'text'
+      x: number
+      y: number
+      text: string
+      fill: 'stroke' | 'accent'
+      fontSize: number
+      bold?: boolean
+    }
+
+export interface MobileSnapshotTerminal {
+  id: string
+  deviceId: string
+  name: string
+  displayLabel: string
+  connectionLabel?: string
+  direction: TerminalDirection
+  flowDirection: TerminalDirection
+  side: TerminalSide
+  point: Point
+  role?: string
+  description?: string
+  pin?: TerminalPin
+  color: {
+    fill: string
+    stroke: string
+    text: string
+  }
+}
+
+export interface MobileSnapshotNetworkLine {
+  id: string
+  label: string
+  labelKey: string
+  position: Point
+  start: Point
+  end: Point
+  length: number
+  orientation: NetworkLineOrientation
+}
+
+export interface MobileSnapshotConnectionGroup {
+  key: string
+  label: string
+  terminalIds: string[]
+  deviceIds: string[]
+  point: Point
+}
+
+export interface MobileSnapshotRelation {
+  deviceId: string
+  title: string
+  upstreamDeviceIds: string[]
+  downstreamDeviceIds: string[]
+  relatedTerminalIds: string[]
+  connectionKeys: string[]
+  connectionLabels: string[]
+  upstreamLabels: string[]
+  downstreamLabels: string[]
+}
+
+export interface MobileSnapshotSearchItem {
+  id: string
+  type: 'device' | 'networkLine' | 'connectionGroup' | 'terminal'
+  label: string
+  subtitle?: string
+  targetId: string
 }
 
 export type EditorSelection =

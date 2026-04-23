@@ -1,6 +1,7 @@
 node_modules/
 dist/
 target/
+target-pack/
 target-release-check/
 *.log
 
@@ -9,3 +10,10 @@ progress.md
 findings.md
 .hermes/
 easyanalyse-desktop/EASYAnalyse-web-preview.tar.gz
+
+easyanalyse-mobile-android/.gradle/
+easyanalyse-mobile-android/build/
+easyanalyse-mobile-android/app/build/
+easyanalyse-mobile-android/local.properties
+easyanalyse-mobile-android/keystore.properties
+easyanalyse-mobile-android/signing/

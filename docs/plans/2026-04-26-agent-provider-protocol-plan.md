@@ -2,12 +2,16 @@
 
 > **MVP 修订优先级说明（2026-04-26）**：最新施工顺序已压实为“先完成无 Agent 蓝图闭环，再接设置与 Agent”。若本文与 `docs/plans/2026-04-26-agent-blueprint-mvp-revision.md` 冲突，以后者为准。核心修订：invalid/有报错蓝图也允许用户强确认后应用到内存主文档；报错只提示，不作为应用门禁；`applied` 不再作为状态，改为 `appliedInfo` + runtime `isCurrentMainDocument`；Canvas 预览优先拆 `CircuitCanvasRenderer` 纯渲染层；API key 与普通设置分层。
 
+> **文件级施工补充（2026-04-26）**：Milestone 1/2 的文件级修改清单、当前代码结构映射、硬测试矩阵、旧规划冲突修正与子代理执行模板已落盘到 `docs/plans/2026-04-26-blueprint-milestone-1-2-file-level-implementation-plan.md`。后续实现 Blueprint Core / Blueprint UI 时必须同时遵守该文档。
 
 > 日期：2026-04-26  
 > 关联主规划：`docs/plans/2026-04-26-agent-blueprint-plan.md`  
 > 目标：把桌面版内置 Agent 从“聊天框”规划为可验证、可取消、可重试、可扩展 Provider 的受控蓝图生成系统。
 
 ## 1. 设计目标与边界
+
+> 本文仅适用于 MVP revision 的 Milestone 4/5；不属于第一批无 Agent 蓝图闭环施工范围。Milestone 1/2 禁止接入 Agent、Provider、API key 存储或真实网络请求。
+
 
 Agent 不是拥有任意文件系统/命令执行权限的自动化脚本，而是受控的蓝图生成、修改、解释助手：
 
@@ -392,5 +396,5 @@ const DEFAULT_AGENT_RETRY_POLICY = {
 5. forbidden field scan 捕获 `wires/nodes/signalId`。
 6. valid/invalid 混合 candidate 入库。
 7. cancel/retry/timeout 状态机。
-8. API key 不写主文档和 sidecar。
+8. API key 不出现在主文档、blueprint sidecar、AppSettings、导出设置、普通日志、Agent request/response debug 日志；测试应使用假 key 做全项目/应用数据目录扫描。
 9. prompt 注入字段不能绕过本地校验。

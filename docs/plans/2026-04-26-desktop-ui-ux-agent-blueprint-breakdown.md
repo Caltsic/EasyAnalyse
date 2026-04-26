@@ -2,6 +2,7 @@
 
 > **MVP 修订优先级说明（2026-04-26）**：最新施工顺序已压实为“先完成无 Agent 蓝图闭环，再接设置与 Agent”。若本文与 `docs/plans/2026-04-26-agent-blueprint-mvp-revision.md` 冲突，以后者为准。核心修订：invalid/有报错蓝图也允许用户强确认后应用到内存主文档；报错只提示，不作为应用门禁；`applied` 不再作为状态，改为 `appliedInfo` + runtime `isCurrentMainDocument`；Canvas 预览优先拆 `CircuitCanvasRenderer` 纯渲染层；API key 与普通设置分层。
 
+> **文件级施工补充（2026-04-26）**：Milestone 1/2 的文件级修改清单、当前代码结构映射、硬测试矩阵、旧规划冲突修正与子代理执行模板已落盘到 `docs/plans/2026-04-26-blueprint-milestone-1-2-file-level-implementation-plan.md`。后续实现 Blueprint Core / Blueprint UI 时必须同时遵守该文档。
 
 > 本文补充主规划 `docs/plans/2026-04-26-agent-blueprint-plan.md`，聚焦成熟桌面软件体验：设置中心、夜间模式、Agent 面板、蓝图列表/预览/diff/应用确认，以及可逐任务交给子代理实施的阶段计划、验收标准和风险矩阵。
 
@@ -14,7 +15,7 @@
 - `easyanalyse-desktop/src/lib/theme.ts` 当前 `ThemeMode = 'light' | 'dark'`，通过 `localStorage easyanalyse.theme` 与 `documentElement.dataset.theme` 持久化/应用；成熟设置中心需要升级为 `'system' | 'light' | 'dark'`，并把设置来源从零散 localStorage 收敛到 App Settings。
 - `easyanalyse-desktop/src/store/editorStore.ts` 是主文档权威来源，包含 `document/filePath/dirty/validationReport/selection/history/future/statusMessage` 和打开、保存、校验、编辑、撤销重做动作。应用蓝图应作为一次主文档替换动作进入此 store，而不是让 Agent 直接调用编辑动作。
 - `easyanalyse-desktop/src/lib/tauri.ts` 目前仅封装文档打开/保存/校验和移动分享命令。设置、Provider 测试、Agent 请求、蓝图 sidecar 读写均应在此新增受控 wrapper。
-- `CanvasView.tsx` 当前直接读取 `useEditorStore` 并执行拖拽/选择/移动/端子重排等写动作。蓝图预览若复用 Canvas，需要增加 `documentOverride`、`readOnly`、`selectionOverride` 或拆出只读渲染层，防止预览蓝图时误写主文档。
+- `CanvasView.tsx` 当前直接读取 `useEditorStore` 并执行拖拽/选择/移动/端子重排等写动作。蓝图预览优先拆出 `CircuitCanvasRenderer` 纯渲染层与 `BlueprintPreviewCanvas`；`documentOverride/readOnly` 只能作为临时 fallback，不能作为主要安全边界。
 - `Inspector.tsx` 当前也直接读写 `editorStore`。MVP 不建议让 Inspector 编辑蓝图；蓝图预览时右侧可切换为 Agent/Blueprint 面板，不进入蓝图编辑态。
 
 ## 1. 信息架构 IA
@@ -142,7 +143,7 @@ Agent 面板建议分三段：
 
 - Agent 永远只写 `blueprintStore`，不直接修改 `editorStore.document`。
 - 修改蓝图默认创建派生蓝图，父蓝图保留。
-- 对 invalid 蓝图可提供“让 Agent 修复”快捷 prompt，但应用按钮 disabled。
+- 对 invalid 蓝图可提供“让 Agent 修复”快捷 prompt；应用入口不 disabled，但必须进入强提示/二次确认流程。
 - Agent request 必须包含 semantic v4 硬约束，禁止 wires/nodes/junctions/signals/signalId。
 
 ## 4. 蓝图列表、预览、Diff、应用确认
@@ -150,7 +151,7 @@ Agent 面板建议分三段：
 ### 4.1 蓝图列表
 
 每张蓝图卡片：
-- 标题、摘要、状态 chip：draft/valid/invalid/applied/archived。
+- 标题、摘要、状态 chip：lifecycle active/archived/deleted；validation unknown/valid/invalid；appliedInfo 历史标记；runtime isCurrentMainDocument 当前匹配标记。
 - issue 数：`0 issue` / `3 issues`，点击展开校验报告。
 - 元数据：创建/更新时间、来源、模型、baseHash 是否匹配当前主文档。
 - 快捷操作：预览、校验、重命名、复制、派生修改、删除、应用。
@@ -164,18 +165,21 @@ Agent 面板建议分三段：
 
 ### 4.2 只读预览
 
-MVP 推荐改造 `CanvasView`：
+MVP 优先抽出 `CircuitCanvasRenderer` 纯渲染组件：
+
 ```tsx
-<CanvasView theme={theme} documentOverride={activeBlueprint.document} readOnly previewLabel="蓝图预览" />
+<CircuitCanvasRenderer document={activeBlueprint.document} theme={theme} mode="preview" />
 ```
 
 必需行为：
-- `readOnly` 下禁用：设备拖拽、端子重排、网络线移动、框选修改 selection、pending device placement。
+- `CircuitCanvasRenderer` 不 import/use `editorStore` mutation。
+- `CanvasView/MainCanvasView` 继续负责主文档交互，并向 renderer 注入 mutation callbacks。
+- `BlueprintPreviewCanvas` 只传蓝图 document，不传拖拽、端子重排、网络线移动、框选修改 selection、pending device placement 等 callbacks。
 - 允许：平移、缩放、聚焦、只读 hover、高亮 connection。
 - Canvas header 显示“蓝图预览”与“返回主文档”。
 - Inspector 不显示蓝图编辑表单；蓝图详情由 `BlueprintPanel` 展示。
 
-若改造风险过大，可第二选择：抽出 `CircuitCanvasRenderer` 纯渲染组件，`CanvasView` 继续负责主文档交互，`BlueprintPreviewCanvas` 只传 document。
+`CanvasView documentOverride/readOnly` 只能作为临时 fallback，不作为推荐实现；若临时使用，必须通过预览前后 `mainDocumentHash` 完全一致的测试。
 
 ### 4.3 Diff 设计
 
@@ -200,7 +204,7 @@ MVP diff 为摘要 diff，不做 merge：
 - 可撤销说明：若实现 undo，写“可使用撤销返回”；否则写“请先保存当前文件或另存备份”。
 - 摘要 diff：device/terminal/net/validation/baseHash。
 - 风险提示：若当前主文档 dirty 或 baseHash 不匹配，显示二级警告，并要求勾选“我理解会替换当前主文档”。
-- 按钮：取消、预览 diff、应用蓝图。invalid 蓝图按钮 disabled。
+- 按钮：取消、预览 diff、应用蓝图。invalid 蓝图按钮不 disabled，但点击后进入强确认模式。
 
 应用后：
 - 调用 `editorStore.replaceDocumentFromBlueprint(document, { dirty: true, pushHistory: true })`。
@@ -386,7 +390,7 @@ interface AppSettings {
 - 验收：展示标题/摘要/状态/issue/model/time；可选择/重命名/删除；空状态有 CTA。
 - 测试：组件纯函数/状态测试；手工创建蓝图。
 
-#### Task D3：CanvasView readOnly/documentOverride
+#### Task D3：抽出 CircuitCanvasRenderer 与 BlueprintPreviewCanvas
 - 目标：支持只读蓝图预览。
 - 涉及文件：修改 `src/components/CanvasView.tsx`，可新增 `src/components/blueprints/BlueprintPreviewBanner.tsx`。
 - 验收：预览时不调用主文档 move/update/place/delete；仍可 pan/zoom；清晰显示预览状态。
@@ -403,7 +407,7 @@ interface AppSettings {
 #### Task E1：validate_blueprint_document wrapper
 - 目标：复用 Rust core 校验蓝图内部 DocumentFile。
 - 涉及文件：修改 `src-tauri/src/commands.rs`、`src/lib/tauri.ts`、`src/store/blueprintStore.ts`。
-- 验收：valid -> 可应用；invalid -> 显示 issue 且禁用应用。
+- 验收：valid -> 可应用；invalid -> 显示 issue 且进入强确认后可应用。
 - 测试：用 `testJson` valid/invalid 样例校验。
 
 #### Task E2：摘要 diff 工具与 UI
@@ -415,7 +419,7 @@ interface AppSettings {
 #### Task E3：ApplyBlueprintDialog
 - 目标：应用前确认与风险提示。
 - 涉及文件：新增 `src/components/blueprints/ApplyBlueprintDialog.tsx`，修改 `BlueprintPanel`。
-- 验收：invalid 无法应用；dirty/baseHash mismatch 必须额外确认；取消无副作用。
+- 验收：invalid 不能无提示应用，但强确认后可应用到内存主文档；dirty/baseHash mismatch 必须额外确认；取消无副作用。
 - 测试：组件行为测试或手工验收。
 
 #### Task E4：editorStore 替换动作

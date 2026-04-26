@@ -2,6 +2,7 @@
 
 > **MVP 修订优先级说明（2026-04-26）**：最新施工顺序已压实为“先完成无 Agent 蓝图闭环，再接设置与 Agent”。若本文与 `docs/plans/2026-04-26-agent-blueprint-mvp-revision.md` 冲突，以后者为准。核心修订：invalid/有报错蓝图也允许用户强确认后应用到内存主文档；报错只提示，不作为应用门禁；`applied` 不再作为状态，改为 `appliedInfo` + runtime `isCurrentMainDocument`；Canvas 预览优先拆 `CircuitCanvasRenderer` 纯渲染层；API key 与普通设置分层。
 
+> **文件级施工补充（2026-04-26）**：Milestone 1/2 的文件级修改清单、当前代码结构映射、硬测试矩阵、旧规划冲突修正与子代理执行模板已落盘到 `docs/plans/2026-04-26-blueprint-milestone-1-2-file-level-implementation-plan.md`。后续实现 Blueprint Core / Blueprint UI 时必须同时遵守该文档。
 
 > 日期：2026-04-26  
 > 关联主规划：`docs/plans/2026-04-26-agent-blueprint-plan.md`  
@@ -19,8 +20,9 @@
 
 ```ts
 export type BlueprintWorkspaceVersion = '1.0.0'
-export type BlueprintStatus = 'draft' | 'valid' | 'invalid' | 'applied' | 'archived'
-export type BlueprintSource = 'agent' | 'human' | 'imported' | 'derived'
+export type BlueprintLifecycleStatus = 'active' | 'archived' | 'deleted'
+export type BlueprintValidationState = 'unknown' | 'valid' | 'invalid'
+export type BlueprintSource = 'manual_snapshot' | 'manual_import' | 'agent' | 'agent_derived'
 
 export interface BlueprintWorkspaceFile {
   blueprintWorkspaceVersion: BlueprintWorkspaceVersion
@@ -53,7 +55,7 @@ export interface BlueprintRecord {
   baseMainDocument?: BlueprintBaseRef
   parentBlueprintId?: string
   revision?: number
-  applied?: BlueprintAppliedInfo
+  appliedInfo?: BlueprintAppliedInfo
   agent?: BlueprintAgentInfo
   rationale?: string
   tradeoffs?: string[]
@@ -145,7 +147,7 @@ agent modify -> create derived draft/valid/invalid; parent unchanged
 archive -> archived
 ```
 
-invalid 策略：保存、预览、修复；应用按钮必须禁用。
+invalid 策略：保存、预览、修复；应用入口不得简单禁用，必须进入强提示确认流程。
 
 ## 6. 校验策略
 
@@ -200,16 +202,15 @@ readonly?: boolean
 
 入口启用条件：
 
-- 蓝图 `status === 'valid'`。
-- `schemaValid=true`、`semanticValid=true`、`issueCount=0`。
-- 未 archived。
+- 蓝图 lifecycle `status === 'active'`。
 - 当前无保存/校验任务。
+- validationState 不作为硬门禁：`unknown` / `valid` / `invalid` 均可进入应用确认。
 
 流程：
 
 ```text
-再次校验 blueprint.document
-  -> invalid 则阻止并更新状态
+再次校验 blueprint.document（可失败，但只更新 validationState/report）
+  -> 若 invalid/unknown，显示强提示与二次确认，不阻止
   -> 计算当前主文档 hash
   -> 与 blueprint.baseMainDocument.hash 比较
   -> 不一致则强提示“整文档替换，不做 merge”
@@ -217,7 +218,8 @@ readonly?: boolean
   -> clone/normalize blueprint.document
   -> editorStore.applyBlueprintDocument
   -> 主文档 dirty=true
-  -> 蓝图状态 applied，sidecar dirty=true
+  -> 写入 appliedInfo，sidecar dirty=true
+  -> runtime 重新计算 isCurrentMainDocument
 ```
 
 `editorStore.applyBlueprintDocument()` 语义：

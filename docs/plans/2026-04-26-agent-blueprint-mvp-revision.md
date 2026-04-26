@@ -2,6 +2,7 @@
 
 > 本文是对 `2026-04-26-agent-blueprint-plan.md` 及三份细化规划的压实修订。它吸收最新评审意见后，作为后续实现顺序与验收边界的优先依据。若本文与旧规划冲突，以本文为准。
 
+> **文件级施工补充（2026-04-26）**：Milestone 1/2 的文件级修改清单、当前代码结构映射、硬测试矩阵、旧规划冲突修正与子代理执行模板已落盘到 `docs/plans/2026-04-26-blueprint-milestone-1-2-file-level-implementation-plan.md`。后续实现 Blueprint Core / Blueprint UI 时必须同时遵守该文档。
 ## 0. 修订结论
 
 原规划的总体架构方向保持不变：

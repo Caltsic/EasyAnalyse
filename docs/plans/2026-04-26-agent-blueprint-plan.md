@@ -2,6 +2,7 @@
 
 > **MVP 修订优先级说明（2026-04-26）**：最新施工顺序已压实为“先完成无 Agent 蓝图闭环，再接设置与 Agent”。若本文与 `docs/plans/2026-04-26-agent-blueprint-mvp-revision.md` 冲突，以后者为准。核心修订：invalid/有报错蓝图也允许用户强确认后应用到内存主文档；报错只提示，不作为应用门禁；`applied` 不再作为状态，改为 `appliedInfo` + runtime `isCurrentMainDocument`；Canvas 预览优先拆 `CircuitCanvasRenderer` 纯渲染层；API key 与普通设置分层。
 
+> **文件级施工补充（2026-04-26）**：Milestone 1/2 的文件级修改清单、当前代码结构映射、硬测试矩阵、旧规划冲突修正与子代理执行模板已落盘到 `docs/plans/2026-04-26-blueprint-milestone-1-2-file-level-implementation-plan.md`。后续实现 Blueprint Core / Blueprint UI 时必须同时遵守该文档。
 
 > **For Hermes:** 后续实施请优先使用 `subagent-driven-development` 或派子代理按阶段执行；大量文件读取、脚本运行、测试输出由子代理压缩回传。
 
@@ -15,13 +16,15 @@
 
 为了让后续实施可按模块派子代理精准执行，本主规划已有三份细化文档；在用户评审后，新增一份 MVP 修订施工规划作为优先依据：
 
-0. `docs/plans/2026-04-26-agent-blueprint-mvp-revision.md`  
+0. `docs/plans/2026-04-26-agent-blueprint-mvp-revision.md`
    **优先级最高的修订版施工规划**：将第一版压实为无 Agent 蓝图闭环，明确报错蓝图也可强确认应用、状态语义拆分、纯渲染预览、密钥分层与 5 个 Milestone。
-1. `docs/plans/2026-04-26-blueprint-workspace-sidecar-plan.md`  
+0.1. `docs/plans/2026-04-26-blueprint-milestone-1-2-file-level-implementation-plan.md`
+   **Milestone 1/2 文件级施工图**：补齐文件级清单、当前代码映射、硬测试矩阵、旧规划冲突修正、子代理 Input/Output/Forbidden 模板。
+1. `docs/plans/2026-04-26-blueprint-workspace-sidecar-plan.md`
    蓝图工作区、sidecar schema、hash/diff、校验、应用、undo/redo、迁移与测试。
-2. `docs/plans/2026-04-26-agent-provider-protocol-plan.md`  
+2. `docs/plans/2026-04-26-agent-provider-protocol-plan.md`
    Agent 状态机、AgentRequest/AgentResponse、Provider adapter、OpenAI/Anthropic/DeepSeek payload、错误码、取消/重试、安全边界与测试。该文档属于后续 Milestone 4/5，不阻塞无 Agent MVP。
-3. `docs/plans/2026-04-26-desktop-ui-ux-agent-blueprint-breakdown.md`  
+3. `docs/plans/2026-04-26-desktop-ui-ux-agent-blueprint-breakdown.md`
    设置中心、夜间模式、Agent/Blueprint 面板、用户流程、可访问性、分阶段 UI/UX 实施任务和风险矩阵。
 
 后续落地时若旧规划与 MVP 修订文档冲突，以 `2026-04-26-agent-blueprint-mvp-revision.md` 为准。
@@ -153,12 +156,16 @@ export interface BlueprintWorkspaceFile {
   blueprints: BlueprintRecord[]
 }
 
+export type BlueprintLifecycleStatus = 'active' | 'archived' | 'deleted'
+export type BlueprintValidationState = 'unknown' | 'valid' | 'invalid'
+
 export interface BlueprintRecord {
   id: string
   title: string
   summary: string
-  status: 'draft' | 'valid' | 'invalid' | 'applied' | 'archived'
-  source: 'agent' | 'human' | 'imported'
+  status: BlueprintLifecycleStatus
+  validationState: BlueprintValidationState
+  source: 'manual_snapshot' | 'manual_import' | 'agent' | 'agent_derived'
   createdAt: string
   updatedAt: string
   baseDocumentId?: string
@@ -169,7 +176,16 @@ export interface BlueprintRecord {
   tradeoffs?: string[]
   model?: AgentModelInfo
   document: DocumentFile
+  documentHash: string
   validationReport?: ValidationReport
+  appliedInfo?: BlueprintAppliedInfo
+}
+
+export interface BlueprintAppliedInfo {
+  appliedAt: string
+  appliedToMainDocumentHash: string
+  sourceBlueprintDocumentHash: string
+  appVersion?: string
 }
 
 export interface AgentModelInfo {
@@ -614,22 +630,22 @@ replaceDocumentFromBlueprint(document, options)
 
 ### 6.3 预览模式
 
-MVP 两种实现选择：
+MVP 推荐实现：优先抽出 `CircuitCanvasRenderer` 纯渲染层，并新增 `BlueprintPreviewCanvas`。
 
-#### 方案 A：独立只读 BlueprintPreviewCanvas
+```text
+CircuitCanvasRenderer
+  只接收 document/theme/locale/viewport/highlight 等 props
+  不 import/use editorStore mutation
 
-优点：隔离彻底，不容易误改主文档。  
-缺点：复用 Canvas 代码需要抽象。
+CanvasView / MainCanvasView
+  组合 renderer + 主文档交互 callbacks
 
-#### 方案 B：Canvas 支持 documentOverride + readOnly
-
-改造 `CanvasView.tsx`：
-
-```ts
-<CanvasView documentOverride={activeBlueprint.document} readOnly />
+BlueprintPreviewCanvas
+  组合 renderer + 只读 pan/zoom/fit
+  不传 mutation callbacks
 ```
 
-推荐 MVP：方案 B，但必须禁止拖拽/Inspector 修改直接写主文档。
+`CanvasView documentOverride + readOnly` 只能作为临时 fallback，不作为推荐实现；即便临时使用，也必须通过“预览前后 mainDocumentHash 完全一致”的测试。
 
 ### 6.4 Diff/替换确认
 
@@ -841,7 +857,7 @@ MVP 推荐前端应用，后端只校验。
 **验收：**
 
 - 点击校验，显示 schema/semantic issue。
-- invalid 蓝图不能直接应用。
+- invalid 蓝图不能无提示应用；强确认后可应用到内存主文档。
 - valid 蓝图应用前有摘要确认。
 - 应用后主文档被替换、dirty=true、重新校验。
 - 应用操作可撤销或至少有明确确认。
@@ -964,7 +980,7 @@ cargo test
 - 创建主文档 -> 创建蓝图 -> 保存 sidecar -> 重新打开 -> 蓝图仍存在。
 - Agent mock 返回 2 个 valid + 1 个 invalid candidate。
 - 应用 valid candidate 后主 Canvas 展示新文档。
-- invalid candidate 应用按钮 disabled。
+- invalid candidate 应用入口进入强提示确认流程。
 
 ### 10.3 Prompt 回归语料
 

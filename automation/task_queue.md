@@ -6,7 +6,7 @@
 
 目标：证明主文档与蓝图 sidecar 隔离，蓝图可创建、保存、加载、校验状态可记录，但不触碰 UI 复杂预览和真实 Agent。
 
-- [ ] **M1-T1：类型与 canonical hash**
+- [x] **M1-T1：类型与 canonical hash**
   - 输入：`docs/plans/2026-04-26-blueprint-milestone-1-2-file-level-implementation-plan.md`，现有 DocumentFile 类型。
   - 输出：`src/types/blueprint.ts`、`src/lib/documentHash.ts`、相关测试。
   - 验收：canonical hash 忽略 `document.updatedAt`；相同语义文档 hash 稳定；主文档类型不增加 blueprints 字段。
@@ -80,3 +80,15 @@
 - [ ] M5-T2：DeepSeek preset
 - [ ] M5-T3：Anthropic adapter
 - [ ] M5-T4：timeout/cancel/retry/context budget
+
+
+## 完成记录
+
+### M1-T1 完成记录
+
+- 完成时间：2026-04-27 01:04 +0800
+- 新增：`easyanalyse-desktop/src/types/blueprint.ts`
+- 新增：`easyanalyse-desktop/src/lib/documentHash.ts`
+- 新增：`easyanalyse-desktop/src/lib/documentHash.test.ts`
+- 验证通过：`npm test`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`
+- 已知非本次问题：`npm run build` 因 Windows 风格 icon 脚本路径 `..\scripts\generate_app_icons.py` 在当前 Linux 环境失败。

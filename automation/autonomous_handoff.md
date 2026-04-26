@@ -28,24 +28,30 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
 - 最近已知提交：`2088f21 docs: add blueprint file-level implementation plan`
-- 当前任务：`M1-T1 类型与 canonical hash`
-- 当前阻塞：无
+- 当前任务：`M1-T2 Blueprint workspace 工具`
+- 当前阻塞：无；但 `npm run build` 在 Linux 环境有既有 icon 脚本路径问题，M1-T1 已用 `npx tsc -b` + `npx vite build` 替代验证。
 
 ## 最近完成
 
 - 已落盘完整自主施工控制层。
 - 已把任务队列转成 Milestone 1/2 的可执行任务。
 - 已记录关键产品决策与禁止事项。
+- M1-T1 已完成：新增蓝图核心类型与 canonical hash 工具/测试。
+  - `DOCUMENT_HASH_ALGORITHM = easyanalyse-document-canonical-sha256-v1`
+  - hash 忽略 `document.updatedAt`，object key 稳定排序，array 顺序保留。
+  - 测试覆盖 updatedAt 不变、语义/view 变化改变 hash、Node fallback、算法前缀。
+  - 验证通过：`npm test`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+
 
 ## 下一轮建议
 
-执行 `M1-T1`：新增蓝图类型与 canonical hash 工具。
+执行 `M1-T2`：新增 Blueprint workspace 工具。
 
 建议派子代理：
 
-1. Implementer：阅读文件级施工图中 M1-T1，新增类型/hash 与测试。
-2. Spec Reviewer：检查是否符合 MVP 修订与施工图。
-3. Quality Reviewer：检查 hash 稳定性、类型边界、是否污染主文档格式。
+1. Implementer：阅读文件级施工图中 M1-T2，新增 workspace 创建/迁移/序列化/反序列化工具与测试。
+2. Spec Reviewer：检查 lifecycleStatus/validationState/appliedInfo 是否符合新版规划。
+3. Quality Reviewer：检查 invalid 未被写死为不可应用、sidecar wrapper schemaVersion 清晰、主文档格式未污染。
 
 ## 重要提醒
 

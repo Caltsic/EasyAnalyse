@@ -3,12 +3,14 @@
   "branch": "agent",
   "remote": "origin/agent",
   "currentMilestone": "M1",
-  "currentTask": "M1-T1",
-  "completedTasks": [],
+  "currentTask": "M1-T2",
+  "completedTasks": [
+    "M1-T1"
+  ],
   "blockedTasks": [],
   "lastCommit": "2088f21",
-  "lastRunAt": null,
-  "testStatus": "not_started",
+  "lastRunAt": "2026-04-27T01:04:00+08:00",
+  "testStatus": "M1-T1 passed: npm test; npx tsc -b --pretty false; npm run lint; npx vite build. npm run build blocked by pre-existing icon path issue.",
   "requiresUserDecision": false,
   "userDecisionPrompt": null,
   "autonomyScope": {

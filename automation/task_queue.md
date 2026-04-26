@@ -12,7 +12,7 @@
   - 验收：canonical hash 忽略 `document.updatedAt`；相同语义文档 hash 稳定；主文档类型不增加 blueprints 字段。
   - 禁止：改 schema、改 exchange.md、接 Agent/Provider。
 
-- [ ] **M1-T2：Blueprint workspace 工具**
+- [x] **M1-T2：Blueprint workspace 工具**
   - 输出：`src/lib/blueprintWorkspace.ts`、workspace 创建/迁移/序列化/反序列化测试。
   - 验收：支持 active/archived/deleted lifecycle；validationState unknown/valid/invalid；appliedInfo 可选；sidecar wrapper schemaVersion 明确。
   - 禁止：把 invalid 作为不可应用逻辑写死。
@@ -92,3 +92,14 @@
 - 新增：`easyanalyse-desktop/src/lib/documentHash.test.ts`
 - 验证通过：`npm test`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`
 - 已知非本次问题：`npm run build` 因 Windows 风格 icon 脚本路径 `..\scripts\generate_app_icons.py` 在当前 Linux 环境失败。
+
+### M1-T2 完成记录
+
+- 完成时间：2026-04-27 03:24 +0800
+- 新增：`easyanalyse-desktop/src/lib/blueprintWorkspace.ts`
+- 新增：`easyanalyse-desktop/src/lib/blueprintWorkspace.test.ts`
+- 实现：workspace 创建、结构化 normalize/migration、serialize/deserialize、sidecar path、蓝图快照创建、runtime currentness。
+- 覆盖：active/archived/deleted lifecycle，unknown/valid/invalid validationState，optional appliedInfo，invalid roundtrip，不把 invalid 写死为不可应用。
+- 质量修复：`createBlueprintFromDocument` 深拷贝主文档形成不可变快照，避免源文档后续 mutation 污染蓝图。
+- 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- 任务提交：`a343374 feat: add blueprint workspace utilities`

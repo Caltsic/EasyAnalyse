@@ -27,7 +27,7 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知提交：`pending`
+- 最近已知提交：`633efde`
 - 当前任务：`M1-T4 blueprintStore`
 - 当前阻塞：无。M1-T3 前端验证已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`；Rust 单元测试已新增但当前环境缺少 `cargo`，无法执行 `cargo test`。
 
@@ -86,5 +86,5 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
 
 - M1-T1 任务提交：`c4a435d feat: add blueprint document hashing types`
 - M1-T2 任务提交：`a343374 feat: add blueprint workspace utilities`
-- M1-T3 任务提交：`pending`
+- M1-T3 任务提交：`633efde`
 - 后续 handoff/state 更新可能在单独提交中记录。

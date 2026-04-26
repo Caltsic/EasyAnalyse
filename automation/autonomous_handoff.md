@@ -27,9 +27,9 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知提交：`a343374 feat: add blueprint workspace utilities`
-- 当前任务：`M1-T3 Tauri sidecar IO`
-- 当前阻塞：无。M1-T2 验证已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- 最近已知提交：`pending`
+- 当前任务：`M1-T4 blueprintStore`
+- 当前阻塞：无。M1-T3 前端验证已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`；Rust 单元测试已新增但当前环境缺少 `cargo`，无法执行 `cargo test`。
 
 ## 最近完成
 
@@ -48,17 +48,23 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
   - `appliedInfo` 仅作为历史信息；runtime `isCurrentMainDocument` 只按 hash 计算。
   - `createBlueprintFromDocument` 会深拷贝主文档形成蓝图快照，避免源对象后续 mutation 污染蓝图。
   - 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
-
+- M1-T3 已完成：新增 Tauri sidecar IO。
+  - Rust commands：`get_blueprint_sidecar_path`、`load_blueprint_workspace_from_path`、`save_blueprint_workspace_to_path`。
+  - TS wrappers：`getBlueprintSidecarPathCommand`、`loadBlueprintWorkspaceFromPath`、`saveBlueprintWorkspaceToPath`。
+  - `loadBlueprintWorkspaceFromPath` 返回 `unknown | null`，避免把未归一化磁盘 JSON 过早信任为 `BlueprintWorkspaceFile`。
+  - sidecar 缺失返回 `None/null`，损坏 JSON 返回可读 parse error，非 `.easyanalyse-blueprints.json` 路径拒绝 IO，保存使用 pretty JSON，不做 semantic v4 蓝图内容门禁。
+  - 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+  - 替代验证：Rust 单元测试已新增，但当前环境 `cargo: command not found`，未能执行 `cargo test`。
 
 ## 下一轮建议
 
-执行 `M1-T3`：Tauri sidecar IO。
+执行 `M1-T4`：blueprintStore。
 
 建议派子代理：
 
-1. Implementer：新增前端 invoke wrapper 与 Rust/Tauri sidecar 读写 command，路径规则使用 `原文件名.easyanalyse-blueprints.json`。
-2. Spec Reviewer：检查 sidecar 损坏不阻止主文档打开、未保存主文档只保留内存、主文档 JSON 不出现 blueprints。
-3. Quality Reviewer：检查未改变主文档保存门禁，错误处理不吞主文档打开流程。
+1. Implementer：新增 `easyanalyse-desktop/src/store/blueprintStore.ts`，连接 M1-T1/T2/T3，支持 load/save workspace、dirty 隔离、创建主文档快照、选择/归档/软删蓝图。
+2. Spec Reviewer：检查 `blueprintStore.dirty` 不影响 `editorStore.dirty`、未保存主文档 `sidecarPath=null` 只保留内存、sidecar 加载失败不影响主文档、validation invalid 不丢弃蓝图。
+3. Quality Reviewer：检查不 import/use `editorStore` mutation、不改变主文档保存门禁、对 `loadBlueprintWorkspaceFromPath` 的 `unknown` 做 normalize 后再信任。
 
 ## 重要提醒
 
@@ -80,4 +86,5 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
 
 - M1-T1 任务提交：`c4a435d feat: add blueprint document hashing types`
 - M1-T2 任务提交：`a343374 feat: add blueprint workspace utilities`
+- M1-T3 任务提交：`pending`
 - 后续 handoff/state 更新可能在单独提交中记录。

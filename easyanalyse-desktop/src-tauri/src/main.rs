@@ -22,6 +22,9 @@ fn run() {
             commands::validate_document,
             commands::open_document_from_path,
             commands::save_document_to_path,
+            commands::get_blueprint_sidecar_path,
+            commands::load_blueprint_workspace_from_path,
+            commands::save_blueprint_workspace_to_path,
             share::start_mobile_share,
             share::stop_mobile_share,
         ])

@@ -17,7 +17,7 @@
   - 验收：支持 active/archived/deleted lifecycle；validationState unknown/valid/invalid；appliedInfo 可选；sidecar wrapper schemaVersion 明确。
   - 禁止：把 invalid 作为不可应用逻辑写死。
 
-- [ ] **M1-T3：Tauri sidecar IO**
+- [x] **M1-T3：Tauri sidecar IO**
   - 输出：前端 invoke wrapper 与 Rust/Tauri command（如需要）；sidecar path 规则为 `原文件名.easyanalyse-blueprints.json`。
   - 验收：sidecar 损坏不阻止主文档打开；未保存主文档时蓝图只在内存；主文档 JSON 不出现 blueprints。
   - 禁止：改变主文档保存语义。
@@ -103,3 +103,14 @@
 - 质量修复：`createBlueprintFromDocument` 深拷贝主文档形成不可变快照，避免源文档后续 mutation 污染蓝图。
 - 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 - 任务提交：`a343374 feat: add blueprint workspace utilities`
+
+### M1-T3 完成记录
+
+- 完成时间：2026-04-27 05:38 +0800
+- 修改：`easyanalyse-desktop/src-tauri/src/commands.rs`
+- 修改：`easyanalyse-desktop/src-tauri/src/main.rs`
+- 修改：`easyanalyse-desktop/src/lib/tauri.ts`
+- 实现：Tauri sidecar path/read/write commands 与前端 invoke wrappers；sidecar path 使用 `原文件名.easyanalyse-blueprints.json`。
+- 覆盖：缺失 sidecar 返回 None/null、损坏 JSON 返回可读错误、非 `.easyanalyse-blueprints.json` 路径拒绝、pretty JSON 保存、允许语义 invalid 蓝图 JSON roundtrip。
+- 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- 替代验证：已新增 Rust 单元测试，但当前环境缺少 `cargo`，`cd easyanalyse-desktop/src-tauri && cargo test` 无法运行（`cargo: command not found`）。

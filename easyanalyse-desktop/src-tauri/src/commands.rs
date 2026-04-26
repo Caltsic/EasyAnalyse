@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use easyanalyse_core::{
@@ -71,6 +72,35 @@ pub fn save_document_to_path(path: String, document: Value) -> Result<SaveDocume
     })
 }
 
+#[tauri::command]
+pub fn get_blueprint_sidecar_path(document_path: String) -> Result<String, String> {
+    Ok(derive_blueprint_sidecar_path(&document_path))
+}
+
+#[tauri::command]
+pub fn load_blueprint_workspace_from_path(path: String) -> Result<Option<Value>, String> {
+    ensure_blueprint_sidecar_path(&path)?;
+
+    let bytes = match fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.to_string()),
+    };
+
+    let json = decode_json_text(&bytes)?;
+    let value = serde_json::from_str(&json)
+        .map_err(|error| format!("Failed to parse blueprint sidecar JSON: {error}"))?;
+
+    Ok(Some(value))
+}
+
+#[tauri::command]
+pub fn save_blueprint_workspace_to_path(path: String, workspace: Value) -> Result<(), String> {
+    ensure_blueprint_sidecar_path(&path)?;
+    let content = serde_json::to_string_pretty(&workspace).map_err(error_to_string)?;
+    fs::write(&path, content).map_err(error_to_string)
+}
+
 fn decode_json_text(bytes: &[u8]) -> Result<String, String> {
     if bytes.is_empty() {
         return Err("Selected file is empty".to_string());
@@ -124,6 +154,25 @@ fn ensure_json_extension(path: &Path) -> PathBuf {
     owned
 }
 
+fn derive_blueprint_sidecar_path(document_path: &str) -> String {
+    let slash_index = document_path.rfind('/');
+    let (directory, file_name) = match slash_index {
+        Some(index) => (&document_path[..=index], &document_path[index + 1..]),
+        None => ("", document_path),
+    };
+    let stem = file_name.strip_suffix(".json").unwrap_or(file_name);
+
+    format!("{directory}{stem}.easyanalyse-blueprints.json")
+}
+
+fn ensure_blueprint_sidecar_path(path: &str) -> Result<(), String> {
+    if path.ends_with(".easyanalyse-blueprints.json") {
+        return Ok(());
+    }
+
+    Err("Blueprint sidecar path must end with .easyanalyse-blueprints.json".to_string())
+}
+
 fn error_to_string<E>(error: E) -> String
 where
     E: Into<CoreError>,
@@ -152,7 +201,93 @@ fn validation_summary(report: &ValidationReport) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::decode_json_text;
+    use super::{
+        decode_json_text, get_blueprint_sidecar_path, load_blueprint_workspace_from_path,
+        save_blueprint_workspace_to_path,
+    };
+    use serde_json::json;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_temp_path(file_name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be after epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "easyanalyse-sidecar-test-{}-{nonce}-{file_name}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn derives_blueprint_sidecar_path_from_document_path() {
+        assert_eq!(
+            get_blueprint_sidecar_path("/tmp/example.json".to_string())
+                .expect("sidecar path should be derived"),
+            "/tmp/example.easyanalyse-blueprints.json"
+        );
+        assert_eq!(
+            get_blueprint_sidecar_path("example".to_string()).expect("sidecar path should be derived"),
+            "example.easyanalyse-blueprints.json"
+        );
+    }
+
+    #[test]
+    fn blueprint_sidecar_load_returns_none_when_missing() {
+        let path = unique_temp_path("missing.easyanalyse-blueprints.json");
+        let loaded = load_blueprint_workspace_from_path(path.to_string_lossy().to_string())
+            .expect("missing sidecar should not be an error");
+        assert!(loaded.is_none());
+    }
+
+    #[test]
+    fn blueprint_sidecar_load_rejects_corrupt_json_with_readable_error() {
+        let path = unique_temp_path("corrupt.easyanalyse-blueprints.json");
+        fs::write(&path, b"{not-json").expect("test fixture should write");
+
+        let error = load_blueprint_workspace_from_path(path.to_string_lossy().to_string())
+            .expect_err("corrupt sidecar JSON should fail");
+
+        let _ = fs::remove_file(&path);
+        assert!(error.contains("Failed to parse blueprint sidecar JSON"), "{error}");
+        assert!(error.contains("expected") || error.contains("line"), "{error}");
+    }
+
+    #[test]
+    fn blueprint_sidecar_save_pretty_json_and_load_round_trips_without_semantic_validation() {
+        let path = unique_temp_path("workspace.easyanalyse-blueprints.json");
+        let workspace = json!({
+            "blueprintWorkspaceVersion": "1.0.0",
+            "blueprints": [{ "intentionallyInvalidBlueprint": true }]
+        });
+
+        save_blueprint_workspace_to_path(path.to_string_lossy().to_string(), workspace.clone())
+            .expect("valid sidecar path should save arbitrary JSON values");
+
+        let content = fs::read_to_string(&path).expect("sidecar should be written");
+        let loaded = load_blueprint_workspace_from_path(path.to_string_lossy().to_string())
+            .expect("written sidecar should load")
+            .expect("written sidecar should exist");
+
+        let _ = fs::remove_file(&path);
+        assert!(content.contains("\n  \"blueprintWorkspaceVersion\""), "{content}");
+        assert_eq!(loaded, workspace);
+    }
+
+    #[test]
+    fn blueprint_sidecar_io_rejects_non_sidecar_paths() {
+        let path = unique_temp_path("workspace.json");
+
+        let load_error = load_blueprint_workspace_from_path(path.to_string_lossy().to_string())
+            .expect_err("non-sidecar load path should be rejected");
+        let save_error = save_blueprint_workspace_to_path(path.to_string_lossy().to_string(), json!({}))
+            .expect_err("non-sidecar save path should be rejected");
+
+        assert!(load_error.contains(".easyanalyse-blueprints.json"), "{load_error}");
+        assert!(save_error.contains(".easyanalyse-blueprints.json"), "{save_error}");
+    }
 
     #[test]
     fn decodes_utf8_json_with_bom() {

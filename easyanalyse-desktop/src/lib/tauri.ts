@@ -8,6 +8,7 @@ import type {
   SaveDocumentResult,
   ValidationReport,
 } from '../types/document'
+import type { BlueprintWorkspaceFile } from '../types/blueprint'
 
 export function isTauriRuntime() {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -27,6 +28,18 @@ export async function openDocumentFromPath(path: string) {
 
 export async function saveDocumentToPath(path: string, document: DocumentFile) {
   return invoke<SaveDocumentResult>('save_document_to_path', { path, document })
+}
+
+export async function getBlueprintSidecarPathCommand(documentPath: string) {
+  return invoke<string>('get_blueprint_sidecar_path', { documentPath })
+}
+
+export async function loadBlueprintWorkspaceFromPath(path: string) {
+  return invoke<unknown | null>('load_blueprint_workspace_from_path', { path })
+}
+
+export async function saveBlueprintWorkspaceToPath(path: string, workspace: BlueprintWorkspaceFile) {
+  return invoke<void>('save_blueprint_workspace_to_path', { path, workspace })
 }
 
 export async function startMobileShare(document: DocumentFile, snapshot: MobileRenderSnapshot) {

@@ -54,3 +54,11 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
 - 不要实现 Agent/Provider/API key，直到 M1/M2 完成。
 - 不要把蓝图写进主 document。
 - 不要使用旧的 `status='applied'` 模型。
+
+## 自主施工 cronjob
+
+- Job ID：`02e4bfaf3360`
+- 名称：`EasyAnalyse Agent Branch Autonomous Builder`
+- 频率：`every 2h`
+- deliver：`origin`
+- 每轮仍会主动发送 Telegram 开始/结束通知。

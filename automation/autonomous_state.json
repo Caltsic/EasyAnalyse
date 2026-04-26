@@ -27,5 +27,12 @@
     "mustRunRelevantTests": true,
     "mustUpdateHandoff": true,
     "mustSendTelegram": true
+  },
+  "cronJob": {
+    "jobId": "02e4bfaf3360",
+    "name": "EasyAnalyse Agent Branch Autonomous Builder",
+    "schedule": "every 2h",
+    "deliver": "origin",
+    "createdAfterCommit": "1913a65"
   }
 }

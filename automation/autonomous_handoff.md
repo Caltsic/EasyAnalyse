@@ -27,7 +27,7 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知提交：`2088f21 docs: add blueprint file-level implementation plan`
+- 最近已知提交：`c4a435d feat: add blueprint document hashing types`
 - 当前任务：`M1-T2 Blueprint workspace 工具`
 - 当前阻塞：无；但 `npm run build` 在 Linux 环境有既有 icon 脚本路径问题，M1-T1 已用 `npx tsc -b` + `npx vite build` 替代验证。
 
@@ -68,3 +68,8 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
 - 频率：`every 2h`
 - deliver：`origin`
 - 每轮仍会主动发送 Telegram 开始/结束通知。
+
+## 最近任务提交
+
+- M1-T1 任务提交：`c4a435d feat: add blueprint document hashing types`
+- 后续 handoff/state 更新可能在单独提交中记录。

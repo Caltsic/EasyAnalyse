@@ -1,5 +1,8 @@
 # EasyAnalyse 蓝图工作区、Sidecar 与应用流程细化规划
 
+> **MVP 修订优先级说明（2026-04-26）**：最新施工顺序已压实为“先完成无 Agent 蓝图闭环，再接设置与 Agent”。若本文与 `docs/plans/2026-04-26-agent-blueprint-mvp-revision.md` 冲突，以后者为准。核心修订：invalid/有报错蓝图也允许用户强确认后应用到内存主文档；报错只提示，不作为应用门禁；`applied` 不再作为状态，改为 `appliedInfo` + runtime `isCurrentMainDocument`；Canvas 预览优先拆 `CircuitCanvasRenderer` 纯渲染层；API key 与普通设置分层。
+
+
 > 日期：2026-04-26  
 > 关联主规划：`docs/plans/2026-04-26-agent-blueprint-plan.md`  
 > 目标：把“蓝图不影响主文件，应用后替换主文件”的产品想法细化为可实现的数据模型、sidecar 文件、hash/diff、校验、undo/redo 与测试方案。
@@ -150,13 +153,13 @@ invalid 策略：保存、预览、修复；应用按钮必须禁用。
 
 1. wrapper 基础校验：version、workspaceId、blueprints 数组、record 基础字段。
 2. `DocumentFile` schema 校验：调用 Rust `validate_value`。
-3. semantic validation：零 warning/issue 才可应用。
+3. semantic validation：校验问题只提示，不作为应用门禁 才可应用。
 
 校验后：
 
 - 若返回 normalizedDocument，用它替换蓝图 document。
 - 更新 validationReport、documentHash、updatedAt。
-- 零 issue → `valid`，否则 `invalid`。
+- 零 issue → `valid`，否则 `invalid`；该状态只影响提示强度，不阻止应用。
 - 校验动作使 `blueprintStore.dirty=true`。
 
 ## 7. Diff 设计
@@ -232,7 +235,7 @@ readonly?: boolean
 ## 10. Undo/redo 与 dirty
 
 - 应用蓝图属于主文档整文档变更，必须可 undo/redo。
-- undo 恢复应用前文档，但不自动回退蓝图 `applied` 状态；`applied` 表示曾经应用过。
+- undo 恢复应用前文档，但不删除蓝图 `appliedInfo`；`appliedInfo` 表示曾经应用过，当前是否匹配由 runtime `isCurrentMainDocument` 计算。
 - `editorStore.dirty` 和 `blueprintStore.dirty` 分离。
 - 保存主文档不等于保存 sidecar；UI 应分别展示状态。
 
@@ -287,10 +290,10 @@ Rust 根据 `main_path` 推导 sidecar，前端不得传任意 sidecar path。
 2. 主文档顶层不出现 `blueprints`。
 3. wrapper 不被当作 semantic v4 校验。
 4. hash 忽略 `updatedAt`，但 label/device/view 变化必须改变 hash。
-5. invalid 蓝图可保存不可应用。
+5. invalid 蓝图可保存、可预览、可应用，但必须强提示。
 6. valid 蓝图应用后整文档替换、dirty=true、history push、future 清空。
 7. base hash 不一致显示强确认。
-8. undo/redo 恢复主文档，不回退蓝图 applied 状态。
+8. undo/redo 恢复主文档，不删除 `appliedInfo` 历史；`isCurrentMainDocument` 随 hash 变化重新计算。
 9. 未保存主文档蓝图仅内存，首次保存后写 sidecar。
 10. 另存为复制 sidecar。
 11. 高版本/损坏 sidecar 不阻止主文档打开。

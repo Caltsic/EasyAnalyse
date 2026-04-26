@@ -1,5 +1,8 @@
 # EasyAnalyse 桌面版内置 Agent 与蓝图功能实施规划
 
+> **MVP 修订优先级说明（2026-04-26）**：最新施工顺序已压实为“先完成无 Agent 蓝图闭环，再接设置与 Agent”。若本文与 `docs/plans/2026-04-26-agent-blueprint-mvp-revision.md` 冲突，以后者为准。核心修订：invalid/有报错蓝图也允许用户强确认后应用到内存主文档；报错只提示，不作为应用门禁；`applied` 不再作为状态，改为 `appliedInfo` + runtime `isCurrentMainDocument`；Canvas 预览优先拆 `CircuitCanvasRenderer` 纯渲染层；API key 与普通设置分层。
+
+
 > **For Hermes:** 后续实施请优先使用 `subagent-driven-development` 或派子代理按阶段执行；大量文件读取、脚本运行、测试输出由子代理压缩回传。
 
 **目标：** 在 EasyAnalyse 桌面版中引入“蓝图（Blueprint）+ 内置 Agent”工作流，让用户配置大模型 API 后，可基于自然语言创建/修改多个电路蓝图；蓝图编辑不影响主文件，用户确认应用后再用蓝图替换主文件。
@@ -10,16 +13,18 @@
 
 ## 关联细化规划文档
 
-为了让后续实施可按模块派子代理精准执行，本主规划已拆出三份细化文档：
+为了让后续实施可按模块派子代理精准执行，本主规划已有三份细化文档；在用户评审后，新增一份 MVP 修订施工规划作为优先依据：
 
+0. `docs/plans/2026-04-26-agent-blueprint-mvp-revision.md`  
+   **优先级最高的修订版施工规划**：将第一版压实为无 Agent 蓝图闭环，明确报错蓝图也可强确认应用、状态语义拆分、纯渲染预览、密钥分层与 5 个 Milestone。
 1. `docs/plans/2026-04-26-blueprint-workspace-sidecar-plan.md`  
    蓝图工作区、sidecar schema、hash/diff、校验、应用、undo/redo、迁移与测试。
 2. `docs/plans/2026-04-26-agent-provider-protocol-plan.md`  
-   Agent 状态机、AgentRequest/AgentResponse、Provider adapter、OpenAI/Anthropic/DeepSeek payload、错误码、取消/重试、安全边界与测试。
+   Agent 状态机、AgentRequest/AgentResponse、Provider adapter、OpenAI/Anthropic/DeepSeek payload、错误码、取消/重试、安全边界与测试。该文档属于后续 Milestone 4/5，不阻塞无 Agent MVP。
 3. `docs/plans/2026-04-26-desktop-ui-ux-agent-blueprint-breakdown.md`  
    设置中心、夜间模式、Agent/Blueprint 面板、用户流程、可访问性、分阶段 UI/UX 实施任务和风险矩阵。
 
-后续落地时应以本文件作为总纲，以三份细化文档作为对应模块的施工说明。
+后续落地时若旧规划与 MVP 修订文档冲突，以 `2026-04-26-agent-blueprint-mvp-revision.md` 为准。
 
 ---
 
@@ -49,7 +54,7 @@
 - `terminal.direction` 只允许 `input` / `output`。
 - `view.devices` 只能引用已有 device id。
 - `view.networkLines[*].label` 必须被至少一个 terminal 使用。
-- 保存门禁要求 `schemaValid=true` 且 `semanticValid=true`；当前 warning 也会导致 semantic invalid，所以最终可应用蓝图必须零 issue。
+- 保存门禁要求 `schemaValid=true` 且 `semanticValid=true`；当前 warning 也会导致 semantic invalid。蓝图生成目标仍应尽量零 issue，但应用到内存主文档不以零 issue 为门禁。
 
 ### 0.3 当前项目关键入口
 
@@ -135,7 +140,7 @@ MVP 暂不做：
 
 不要修改 semantic v4 主文档 schema。新增独立蓝图文件结构，例如：
 
-> **已确认产品决策（2026-04-26）：** 蓝图使用 sidecar 文件 `原文件名.easyanalyse-blueprints.json`；应用蓝图采用整文档替换主文件；允许保存 invalid 草稿但不可应用；Agent 修改蓝图默认创建派生蓝图，不覆盖原蓝图。
+> **已确认产品决策（2026-04-26）：** 蓝图使用 sidecar 文件 `原文件名.easyanalyse-blueprints.json`；应用蓝图采用整文档替换主文件；允许保存 invalid 草稿，且允许用户强确认后应用到内存主文档；Agent 修改蓝图默认创建派生蓝图，不覆盖原蓝图。
 
 ```ts
 export interface BlueprintWorkspaceFile {
@@ -236,7 +241,7 @@ created/draft
 推荐状态字段：
 
 - `draft`：可编辑，但尚未确认最新校验。
-- `valid`：最近一次校验零 issue，可应用。
+- `valid`：最近一次校验零 issue；`invalid` 只影响提示强度，不阻止强确认应用。
 - `invalid`：最近一次校验失败，不允许直接应用。
 - `applied`：已应用过，保留记录。
 - `archived`：隐藏但不删除。
@@ -304,7 +309,7 @@ export interface AgentBlueprintCandidate {
 
 - `document` 必须完整 semantic v4。
 - 每个 candidate 先在前端/Rust 校验，再进入蓝图列表。
-- 若部分 valid、部分 invalid，仍可保存 invalid 蓝图，但 UI 必须明确不可应用。
+- 若部分 valid、部分 invalid，均可保存为蓝图；invalid 蓝图应用前 UI 必须强提示，但不得直接禁用应用。
 
 ### 3.3 Patch DSL：第二阶段增强
 
@@ -976,7 +981,7 @@ cargo test
 - 输出 semantic v4。
 - 无 wire/node/signal。
 - value/frequency/voltage 完整。
-- validation 零 issue。
+- validation issue 已展示；有问题也允许强确认应用。
 
 ---
 
@@ -987,7 +992,7 @@ cargo test
 | 模型生成旧 wire/node 格式 | 无法校验/破坏理念 | system prompt + response schema + forbidden field scan |
 | 模型输出 JSON 不完整 | 蓝图不可用 | parse 失败不入库，提示重试/自动修复一次 |
 | 蓝图污染主文档 | 用户数据风险 | store 隔离；Agent 只能写 blueprintStore |
-| warning 也阻止保存 | Agent 方案常 invalid | prompt 要求零 issue；UI 明确 issue；可提供“让 Agent 修复” |
+| warning 也阻止保存 | Agent/蓝图方案常 invalid | prompt 目标仍是零 issue；应用到内存只提示不拦截；保存磁盘仍按现有门禁；可提供“让 Agent 修复” |
 | API key 泄漏 | 安全风险 | 不写项目文件，使用 keychain/应用配置，UI mask |
 | 主文档变更后应用旧蓝图 | 覆盖风险 | baseHash 检测 + 强确认 |
 | normalize 更新时间影响 diff | 误报变化 | hash/diff 忽略 `document.updatedAt` |
@@ -1013,7 +1018,7 @@ cargo test
 |---|---|---|
 | 1 | sidecar 文件名采用 `原文件名.easyanalyse-blueprints.json` | 已确认 |
 | 2 | MVP 应用蓝图采用整文档替换主文件，不做 merge | 已确认 |
-| 3 | 允许保存 invalid 草稿，但 invalid 蓝图不可应用 | 已确认 |
+| 3 | 允许保存 invalid 草稿，但 invalid 蓝图可应用，但必须强提示 | 已确认 |
 | 4 | Agent 修改蓝图默认创建派生蓝图，不覆盖原蓝图 | 已确认 |
 | 5 | API key/Provider/模型配置首期存本机应用配置，并提供成熟设置中心 | 已确认 |
 | 6 | 首期支持 OpenAI 格式、Anthropic 格式，并内置 DeepSeek 供应商配置 | 已确认 |

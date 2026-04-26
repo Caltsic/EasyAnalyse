@@ -1,5 +1,8 @@
 # EasyAnalyse 桌面 UI/UX 细化与可委派实施拆分
 
+> **MVP 修订优先级说明（2026-04-26）**：最新施工顺序已压实为“先完成无 Agent 蓝图闭环，再接设置与 Agent”。若本文与 `docs/plans/2026-04-26-agent-blueprint-mvp-revision.md` 冲突，以后者为准。核心修订：invalid/有报错蓝图也允许用户强确认后应用到内存主文档；报错只提示，不作为应用门禁；`applied` 不再作为状态，改为 `appliedInfo` + runtime `isCurrentMainDocument`；Canvas 预览优先拆 `CircuitCanvasRenderer` 纯渲染层；API key 与普通设置分层。
+
+
 > 本文补充主规划 `docs/plans/2026-04-26-agent-blueprint-plan.md`，聚焦成熟桌面软件体验：设置中心、夜间模式、Agent 面板、蓝图列表/预览/diff/应用确认，以及可逐任务交给子代理实施的阶段计划、验收标准和风险矩阵。
 
 ## 0. 当前代码结构观察
@@ -476,7 +479,7 @@ interface AppSettings {
 - Agent 可用 mock 或真实 provider 一次创建多个蓝图；格式错误不污染蓝图列表。
 - 蓝图列表支持选择、预览、校验、重命名、删除、应用。
 - 蓝图预览只读，不修改主文档。
-- invalid 蓝图不可应用；valid 蓝图应用前显示 diff/风险确认。
+- invalid 蓝图可应用，但必须强提示；valid 蓝图应用前显示 diff/风险确认。
 - 应用蓝图整文档替换主文档，dirty=true，重新校验，可撤销或至少有强确认。
 - 主 semantic v4 文件不新增 `blueprints` 顶层字段。
 - `npm test` 与 `npm run build` 通过；Rust 工具链可用时 `cargo test` 通过。

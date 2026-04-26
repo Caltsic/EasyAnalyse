@@ -8,6 +8,19 @@
 
 **技术栈：** Tauri 2 + React 19 + TypeScript + Zustand + Rust easyanalyse-core + semantic v4 schema/validation + 多 Provider Agent 抽象（OpenAI Chat Completions 格式、Anthropic Messages 格式、DeepSeek 预设）。
 
+## 关联细化规划文档
+
+为了让后续实施可按模块派子代理精准执行，本主规划已拆出三份细化文档：
+
+1. `docs/plans/2026-04-26-blueprint-workspace-sidecar-plan.md`  
+   蓝图工作区、sidecar schema、hash/diff、校验、应用、undo/redo、迁移与测试。
+2. `docs/plans/2026-04-26-agent-provider-protocol-plan.md`  
+   Agent 状态机、AgentRequest/AgentResponse、Provider adapter、OpenAI/Anthropic/DeepSeek payload、错误码、取消/重试、安全边界与测试。
+3. `docs/plans/2026-04-26-desktop-ui-ux-agent-blueprint-breakdown.md`  
+   设置中心、夜间模式、Agent/Blueprint 面板、用户流程、可访问性、分阶段 UI/UX 实施任务和风险矩阵。
+
+后续落地时应以本文件作为总纲，以三份细化文档作为对应模块的施工说明。
+
 ---
 
 ## 0. 背景与硬约束

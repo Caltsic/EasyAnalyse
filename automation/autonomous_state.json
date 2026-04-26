@@ -1,0 +1,31 @@
+{
+  "project": "EasyAnalyse",
+  "branch": "agent",
+  "remote": "origin/agent",
+  "currentMilestone": "M1",
+  "currentTask": "M1-T1",
+  "completedTasks": [],
+  "blockedTasks": [],
+  "lastCommit": "2088f21",
+  "lastRunAt": null,
+  "testStatus": "not_started",
+  "requiresUserDecision": false,
+  "userDecisionPrompt": null,
+  "autonomyScope": {
+    "allowedMilestones": [
+      "M1",
+      "M2"
+    ],
+    "currentHardLimit": "Do not implement Milestone 3/4/5 until M1/M2 blueprint loop is stable or user expands scope.",
+    "canCommit": true,
+    "canPush": true,
+    "canMergeMain": false,
+    "canForcePush": false
+  },
+  "qualityGates": {
+    "mustUseSubagentsForLargeReadsOrImplementation": true,
+    "mustRunRelevantTests": true,
+    "mustUpdateHandoff": true,
+    "mustSendTelegram": true
+  }
+}

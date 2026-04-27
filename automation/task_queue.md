@@ -65,7 +65,7 @@
 
 - [x] M3-T1：App settings 基础结构
 - [x] M3-T2：system/light/dark 主题迁移
-- [ ] M3-T3：Provider/Model 配置骨架
+- [x] M3-T3：Provider/Model 配置骨架
 - [ ] M3-T4：SecretStore/API key 存储策略
 
 ## Milestone 4：Agent Protocol + Mock Agent（M3 验收通过后自动执行）
@@ -239,3 +239,15 @@ M5 真实调用约束：用户已提供项目专用 DeepSeek API key；自动化
 - Review：Spec Reviewer 修复后 PASS；Quality Reviewer 修复后 APPROVED。
 - 验证通过：`npm test -- --run`（18 files / 103 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 - 任务提交：`c056c01 feat: migrate theme preference to app settings`。
+
+### M3-T3 完成记录
+
+- 完成时间：2026-04-28 06:13 +0800
+- 修改：`easyanalyse-desktop/src/lib/appSettings.ts`、`src/store/settingsStore.ts`、`src/App.tsx`、`src/App.css`。
+- 新增：`easyanalyse-desktop/src/components/settings/ProviderModelSettings.tsx` 与 `ProviderModelSettings.test.tsx`。
+- 实现：Provider/Model public config 骨架与设置入口；支持公开 provider metadata 增改删选、模型选择、持久化 normalize；只保存 `apiKeyRef` 引用，不保存 plaintext API key。
+- 质量修复：`baseUrl` 仅允许 http/https 且拒绝 URL credentials；`apiKeyRef` 仅接受 reference-shaped 值；无效 provider 不清空 UI 草稿；warning key 避免重复。
+- 覆盖：provider/model add/edit/delete/select、selected provider/model fallback、persistence、unknown/secret-shaped field stripping、invalid baseUrl/apiKeyRef rejection、UI invalid warning/draft retention。
+- Review：Spec Reviewer 修复后 PASS；Quality Reviewer 两轮修复后 APPROVED；Final Integration Reviewer PASS/READY。
+- 验证通过：`npm test -- --run`（19 files / 111 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- 任务提交：`7c46896 feat: add provider model settings skeleton`。

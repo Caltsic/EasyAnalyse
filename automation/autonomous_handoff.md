@@ -40,9 +40,9 @@
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知任务提交：`c056c01`
-- 当前任务：`M3-T3 Provider/Model 配置骨架`
-- 当前阻塞：无。M3-T2 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。M3-T1 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。M2-T4 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。桌面编译/运行环境已补齐：Rust/Cargo、Tauri Linux 依赖、xvfb/dbus-x11 已安装；`npm run build`、`cargo test`、`npm run tauri:build` 均已通过，release binary 已用 xvfb 启动验证。环境/脚本修复提交：`1bc5dce`。
+- 最近已知任务提交：`7c46896`
+- 当前任务：`M3-T4 SecretStore/API key 存储策略`
+- 当前阻塞：无。M3-T3 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`；Spec Reviewer PASS，Quality Reviewer APPROVED，Final Integration Reviewer PASS/READY。
 
 ## 最近完成
 
@@ -114,21 +114,29 @@
   - 验证通过：`npm test -- --run`（18 files / 103 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
   - 任务提交：`c056c01`。
 
+- M3-T3 已完成：Provider/Model 配置骨架。
+  - 新增 `ProviderModelSettings` 设置入口，接入 `App.tsx` modal；支持 provider public metadata 增改删选与模型选择。
+  - `settingsStore` 新增 upsert/delete/select provider/model actions；所有写入通过 `normalizeAppSettings`，保持持久化 sanitize 与 fallback。
+  - `appSettings` 强化 provider normalize：`baseUrl` 只允许 http/https、拒绝 URL credentials；`apiKeyRef` 只允许 reference-shaped 值（如 `keychain://...` / `secret-ref:id`），避免 plaintext secret 存入 AppSettings。
+  - 覆盖测试：provider/model add/edit/delete/select、selected fallback、persistence、unknown/secret-shaped field stripping、invalid baseUrl/apiKeyRef rejection、UI invalid warning/draft retention。
+  - Review：Spec Reviewer 修复后 PASS；Quality Reviewer 两轮修复后 APPROVED；Final Integration Reviewer PASS/READY。
+  - 验证通过：`npm test -- --run`（19 files / 111 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+  - 任务提交：`7c46896`。
+
 ## 下一轮建议
 
-执行 `M3-T3`：Provider/Model 配置骨架。
+执行 `M3-T4`：SecretStore/API key 存储策略。
 
 建议派子代理：
 
-1. Implementer：在 M3-T1 AppSettings agent.providers / selectedProviderId / selectedModelId 基础上实现 provider/model public config 骨架与设置入口；只保存公开 metadata 与 `apiKeyRef`，不得实现 SecretStore 或写入 plaintext API key。
-2. Spec Reviewer：检查是否只做 Provider/Model 配置骨架，是否保持 AppSettings allowlist/secret stripping，是否不触碰真实 Provider 调用。
-3. Quality Reviewer：重点审查 provider/model selection normalize、缺失/删除 provider 后 selected id fallback、UI/Store 状态一致性、无 secret 泄漏、测试覆盖。
+1. Implementer：在 M3-T3 `apiKeyRef` 引用边界基础上实现 SecretStore/API key 存储策略；优先 OS keychain/credential manager，降级本机 app data secret 文件时给出弱安全提示；不得把明文写入 AppSettings、主文档、sidecar、导出设置、日志或测试快照。
+2. Spec Reviewer：检查是否只做 SecretStore/API key 存储策略，是否删除 provider 时能处理关联 secret，是否未调用真实 Provider。
+3. Quality Reviewer：重点审查 secret redaction、错误/不可用 keychain 降级、删除/更新一致性、无 secret 泄漏扫描、测试覆盖。
 
 建议验收测试：
 
-- Provider/model public config 增删改/选择 normalize、secret-like 字段剥离、legacy/partial migration、settings store persistence。
+- API key masked 输入/保存/删除；删除 Provider 时关联 secret 处理；keychain unavailable fallback；扫描 AppSettings/main JSON/sidecar/log-like output 不含 plaintext。
 - 回归 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
-- M3-T2 已完成；继续推进 M3 Settings + Secrets。
 
 ## 重要提醒
 
@@ -165,3 +173,4 @@
 - M2-T6 任务提交：`442642d`
 - M3-T1 任务提交：`89577eb`
 - M3-T2 任务提交：`c056c01`
+- M3-T3 任务提交：`7c46896`

@@ -79,6 +79,7 @@ interface EditorState {
   saveDocument: () => Promise<void>
   saveDocumentAs: () => Promise<void>
   revalidate: () => Promise<void>
+  applyBlueprintDocument: (document: DocumentFile) => void
   setSelection: (selection: EditorSelection | null) => void
   setDeviceGroupSelection: (ids: string[]) => void
   addDevice: (templateKey?: DeviceVisualKind) => void
@@ -612,6 +613,24 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const document = normalizeDocumentLocal(get().document)
       set({ document })
       void requestValidation(document)
+    },
+    applyBlueprintDocument: (document) => {
+      ++documentOperationToken
+      const normalized = normalizeDocumentLocal(document)
+      set((state) => ({
+        document: normalized,
+        dirty: true,
+        selection: { entityType: 'document' },
+        pendingDeviceShape: null,
+        pendingDeviceTemplateKey: null,
+        history: [...state.history, state.document],
+        future: [],
+        focusedDeviceId: null,
+        focusedLabelKey: null,
+        focusedNetworkLineId: null,
+        viewportAnimationTarget: null,
+      }))
+      void requestValidation(normalized)
     },
     setSelection: (selection) => set({ selection }),
     setDeviceGroupSelection: (ids) => set({ selection: buildDeviceSelection(ids) }),

@@ -35,7 +35,7 @@
 
 目标：用户可以人工创建蓝图、查看只读预览、看校验/diff、强确认应用，undo/redo 可恢复。
 
-- [ ] **M2-T1：editorStore.applyBlueprintDocument**
+- [x] **M2-T1：editorStore.applyBlueprintDocument**
   - 输出：`editorStore` 新 action，整文档替换主文档，进入 history，dirty=true。
   - 验收：应用后 undo 恢复旧文档；redo 恢复蓝图文档；保存仍走现有门禁。
   - 禁止：在 apply 阶段阻止 invalid 文档。
@@ -138,3 +138,16 @@
 - 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 - Spec Reviewer：PASS；Quality Reviewer：APPROVED。
 - 任务提交：`d54041a`。
+
+
+### M2-T1 完成记录
+
+- 完成时间：2026-04-27 12:40 +0800
+- 修改：`easyanalyse-desktop/src/store/editorStore.ts`
+- 新增：`easyanalyse-desktop/src/store/editorStore.test.ts`
+- 实现：新增 `editorStore.applyBlueprintDocument(document)`，支持蓝图整文档替换到内存主文档，`dirty=true`，history 入栈，future 清空，undo/redo 可恢复，应用阶段不写磁盘、不因 invalid 校验结果阻止应用。
+- 质量修复：应用时递增 `documentOperationToken`，防止 pending `openDocument/newDocument` 旧结果覆盖刚应用的蓝图文档；validation 继续沿用 stale token 防护。
+- 覆盖：apply 后 dirty/history/future/临时态清理、不写磁盘、undo/redo、invalid 蓝图可应用、stale validation、pending open stale result。
+- 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- Spec Reviewer：PASS；Quality Reviewer：APPROVED；Final Integration Reviewer：PASS。
+- 任务提交：待提交。

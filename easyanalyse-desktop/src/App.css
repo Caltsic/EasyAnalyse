@@ -433,6 +433,133 @@
   }
 }
 
+.settings-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.settings-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--modal-scrim);
+  backdrop-filter: blur(18px);
+}
+
+.settings-modal__panel {
+  position: relative;
+  width: min(920px, 100%);
+  max-height: min(88vh, 980px);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-solid);
+  box-shadow: var(--shadow);
+}
+
+.settings-modal__close {
+  position: sticky;
+  top: 12px;
+  z-index: 1;
+  float: right;
+  margin: 12px 12px 0 0;
+}
+
+.settings-panel {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+}
+
+.settings-panel__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 420px);
+  gap: 16px;
+  align-items: start;
+}
+
+.settings-panel__note,
+.settings-panel__provider-card p {
+  color: var(--muted);
+}
+
+.settings-panel__warnings {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 22%, transparent);
+  border-radius: 8px;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.settings-panel__section,
+.settings-panel__form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.settings-panel label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+}
+
+.settings-panel input,
+.settings-panel select,
+.settings-panel textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--control-bg-soft);
+  color: var(--ink);
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.settings-panel textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.settings-panel__provider-list {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-panel__provider-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--item-bg);
+}
+
+.settings-panel__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+@media (max-width: 720px) {
+  .settings-panel__header,
+  .settings-panel__section,
+  .settings-panel__form {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-panel__provider-card {
+    flex-direction: column;
+  }
+}
+
 .share-overlay {
   position: fixed;
   inset: 0;

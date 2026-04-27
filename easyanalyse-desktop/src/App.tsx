@@ -4,6 +4,7 @@ import { CanvasView } from './components/CanvasView'
 import { CloudBackground } from './components/layout/CloudBackground'
 import { RightSidebar } from './components/layout/RightSidebar'
 import { MobileSharePanel } from './components/share/MobileSharePanel'
+import { ProviderModelSettings } from './components/settings/ProviderModelSettings'
 import { getDeviceTemplateOptions, type DeviceVisualKind } from './lib/deviceSymbols'
 import { normalizeDocumentLocal } from './lib/document'
 import { translate } from './lib/i18n'
@@ -41,6 +42,7 @@ function App() {
   const [mobileShareBusy, setMobileShareBusy] = useState(false)
   const [mobileShareError, setMobileShareError] = useState<string | null>(null)
   const [mobileShareSession, setMobileShareSession] = useState<MobileShareSession | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const document = useEditorStore((state) => state.document)
   const filePath = useEditorStore((state) => state.filePath)
   const dirty = useEditorStore((state) => state.dirty)
@@ -254,6 +256,9 @@ function App() {
             <button className="ghost-button" onClick={toggleTheme}>
               {t(isDarkTheme ? 'themeLight' : 'themeDark')}
             </button>
+            <button className="ghost-button" onClick={() => setSettingsOpen(true)}>
+              Provider / Model
+            </button>
             {isTauriRuntime() && (
               <button className="ghost-button" onClick={handleOpenMobileShare}>
                 {t('shareToPhone')}
@@ -285,6 +290,17 @@ function App() {
           <RightSidebar />
         </main>
       </div>
+      {settingsOpen && (
+        <div className="settings-modal" role="dialog" aria-modal="true" aria-label="Provider and model settings">
+          <div className="settings-modal__backdrop" onClick={() => setSettingsOpen(false)} />
+          <div className="settings-modal__panel">
+            <button className="settings-modal__close ghost-button" type="button" onClick={() => setSettingsOpen(false)}>
+              Close
+            </button>
+            <ProviderModelSettings />
+          </div>
+        </div>
+      )}
       <MobileSharePanel
         open={mobileShareOpen}
         locale={locale}

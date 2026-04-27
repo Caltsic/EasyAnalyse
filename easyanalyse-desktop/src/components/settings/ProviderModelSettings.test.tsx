@@ -1,0 +1,159 @@
+// @vitest-environment jsdom
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { DEFAULT_APP_SETTINGS } from '../../lib/appSettings'
+import { useSettingsStore } from '../../store/settingsStore'
+import { ProviderModelSettings } from './ProviderModelSettings'
+
+;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+function field(container: HTMLElement, name: string) {
+  const element = container.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(`[name="${name}"]`)
+  expect(element).not.toBeNull()
+  return element as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+}
+
+async function changeField(container: HTMLElement, name: string, value: string) {
+  await act(async () => {
+    const element = field(container, name)
+    const prototype = element instanceof HTMLSelectElement
+      ? HTMLSelectElement.prototype
+      : element instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype
+        : HTMLInputElement.prototype
+    const valueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+    valueSetter?.call(element, value)
+    element.dispatchEvent(new Event(element instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }))
+  })
+}
+
+async function clickButton(container: HTMLElement, label: string) {
+  await act(async () => {
+    const button = Array.from(container.querySelectorAll('button')).find((candidate) => candidate.textContent === label)
+    expect(button).toBeDefined()
+    button?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
+}
+
+describe('ProviderModelSettings', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    useSettingsStore.setState({ settings: DEFAULT_APP_SETTINGS, loaded: true, warnings: [] })
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('renders a public provider/model settings entry without plaintext secret inputs', async () => {
+    useSettingsStore.getState().replaceSettings({
+      agent: {
+        providers: [
+          {
+            id: 'deepseek-main',
+            name: 'DeepSeek Main',
+            kind: 'deepseek',
+            baseUrl: 'https://api.deepseek.com',
+            models: ['deepseek-chat', 'deepseek-reasoner'],
+            defaultModel: 'deepseek-chat',
+            apiKeyRef: 'keychain://easyanalyse/provider/deepseek-main',
+          },
+        ],
+        selectedProviderId: 'deepseek-main',
+        selectedModelId: 'deepseek-reasoner',
+      },
+    }, null)
+
+    await act(async () => {
+      root.render(<ProviderModelSettings />)
+    })
+
+    expect(container.textContent).toContain('Provider / Model')
+    expect(container.textContent).toContain('DeepSeek Main')
+    expect(container.textContent).toContain('deepseek-reasoner')
+    expect(container.querySelector('input[name="apiKey"]')).toBeNull()
+    expect(container.querySelector('input[name="password"]')).toBeNull()
+    expect(container.querySelector('input[name="token"]')).toBeNull()
+    expect(container.querySelector('input[name="apiKeyRef"]')).not.toBeNull()
+  })
+
+  it('keeps an invalid draft in the form and shows warnings instead of clearing rejected providers', async () => {
+    await act(async () => {
+      root.render(<ProviderModelSettings />)
+    })
+
+    await changeField(container, 'id', 'bad-url-provider')
+    await changeField(container, 'name', 'Bad URL Provider')
+    await changeField(container, 'baseUrl', '/relative/path')
+    await changeField(container, 'models', 'model-a')
+    await clickButton(container, 'Save provider metadata')
+
+    expect(useSettingsStore.getState().settings.agent.providers).toHaveLength(0)
+    expect(field(container, 'id').value).toBe('bad-url-provider')
+    expect(field(container, 'baseUrl').value).toBe('/relative/path')
+    expect(container.textContent).toContain('baseUrl')
+  })
+
+  it('adds, edits, selects, and deletes provider metadata through the UI', async () => {
+    await act(async () => {
+      root.render(<ProviderModelSettings />)
+    })
+
+    await changeField(container, 'id', 'provider-a')
+    await changeField(container, 'name', 'Provider A')
+    await changeField(container, 'kind', 'anthropic')
+    await changeField(container, 'baseUrl', 'https://example.invalid/a')
+    await changeField(container, 'models', 'claude-a\nclaude-b')
+    await changeField(container, 'defaultModel', 'claude-b')
+    await changeField(container, 'apiKeyRef', 'secret-ref:provider-a')
+    await clickButton(container, 'Save provider metadata')
+
+    await changeField(container, 'id', 'provider-b')
+    await changeField(container, 'name', 'Provider B')
+    await changeField(container, 'kind', 'openai-compatible')
+    await changeField(container, 'baseUrl', 'https://example.invalid/b')
+    await changeField(container, 'models', 'model-b1,model-b2')
+    await changeField(container, 'defaultModel', 'model-b1')
+    await clickButton(container, 'Save provider metadata')
+
+    expect(container.textContent).toContain('Provider A')
+    expect(container.textContent).toContain('Provider B')
+    expect(useSettingsStore.getState().settings.agent.providers).toHaveLength(2)
+
+    await changeField(container, 'selectedProviderId', 'provider-a')
+    await changeField(container, 'selectedModelId', 'claude-a')
+    expect(useSettingsStore.getState().settings.agent.selectedProviderId).toBe('provider-a')
+    expect(useSettingsStore.getState().settings.agent.selectedModelId).toBe('claude-a')
+
+    const providerBCards = Array.from(container.querySelectorAll('article')).filter((article) => article.textContent?.includes('Provider B'))
+    expect(providerBCards).toHaveLength(1)
+    await act(async () => {
+      providerBCards[0].querySelector('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(field(container, 'id').value).toBe('provider-b')
+    await changeField(container, 'name', 'Provider B Edited')
+    await changeField(container, 'models', 'model-b2')
+    await changeField(container, 'defaultModel', 'model-b2')
+    await clickButton(container, 'Save provider metadata')
+
+    expect(container.textContent).toContain('Provider B Edited')
+    expect(useSettingsStore.getState().settings.agent.providers.find((provider) => provider.id === 'provider-b')?.models).toEqual(['model-b2'])
+
+    const providerACards = Array.from(container.querySelectorAll('article')).filter((article) => article.textContent?.includes('Provider A'))
+    expect(providerACards).toHaveLength(1)
+    await act(async () => {
+      providerACards[0].querySelectorAll('button')[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).not.toContain('Provider A')
+    expect(useSettingsStore.getState().settings.agent.providers.map((provider) => provider.id)).toEqual(['provider-b'])
+    expect(useSettingsStore.getState().settings.agent.selectedProviderId).toBe('provider-b')
+  })
+})

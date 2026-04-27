@@ -35,6 +35,47 @@ function nonEmptyString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined
 }
 
+function normalizeHttpUrl(value: unknown, warnings: string[], providerId?: string): string | undefined {
+  const candidate = nonEmptyString(value)
+  if (candidate === undefined) {
+    return undefined
+  }
+
+  try {
+    const url = new URL(candidate)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      warnings.push(`Ignored invalid baseUrl${providerId ? ` for provider ${providerId}` : ''}; expected an http(s) URL.`)
+      return undefined
+    }
+    if (url.username !== '' || url.password !== '') {
+      warnings.push(`Ignored invalid baseUrl${providerId ? ` for provider ${providerId}` : ''}; URL credentials are not allowed.`)
+      return undefined
+    }
+    const hasExplicitPath = /^https?:\/\/[^/?#]+[/?#]/i.test(candidate)
+    if (!hasExplicitPath && url.pathname === '/' && url.search === '' && url.hash === '') {
+      return url.origin
+    }
+    return url.href
+  } catch {
+    warnings.push(`Ignored invalid baseUrl${providerId ? ` for provider ${providerId}` : ''}; expected a parseable http(s) URL.`)
+    return undefined
+  }
+}
+
+function normalizeApiKeyRef(value: unknown, warnings: string[], providerId: string): string | undefined {
+  const candidate = nonEmptyString(value)
+  if (candidate === undefined) {
+    return undefined
+  }
+
+  if (/^keychain:\/\/[A-Za-z0-9._~:/?#[\]@!$&'()*+,;=%-]+$/.test(candidate) || /^secret-ref:[A-Za-z0-9._/-]+$/.test(candidate)) {
+    return candidate
+  }
+
+  warnings.push(`Ignored apiKeyRef for provider ${providerId}; expected a secret reference such as keychain://... or secret-ref:id, not a plaintext value.`)
+  return undefined
+}
+
 function normalizeTheme(input: unknown, warnings: string[]): AppThemeMode {
   if (!isRecord(input)) {
     return DEFAULT_APP_SETTINGS.appearance.theme
@@ -96,7 +137,7 @@ function normalizeProvider(value: unknown, warnings: string[]): AgentProviderPub
   const id = nonEmptyString(value.id)
   const name = nonEmptyString(value.name)
   const kind = typeof value.kind === 'string' && VALID_PROVIDER_KINDS.has(value.kind as AgentProviderKind) ? value.kind : undefined
-  const baseUrl = nonEmptyString(value.baseUrl)
+  const baseUrl = normalizeHttpUrl(value.baseUrl, warnings, id)
   const models = normalizeModels(value.models)
 
   if (id === undefined || name === undefined || kind === undefined || baseUrl === undefined || models.length === 0) {
@@ -121,7 +162,7 @@ function normalizeProvider(value: unknown, warnings: string[]): AgentProviderPub
     }
   }
 
-  const apiKeyRef = nonEmptyString(value.apiKeyRef)
+  const apiKeyRef = normalizeApiKeyRef(value.apiKeyRef, warnings, id)
   if (apiKeyRef !== undefined) {
     provider.apiKeyRef = apiKeyRef
   }

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420",
-    "generate:icons": "python ..\\scripts\\generate_app_icons.py",
+    "generate:icons": "python3 ../scripts/generate_app_icons.py",
     "build": "npm run generate:icons && tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",

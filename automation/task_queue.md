@@ -49,7 +49,7 @@
   - 输出：只读蓝图预览组件。
   - 验收：拖拽/Delete/Space/快捷键不改主文档；预览组件不调用 editorStore mutation。
 
-- [ ] **M2-T4：RightSidebar + BlueprintsPanel**
+- [x] **M2-T4：RightSidebar + BlueprintsPanel**
   - 输出：蓝图列表、创建快照、选择蓝图、保存/加载状态展示。
   - 验收：可人工创建多个蓝图；可看到 validationState/appliedInfo/current 标记。
 
@@ -177,3 +177,18 @@
 - 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 - Spec Reviewer：修复后 PASS；Quality Reviewer：修复后 APPROVED；Final Integration Reviewer：PASS/READY。
 - 任务提交：`e211bf1`。
+
+### M2-T4 完成记录
+
+- 完成时间：2026-04-27 20:18 +0800
+- 新增：`easyanalyse-desktop/src/components/layout/RightSidebar.tsx` 与 `RightSidebar.test.tsx`。
+- 新增：`easyanalyse-desktop/src/components/blueprints/BlueprintsPanel.tsx`、`BlueprintCard.tsx` 与 `BlueprintsPanel.test.tsx`。
+- 修改：`easyanalyse-desktop/src/App.tsx`、`App.css`，将右侧改为 Inspector / Blueprints 单列 tab 容器，不新增第三列。
+- 修改：`blueprintStore` / `editorStore` 及测试，补齐默认文档 blueprint workspace 初始化、workspace=null 快照 metadata/base hash、归档/删除/校验幂等与 busy guard。
+- 实现：蓝图列表、创建快照、选择蓝图、保存/重载 workspace 状态展示；卡片展示 lifecycle、validationState、appliedInfo、runtime current main document、issue/warning 计数与 sidecar dirty/clean 状态。
+- 覆盖：tab 切换、创建快照列表展示、dirty 隔离、主文档 hash 不变、未保存主文档提示、重复 action guard、archived/deleted 幂等、startup workspace 初始化。
+- 验证通过：`npm test -- --run`（13 files / 70 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- 已知非本次问题：`npm run build` 因 Windows 风格 icon 脚本路径 `..\scripts\generate_app_icons.py` 在当前 Linux 环境失败。
+- Spec Reviewer：PASS；Quality Reviewer：三轮修复后 APPROVED。
+- 任务提交：`9bfcefc feat: add blueprint sidebar panel`。
+

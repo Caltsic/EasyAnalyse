@@ -27,9 +27,9 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知任务提交：`e211bf1`
-- 当前任务：`M2-T4 RightSidebar + BlueprintsPanel`
-- 当前阻塞：无。M2-T3 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- 最近已知任务提交：`9bfcefc`
+- 当前任务：`M2-T5 校验提示、摘要 diff、ApplyBlueprintDialog`
+- 当前阻塞：无。M2-T4 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 
 ## 最近完成
 
@@ -53,23 +53,33 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
   - Review：Spec Reviewer 首轮发现键盘/交互覆盖不足，修复后 PASS；Quality Reviewer 首轮发现 Home/Escape 泄漏风险，修复后 APPROVED；Final Integration Reviewer PASS/READY。
   - 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
   - 任务提交：`e211bf1`。
+- M2-T4 已完成：新增 `RightSidebar` + `BlueprintsPanel`。
+  - `App.tsx` 右侧由直接 `Inspector` 改为单列 tab 容器，支持 Inspector / Blueprints 切换，不引入第三列。
+  - 新增 `BlueprintsPanel` 与 `BlueprintCard`，支持创建当前主文档快照、选择蓝图、保存/重载 workspace、校验、归档、软删除，并展示 sidecar/in-memory、dirty/clean、loading/error 状态。
+  - 卡片显示 lifecycleStatus、validationState、source、issue/warning 计数、appliedInfo 历史标记、runtime `isCurrentMainDocument` 与 base hash mismatch。
+  - 质量修复：顶层 action/per-card validate busy guard；archived/deleted action 幂等；deleted validate store-level no-op、archived validate 可用；`editorStore.initialize()` 初始化未保存默认文档的 blueprint workspace；`workspace=null` 直接创建快照时也保留 mainDocument metadata/base hash。
+  - 覆盖测试：RightSidebar tab 切换、BlueprintsPanel 快照/状态展示/dirty 隔离/重复 action guard、blueprintStore 幂等与 workspace metadata、editorStore startup 初始化。
+  - Review：Spec Reviewer PASS；Quality Reviewer 三轮修复后 APPROVED。
+  - 验证通过：`npm test -- --run`（13 files / 70 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+  - 任务提交：`9bfcefc`。
 
 ## 下一轮建议
 
-执行 `M2-T4`：RightSidebar + BlueprintsPanel。
+执行 `M2-T5`：校验提示、摘要 diff、ApplyBlueprintDialog。
 
 建议派子代理：
 
-1. Implementer：新增 `components/layout/RightSidebar.tsx`、`components/blueprints/BlueprintsPanel.tsx`、`BlueprintCard.tsx`，接入 `App.tsx` / `App.css`，支持 Inspector 与 Blueprints tab 切换；用 `blueprintStore` 创建快照、选择蓝图、保存/加载状态展示。
-2. Spec Reviewer：检查 BlueprintsPanel 不接 Agent/Provider/Settings，不把蓝图写入主文档，能显示 validationState / appliedInfo / runtime current 标记。
-3. Quality Reviewer：重点审查 tab 切换不污染 Inspector/editor 状态、创建快照不修改主文档、sidecar dirty 与 editor dirty 隔离、未保存主文档提示清晰。
+1. Implementer：新增/完善 `lib/blueprintDiff.ts`、`components/blueprints/ApplyBlueprintDialog.tsx`，并接入 `BlueprintsPanel` 详情/操作区。
+2. Spec Reviewer：检查 valid/invalid/unknown 都可进入确认；invalid/unknown 只强提示、不阻止；确认后应用到内存主文档，不直接保存磁盘。
+3. Quality Reviewer：重点审查全局快捷键/弹窗焦点隔离、base hash mismatch 风险提示、`appliedInfo` 与 runtime `isCurrentMainDocument` 语义、dirty+undo 行为。
 
 建议验收测试：
 
-- Inspector 与 Blueprints tab 可切换。
-- 创建当前主文档快照后列表出现蓝图，主文档 canonical hash 不变。
-- BlueprintsPanel 显示 active/archived/deleted、unknown/valid/invalid、appliedInfo、isCurrentMainDocument。
-- 保存/加载状态展示不改变 `editorStore.dirty`。
+- 校验报告展示 schema/semantic issues 与 warning/error 数量。
+- diff 摘要能显示 device/label/view/meta 级变化。
+- valid/invalid/unknown 蓝图都可进入确认；invalid/unknown 必须强提示。
+- 确认后调用 `editorStore.applyBlueprintDocument`，主文档 dirty=true 且 undo 可恢复。
+- `blueprintStore.markApplied` 更新 `appliedInfo`，但不使用 `status='applied'`。
 
 ## 重要提醒
 
@@ -99,3 +109,4 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
 - M2-T1 任务提交：`cda2c2a`
 - M2-T2 任务提交：`f534770`
 - M2-T3 任务提交：`e211bf1`
+- M2-T4 任务提交：`9bfcefc`

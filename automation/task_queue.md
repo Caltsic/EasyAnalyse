@@ -137,4 +137,4 @@
 - 覆盖：重新打开主文档恢复蓝图列表、创建 manual snapshot 并保存 sidecar、主文档不出现 `blueprints`、editor/blueprint dirty 隔离、new document 清空旧蓝图、sidecar 损坏时主文档仍打开并记录错误、metadata hash 使用 normalized editor document、overlapping open stale result 防护。
 - 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 - Spec Reviewer：PASS；Quality Reviewer：APPROVED。
-- 任务提交：待提交。
+- 任务提交：`d54041a`。

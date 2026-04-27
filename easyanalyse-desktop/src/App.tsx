@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { CanvasView } from './components/CanvasView'
-import { Inspector } from './components/Inspector'
 import { CloudBackground } from './components/layout/CloudBackground'
+import { RightSidebar } from './components/layout/RightSidebar'
 import { MobileSharePanel } from './components/share/MobileSharePanel'
 import { getDeviceTemplateOptions, type DeviceVisualKind } from './lib/deviceSymbols'
 import { normalizeDocumentLocal } from './lib/document'
@@ -282,7 +282,7 @@ function App() {
             <CanvasView theme={theme} />
             {statusMessage && <div className="status-bar">{statusMessage}</div>}
           </section>
-          <Inspector />
+          <RightSidebar />
         </main>
       </div>
       <MobileSharePanel

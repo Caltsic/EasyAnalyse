@@ -4,6 +4,7 @@ import type { BlueprintWorkspaceFile } from '../types/blueprint'
 import type { DocumentFile, ValidationReport } from '../types/document'
 import { useBlueprintStore } from './blueprintStore'
 import { useEditorStore } from './editorStore'
+import { createEmptyBlueprintWorkspace } from '../lib/blueprintWorkspace'
 
 const tauriMocks = vi.hoisted(() => ({
   getBlueprintSidecarPathCommand: vi.fn(),
@@ -370,6 +371,56 @@ describe('blueprintStore', () => {
     expect(useBlueprintStore.getState().validationError).toContain('validator crashed')
   })
 
+  it('validates archived blueprints instead of treating the visible card action as a store-layer no-op', async () => {
+    const document = createDocument()
+    const report: ValidationReport = {
+      detectedFormat: 'semantic-v4',
+      schemaValid: true,
+      semanticValid: true,
+      issueCount: 0,
+      issues: [],
+    }
+    tauriMocks.validateDocumentCommand.mockResolvedValue(report)
+    const snapshot = await useBlueprintStore.getState().createSnapshotFromDocument(document)
+
+    useBlueprintStore.getState().archiveBlueprint(snapshot.id)
+    useBlueprintStore.setState({ dirty: false })
+
+    await useBlueprintStore.getState().validateBlueprint(snapshot.id)
+
+    const record = useBlueprintStore.getState().workspace?.blueprints.find((item) => item.id === snapshot.id)
+    expect(tauriMocks.validateDocumentCommand).toHaveBeenCalledTimes(1)
+    expect(tauriMocks.validateDocumentCommand).toHaveBeenCalledWith(snapshot.document)
+    expect(record?.lifecycleStatus).toBe('archived')
+    expect(record?.validationState).toBe('valid')
+    expect(record?.validationReport).toBe(report)
+    expect(useBlueprintStore.getState().dirty).toBe(true)
+  })
+
+  it('treats direct validation of a deleted blueprint as a store-layer no-op', async () => {
+    const document = createDocument()
+    tauriMocks.validateDocumentCommand.mockResolvedValue({
+      detectedFormat: 'semantic-v4',
+      schemaValid: true,
+      semanticValid: true,
+      issueCount: 0,
+      issues: [],
+    })
+    const snapshot = await useBlueprintStore.getState().createSnapshotFromDocument(document)
+
+    useBlueprintStore.getState().deleteBlueprint(snapshot.id)
+    useBlueprintStore.setState({ dirty: false })
+    const beforeWorkspace = useBlueprintStore.getState().workspace
+    const beforeRecord = beforeWorkspace?.blueprints.find((record) => record.id === snapshot.id)
+
+    await useBlueprintStore.getState().validateBlueprint(snapshot.id)
+
+    expect(tauriMocks.validateDocumentCommand).not.toHaveBeenCalled()
+    expect(useBlueprintStore.getState().workspace).toBe(beforeWorkspace)
+    expect(useBlueprintStore.getState().workspace?.blueprints.find((record) => record.id === snapshot.id)).toEqual(beforeRecord)
+    expect(useBlueprintStore.getState().dirty).toBe(false)
+  })
+
   it('treats missing-id operations as no-ops that do not dirty the store', async () => {
     const document = createDocument()
     const snapshot = await useBlueprintStore.getState().createSnapshotFromDocument(document)
@@ -389,5 +440,77 @@ describe('blueprintStore', () => {
     expect(useBlueprintStore.getState().workspace).toBe(beforeWorkspace)
     expect(useBlueprintStore.getState().selectedBlueprintId).toBe(snapshot.id)
     expect(useBlueprintStore.getState().dirty).toBe(false)
+  })
+
+  it('treats repeated archive/delete lifecycle operations as no-ops without dirtying or updating timestamps', async () => {
+    const document = createDocument()
+    const snapshot = await useBlueprintStore.getState().createSnapshotFromDocument(document)
+    useBlueprintStore.setState((state) => ({
+      workspace: state.workspace
+        ? {
+            ...state.workspace,
+            blueprints: [
+              { ...snapshot, lifecycleStatus: 'archived', updatedAt: '2026-04-27T03:00:00.000Z' },
+              { ...snapshot, id: 'deleted-bp', lifecycleStatus: 'deleted', updatedAt: '2026-04-27T04:00:00.000Z' },
+            ],
+          }
+        : state.workspace,
+      dirty: false,
+    }))
+    const beforeWorkspace = useBlueprintStore.getState().workspace
+
+    useBlueprintStore.getState().archiveBlueprint(snapshot.id)
+    useBlueprintStore.getState().archiveBlueprint('deleted-bp')
+    useBlueprintStore.getState().deleteBlueprint('deleted-bp')
+
+    expect(useBlueprintStore.getState().workspace).toBe(beforeWorkspace)
+    expect(useBlueprintStore.getState().workspace?.blueprints[0]?.updatedAt).toBe('2026-04-27T03:00:00.000Z')
+    expect(useBlueprintStore.getState().workspace?.blueprints[1]?.updatedAt).toBe('2026-04-27T04:00:00.000Z')
+    expect(useBlueprintStore.getState().dirty).toBe(false)
+  })
+
+  it('creates snapshots with main document metadata and base hash after explicit workspace initialization', async () => {
+    const document = createDocument({ document: { id: 'doc-initialized', title: 'Initialized circuit' } })
+    const mainHash = await hashDocument(document)
+
+    await useBlueprintStore.getState().loadForMainDocument(null, document)
+    const snapshot = await useBlueprintStore.getState().createSnapshotFromDocument(document)
+
+    expect(useBlueprintStore.getState().workspace?.mainDocument).toMatchObject({
+      documentId: 'doc-initialized',
+      hash: mainHash,
+    })
+    expect(snapshot.baseMainDocumentHash).toBe(mainHash)
+  })
+
+  it('creates snapshots with main document metadata and base hash when workspace is null', async () => {
+    const document = createDocument({ document: { id: 'doc-null-workspace', title: 'Null workspace circuit' } })
+    const mainHash = await hashDocument(document)
+
+    const snapshot = await useBlueprintStore.getState().createSnapshotFromDocument(document)
+
+    expect(useBlueprintStore.getState().workspace?.mainDocument).toMatchObject({
+      documentId: 'doc-null-workspace',
+      hash: mainHash,
+      hashAlgorithm: 'easyanalyse-document-canonical-sha256-v1',
+    })
+    expect(useBlueprintStore.getState().workspace?.mainDocument?.path).toBeUndefined()
+    expect(snapshot.baseMainDocumentHash).toBe(mainHash)
+  })
+
+  it('isolates blueprint dirty changes from editor dirty state', async () => {
+    const document = createDocument()
+    useBlueprintStore.setState({
+      workspace: createEmptyBlueprintWorkspace({ mainDocument: { documentId: document.document.id, hash: await hashDocument(document) } }),
+      dirty: false,
+    })
+    const snapshot = await useBlueprintStore.getState().createSnapshotFromDocument(document)
+    useBlueprintStore.setState({ dirty: false })
+    useEditorStore.setState({ dirty: false })
+
+    useBlueprintStore.getState().archiveBlueprint(snapshot.id)
+
+    expect(useBlueprintStore.getState().dirty).toBe(true)
+    expect(useEditorStore.getState().dirty).toBe(false)
   })
 })

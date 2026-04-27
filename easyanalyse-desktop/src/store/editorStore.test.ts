@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DocumentFile, ValidationReport } from '../types/document'
 import { useEditorStore } from './editorStore'
+import { useBlueprintStore } from './blueprintStore'
+import { hashDocument } from '../lib/documentHash'
 
 const dialogMocks = vi.hoisted(() => ({
   open: vi.fn(),
@@ -97,6 +99,34 @@ beforeEach(() => {
     history: [],
     future: [createDocument({ document: { id: 'doc-future', title: 'Future' } })],
     statusMessage: 'before apply',
+  })
+  useBlueprintStore.setState({
+    workspace: null,
+    sidecarPath: null,
+    dirty: false,
+    selectedBlueprintId: null,
+    loadError: null,
+    saveError: null,
+    validationError: null,
+  })
+})
+
+describe('editorStore.initialize', () => {
+  it('initializes the blueprint workspace for the default unsaved main document', async () => {
+    await useEditorStore.getState().initialize()
+    const document = useEditorStore.getState().document
+    const mainHash = await hashDocument(document)
+
+    expect(useEditorStore.getState().filePath).toBeNull()
+    expect(useBlueprintStore.getState().sidecarPath).toBeNull()
+    expect(useBlueprintStore.getState().dirty).toBe(false)
+    expect(useBlueprintStore.getState().workspace?.mainDocument).toMatchObject({
+      documentId: document.document.id,
+      hash: mainHash,
+    })
+
+    const snapshot = await useBlueprintStore.getState().createSnapshotFromDocument(document)
+    expect(snapshot.baseMainDocumentHash).toBe(mainHash)
   })
 })
 

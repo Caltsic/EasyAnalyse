@@ -488,11 +488,13 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const locale = getStoredLocale()
       const document = buildDefaultDocument(withLocale(locale, 'untitledCircuit'))
       set({ locale })
-      replaceDocument(document, {
+      const normalized = replaceDocument(document, {
+        filePath: null,
         dirty: false,
         selection: { entityType: 'document' },
         resetHistory: true,
       })
+      await useBlueprintStore.getState().loadForMainDocument(null, normalized)
     },
     newDocument: async () => {
       const operationToken = ++documentOperationToken

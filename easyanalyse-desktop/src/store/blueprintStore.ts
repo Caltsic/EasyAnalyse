@@ -202,7 +202,8 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
 
   createSnapshotFromDocument: async (document, options) => {
     const { workspace } = get()
-    const currentWorkspace = workspace ?? createEmptyBlueprintWorkspace()
+    const mainHash = workspace?.mainDocument?.hash ?? (await hashDocument(document))
+    const currentWorkspace = workspace ?? createWorkspaceForDocument(null, document, mainHash)
     const blueprint = await createBlueprintFromDocument({
       document,
       title: options?.title,
@@ -210,7 +211,7 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
       baseMainDocumentHash: currentWorkspace.mainDocument?.hash,
     })
     set((state) => {
-      const latestWorkspace = state.workspace ?? createEmptyBlueprintWorkspace()
+      const latestWorkspace = state.workspace ?? currentWorkspace
       const nextWorkspace: BlueprintWorkspaceFile = {
         ...latestWorkspace,
         updatedAt: new Date().toISOString(),
@@ -230,7 +231,7 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
   validateBlueprint: async (id) => {
     const workspace = get().workspace
     const record = workspace?.blueprints.find((item) => item.id === id)
-    if (workspace === null || record === undefined) {
+    if (workspace === null || record === undefined || record.lifecycleStatus === 'deleted') {
       return
     }
 
@@ -273,7 +274,8 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
 
   archiveBlueprint: (id) => {
     set((state) => {
-      if (state.workspace === null || !state.workspace.blueprints.some((record) => record.id === id)) {
+      const target = state.workspace?.blueprints.find((record) => record.id === id)
+      if (state.workspace === null || target === undefined || target.lifecycleStatus !== 'active') {
         return {}
       }
       return {
@@ -289,7 +291,8 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
 
   deleteBlueprint: (id) => {
     set((state) => {
-      if (state.workspace === null || !state.workspace.blueprints.some((record) => record.id === id)) {
+      const target = state.workspace?.blueprints.find((record) => record.id === id)
+      if (state.workspace === null || target === undefined || target.lifecycleStatus === 'deleted') {
         return {}
       }
       return {

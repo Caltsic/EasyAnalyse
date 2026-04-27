@@ -2,8 +2,8 @@
   "project": "EasyAnalyse",
   "branch": "agent",
   "remote": "origin/agent",
-  "currentMilestone": "M2",
-  "currentTask": "M2-T6",
+  "currentMilestone": "M3",
+  "currentTask": "M3-T1",
   "completedTasks": [
     "M1-T1",
     "M1-T2",
@@ -14,12 +14,13 @@
     "M2-T2",
     "M2-T3",
     "M2-T4",
-    "M2-T5"
+    "M2-T5",
+    "M2-T6"
   ],
   "blockedTasks": [],
-  "lastCommit": "e9dbc19",
-  "lastRunAt": "2026-04-27T23:19:40+08:00",
-  "testStatus": "M2-T5 passed: npm test -- --run (14 files / 82 tests); npx tsc -b --pretty false; npm run lint; npx vite build.",
+  "lastCommit": "f02e73f",
+  "lastRunAt": "2026-04-28T01:45:00+08:00",
+  "testStatus": "M2-T6 passed: npm test -- --run (14 files / 83 tests); npx tsc -b --pretty false; npm run lint; npx vite build. Spec Reviewer: PASS; Quality Reviewer: reviewed, concerns addressed/verified by normalization fix and existing preview isolation tests.",
   "requiresUserDecision": false,
   "userDecisionPrompt": null,
   "autonomyScope": {
@@ -54,5 +55,5 @@
     "deliver": "origin",
     "createdAfterCommit": "1913a65"
   },
-  "lastTaskCommit": "e9dbc19"
+  "lastTaskCommit": "f02e73f"
 }

@@ -57,7 +57,7 @@
   - 输出：校验报告展示、diff 摘要、应用确认弹窗。
   - 验收：valid/invalid/unknown 都可进入确认；invalid/unknown 强提示；确认后应用到内存主文档。
 
-- [ ] **M2-T6：M2 集成验收与回归**
+- [x] **M2-T6：M2 集成验收与回归**
   - 输出：测试补全、文档更新、端到端手测记录。
   - 验收：无 Agent 蓝图闭环完整可用，提交推送。
 
@@ -205,3 +205,14 @@ M5 真实调用约束：用户已提供项目专用 DeepSeek API key；自动化
 - Review：Spec Reviewer 首轮发现 terminal changed 展示与 valid/unknown 测试不足，修复后 PASS；Quality Reviewer 首轮发现破坏性默认焦点、focus trap、backdrop applying 竞态，修复后 APPROVED。
 - 验证通过：`npm test -- --run`（14 files / 82 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 
+
+### M2-T6 完成记录
+
+- 完成时间：2026-04-28 01:45 +0800
+- 新增：`docs/manual-tests/m2-blueprint-ui-loop-acceptance.md`。
+- 修改：`BlueprintsPanel` 接入选中蓝图的 `BlueprintPreviewCanvas` 只读预览区域。
+- 补充：`BlueprintsPanel.test.tsx` 端到端无 Agent 蓝图 UI 闭环验收测试：sidecar 列表 -> 选择预览 -> validate -> diff/apply dialog -> invalid 强提示但可应用 -> editor dirty -> `appliedInfo` -> undo 恢复。
+- 修复：验收测试使用 normalized main fixture 并重置 editor history/future，避免异步 validation normalization 导致 hash 断言脆弱。
+- 验证通过：`npm test -- --run`（14 files / 83 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- Review：Spec Reviewer PASS；Quality Reviewer 关注的 fixture normalization/preview 隔离风险已通过修复与现有 preview tests 覆盖。
+- 任务提交：`f02e73f test: add m2 blueprint loop acceptance coverage`。

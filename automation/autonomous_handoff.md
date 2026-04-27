@@ -30,8 +30,8 @@
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知任务提交：`e9dbc19`
-- 当前任务：`M2-T6 M2 集成验收与回归`
+- 最近已知任务提交：`f02e73f`
+- 当前任务：`M3-T1 App settings 基础结构`
 - 当前阻塞：无。M2-T4 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。桌面编译/运行环境已补齐：Rust/Cargo、Tauri Linux 依赖、xvfb/dbus-x11 已安装；`npm run build`、`cargo test`、`npm run tauri:build` 均已通过，release binary 已用 xvfb 启动验证。环境/脚本修复提交：`1bc5dce`。
 
 ## 最近完成
@@ -75,9 +75,17 @@
   - 验证通过：`npm test -- --run`（14 files / 82 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
   - 任务提交：`e9dbc19`。
 
+
+- M2-T6 已完成：M2 集成验收与回归。
+  - 新增 M2 手测验收文档：`docs/manual-tests/m2-blueprint-ui-loop-acceptance.md`。
+  - `BlueprintsPanel` 现在在选中蓝图时显示只读 `BlueprintPreviewCanvas` 预览。
+  - 新增无 Agent 蓝图闭环验收测试：sidecar/list/select/preview/validate/diff/apply/dirty/undo。
+  - 验证通过：`npm test -- --run`（14 files / 83 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+  - 任务提交：`f02e73f`。
+
 ## 下一轮建议
 
-执行 `M2-T6`：M2 集成验收与回归。
+执行 `M3-T1`：App settings 基础结构。
 
 建议派子代理：
 
@@ -89,7 +97,7 @@
 
 - 全量 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 - 需要时补 E2E/集成测试或手测记录，证明无 Agent 蓝图闭环完整可用。
-- M2-T6 完成后自动进入 M3 Settings + Secrets，不要停止。
+- 当前 M2-T6 已完成；下一轮自动进入 M3 Settings + Secrets。
 
 ## 重要提醒
 

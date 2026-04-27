@@ -90,7 +90,7 @@
 - 保存到磁盘仍走现有严格校验。
 - M2-T6 完成后不要停在蓝图闭环；继续自动进入 M3 Settings + Secrets。
 - M3 完成后进入 M4 Mock Agent；M4 完成后进入 M5 真实 Provider。
-- M5 可以实现 provider adapter 与配置测试；如果涉及默认真实付费调用、API key 存储降级、或需要用户真实密钥，必须暂停询问。
+- M5 可以实现 provider adapter 与配置测试；用户已提供项目专用 DeepSeek API key，真实模型调用优先使用 DeepSeek。key 只允许从仓库外本机 secret 文件读取：`/home/ubuntu/.config/EasyAnalyse/secrets/deepseek_api_key`。不要把明文写入 git、主文档、sidecar、普通设置、prompt 日志或 Telegram。若出现高额费用风险、频繁失败、额度/速率限制、或需要改变默认调用策略，再暂停询问。
 - 不要把蓝图写进主 document。
 - 不要使用旧的 `status='applied'` 模型。
 - Canvas 预览优先使用纯渲染层 `CircuitCanvasRenderer`，不要只靠 readOnly guard 掩盖写路径。

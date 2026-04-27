@@ -74,12 +74,14 @@
 - [ ] M4-T2：mock provider
 - [ ] M4-T3：Agent 面板基础流
 
-## Milestone 5：真实 Provider（M4 验收通过后自动执行；真实付费调用策略遇到不确定时暂停询问）
+## Milestone 5：真实 Provider（M4 验收通过后自动执行；真实调用优先 DeepSeek）
 
 - [ ] M5-T1：OpenAI-compatible adapter
 - [ ] M5-T2：DeepSeek preset
 - [ ] M5-T3：Anthropic adapter
 - [ ] M5-T4：timeout/cancel/retry/context budget
+
+M5 真实调用约束：用户已提供项目专用 DeepSeek API key；自动化任务可从仓库外 `/home/ubuntu/.config/EasyAnalyse/secrets/deepseek_api_key` 读取。不得把 key 明文写入仓库、主文档、sidecar、普通设置、prompt 日志或 Telegram。真实 API smoke test 必须低成本、最小化；若出现高额费用风险或默认调用策略不确定，再暂停询问。
 
 
 ## 完成记录

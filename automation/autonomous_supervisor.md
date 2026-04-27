@@ -72,6 +72,7 @@
 - 蓝图状态使用：`lifecycleStatus` + `validationState` + `appliedInfo` + runtime `isCurrentMainDocument`；不得恢复旧的 `status='applied'` 或 `invalid 禁止应用` 设计。
 - Canvas 蓝图预览优先拆纯渲染层 `CircuitCanvasRenderer`；不要只靠 `readOnly` guard 掩盖写路径。
 - API key 不得写入主文档、sidecar、普通设置或仓库。
+- 用户已提供项目专用 DeepSeek API key；真实 Provider 阶段优先使用 DeepSeek。key 只允许从仓库外本机 secret 文件读取：`/home/ubuntu/.config/EasyAnalyse/secrets/deepseek_api_key`。不得把明文写入 git、主文档、sidecar、普通设置、导出配置、prompt 日志或 Telegram。
 
 ## 自动调整规则
 

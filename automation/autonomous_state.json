@@ -41,6 +41,11 @@
     "mustUpdateHandoff": true,
     "mustSendTelegram": true
   },
+  "localSecrets": {
+    "deepseekApiKeyFile": "/home/ubuntu/.config/EasyAnalyse/secrets/deepseek_api_key",
+    "allowedForMilestone": "M5",
+    "plainTextMayBeCommitted": false
+  },
   "cronJob": {
     "jobId": "02e4bfaf3360",
     "name": "EasyAnalyse Agent Branch Autonomous Builder",

@@ -27,7 +27,7 @@
 
 每轮默认只完成一个小任务；如果任务极小且测试已覆盖，可以合并相邻子任务，但必须在 handoff 中说明理由。
 
-推荐流程：
+代码任务必须执行以下审核/测试门禁；纯文档任务可合并审查，但仍必须说明验证方式：
 
 ```text
 选择任务
@@ -35,12 +35,15 @@
   -> 派 Spec Reviewer 子代理检查是否符合规划
   -> 派 Quality Reviewer 子代理检查质量/回归风险
   -> 如不通过，派 Fix 子代理修复
-  -> 主控运行测试与 git diff 审核
+  -> 必要时重新派 Reviewer 复核
+  -> 主控运行相关测试与 git diff 审核
   -> 更新 task_queue/state/handoff/progress
   -> git commit
   -> git push origin agent
   -> Telegram 汇报
 ```
+
+非文档代码任务如果没有完成 Spec Reviewer、Quality Reviewer、相关测试、主控最终 diff 审核，不得标记任务完成，也不得推进到下一个任务。
 
 ## 子代理使用要求
 

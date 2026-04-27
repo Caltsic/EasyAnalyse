@@ -10,6 +10,12 @@ import type { BlueprintRecord } from '../../types/blueprint'
 import type { DocumentFile } from '../../types/document'
 import { ApplyBlueprintDialog } from './ApplyBlueprintDialog'
 
+vi.mock('./BlueprintPreviewCanvas', () => ({
+  BlueprintPreviewCanvas: ({ document, className }: { document: DocumentFile; className?: string }) => (
+    <div aria-label="Blueprint preview canvas" className={className} data-document-title={document.document.title} />
+  ),
+}))
+
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 let root: Root | null = null
@@ -639,6 +645,122 @@ describe('BlueprintsPanel', () => {
       await new Promise((resolve) => window.setTimeout(resolve, 0))
     })
     expect(useEditorStore.getState().document.document.title).toBe('UI Reference Circuit')
+  })
+
+  it('runs the no-Agent blueprint UI loop from sidecar list through preview, validate, diff, apply, dirty main, and undo', async () => {
+    const main = createDocument()
+    const blueprintDoc = createDocument({
+      document: { ...main.document, title: 'Accepted Blueprint Replacement' },
+      devices: [...main.devices, { id: 'l1', name: 'L1', kind: 'inductor', terminals: [] }],
+    })
+    const mainHash = await hashDocument(main)
+    const blueprintHash = await hashDocument(blueprintDoc)
+    const record = await createBlueprintRecord({
+      id: 'bp-m2-acceptance',
+      title: 'M2 acceptance blueprint',
+      validationState: 'unknown',
+      validationReport: undefined,
+      document: blueprintDoc,
+      documentHash: blueprintHash,
+      baseMainDocumentHash: mainHash,
+    })
+    const unknownRecord = await createBlueprintRecord({
+      id: 'bp-unknown-allowance',
+      title: 'Unknown allowance blueprint',
+      validationState: 'unknown',
+      validationReport: undefined,
+      document: blueprintDoc,
+      documentHash: blueprintHash,
+      baseMainDocumentHash: mainHash,
+    })
+    const validateBlueprint = vi.fn(async (id: string) => {
+      useBlueprintStore.setState((state) => ({
+        workspace: state.workspace
+          ? {
+            ...state.workspace,
+            blueprints: state.workspace.blueprints.map((item) => item.id === id
+              ? {
+                ...item,
+                validationState: 'invalid',
+                validationReport: {
+                  detectedFormat: 'semantic-v4',
+                  schemaValid: false,
+                  semanticValid: false,
+                  issueCount: 2,
+                  issues: [
+                    { severity: 'error', code: 'E_M2_ACCEPTANCE', message: 'accepted invalid blueprint warning' },
+                    { severity: 'warning', code: 'W_M2_ACCEPTANCE', message: 'accepted warning' },
+                  ],
+                },
+              }
+              : item),
+          }
+          : state.workspace,
+        dirty: true,
+      }))
+    })
+    const saveWorkspace = vi.fn(async () => undefined)
+    resetStores(main)
+    useEditorStore.setState({ filePath: '/tmp/m2-acceptance.json' })
+    useBlueprintStore.setState({
+      sidecarPath: '/tmp/m2-acceptance.easyanalyse-blueprints.json',
+      saveWorkspace,
+      validateBlueprint,
+      workspace: {
+        ...createEmptyBlueprintWorkspace(),
+        mainDocument: { documentId: main.document.id, hash: mainHash, hashAlgorithm: DOCUMENT_HASH_ALGORITHM },
+        blueprints: [record, unknownRecord],
+      },
+    })
+    const host = await renderPanel()
+
+    expect(host.textContent).toContain('Sidecar: /tmp/m2-acceptance.easyanalyse-blueprints.json')
+    expect(firstButtonByText(cardByTitle(host, 'Unknown allowance blueprint')!, 'Apply')).toBeTruthy()
+
+    await act(async () => {
+      firstButtonByText(cardByTitle(host, 'M2 acceptance blueprint')!, 'Select')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(host.querySelector('[aria-current="true"]')?.textContent).toContain('M2 acceptance blueprint')
+    expect(host.querySelector('[aria-label="Blueprint preview canvas"]')).toBeTruthy()
+    expect(await hashDocument(useEditorStore.getState().document)).toBe(mainHash)
+
+    await act(async () => {
+      firstButtonByText(cardByTitle(host, 'M2 acceptance blueprint')!, 'Validate')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(validateBlueprint).toHaveBeenCalledWith('bp-m2-acceptance')
+    expect(cardByTitle(host, 'M2 acceptance blueprint')?.textContent).toContain('Validation: invalid')
+    expect(cardByTitle(host, 'M2 acceptance blueprint')?.textContent).toContain('Issues: 2')
+    expect(cardByTitle(host, 'M2 acceptance blueprint')?.textContent).toContain('Warnings: 1')
+
+    await act(async () => {
+      firstButtonByText(cardByTitle(host, 'M2 acceptance blueprint')!, 'Apply')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const dialogText = host.querySelector('[role="dialog"]')?.textContent
+    expect(dialogText).toContain('Strong risk warning')
+    expect(dialogText).toContain('Devices: +1 / -0 / ~0')
+
+    await act(async () => {
+      firstButtonByText(host, 'Confirm apply')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await new Promise((resolve) => window.setTimeout(resolve, 0))
+    })
+
+    expect(useEditorStore.getState().document.document.title).toBe('Accepted Blueprint Replacement')
+    expect(useEditorStore.getState().dirty).toBe(true)
+    expect(saveWorkspace).not.toHaveBeenCalled()
+    expect(JSON.parse(JSON.stringify(useEditorStore.getState().document))).not.toHaveProperty('blueprints')
+    expect(JSON.parse(JSON.stringify(useEditorStore.getState().document))).not.toHaveProperty('agent')
+    expect(JSON.parse(JSON.stringify(useEditorStore.getState().document))).not.toHaveProperty('workspace')
+    const appliedRecord = useBlueprintStore.getState().workspace?.blueprints.find((item) => item.id === 'bp-m2-acceptance')
+    expect(appliedRecord?.lifecycleStatus).toBe('active')
+    expect(appliedRecord?.appliedInfo?.sourceBlueprintDocumentHash).toBe(blueprintHash)
+    expect(appliedRecord).not.toHaveProperty('status', 'applied')
+
+    await act(async () => {
+      useEditorStore.getState().undo()
+      await new Promise((resolve) => window.setTimeout(resolve, 0))
+    })
+    expect(useEditorStore.getState().document.document.title).toBe('UI Reference Circuit')
+    expect(useEditorStore.getState().document.devices.map((device) => device.id)).toEqual(['r1'])
   })
 
   it('warns about whole-document replacement when the base main document hash mismatches', async () => {

@@ -805,7 +805,7 @@
   min-height: 0;
   height: 100%;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   overflow: hidden;
 }
 
@@ -857,6 +857,33 @@
   gap: 12px;
   padding: 12px;
   align-content: start;
+}
+
+.blueprints-panel__preview {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  background: var(--panel-bg);
+}
+
+.blueprints-panel__preview-header h3,
+.blueprints-panel__preview-header p {
+  margin: 0;
+}
+
+.blueprints-panel__preview-header p {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.blueprints-panel__preview-canvas {
+  height: 220px;
+  min-height: 180px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--canvas-bg);
 }
 
 .blueprint-card {

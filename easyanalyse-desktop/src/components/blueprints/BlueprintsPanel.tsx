@@ -5,6 +5,7 @@ import { useEditorStore } from '../../store/editorStore'
 import type { BlueprintRecord } from '../../types/blueprint'
 import { ApplyBlueprintDialog } from './ApplyBlueprintDialog'
 import { BlueprintCard } from './BlueprintCard'
+import { BlueprintPreviewCanvas } from './BlueprintPreviewCanvas'
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
@@ -14,6 +15,7 @@ export function BlueprintsPanel() {
   const document = useEditorStore((state) => state.document)
   const filePath = useEditorStore((state) => state.filePath)
   const editorDirty = useEditorStore((state) => state.dirty)
+  const locale = useEditorStore((state) => state.locale)
   const workspace = useBlueprintStore((state) => state.workspace)
   const sidecarPath = useBlueprintStore((state) => state.sidecarPath)
   const dirty = useBlueprintStore((state) => state.dirty)
@@ -60,6 +62,10 @@ export function BlueprintsPanel() {
   }, [document])
 
   const blueprints = useMemo(() => workspace?.blueprints ?? [], [workspace])
+  const selectedBlueprint = useMemo(
+    () => blueprints.find((record) => record.id === selectedBlueprintId) ?? null,
+    [blueprints, selectedBlueprintId],
+  )
   const applyModalOpen = pendingApplyRecord !== null
   const blueprintActionsDisabled = topActionBusy || applyModalOpen || applyBusy
 
@@ -224,6 +230,19 @@ export function BlueprintsPanel() {
             />
           ))}
         </div>
+      )}
+      {selectedBlueprint && selectedBlueprint.lifecycleStatus !== 'deleted' && (
+        <section className="blueprints-panel__preview" aria-label="Selected blueprint preview">
+          <div className="blueprints-panel__preview-header">
+            <h3>Preview: {selectedBlueprint.title}</h3>
+            <p>Read-only blueprint preview. It does not mutate the main document.</p>
+          </div>
+          <BlueprintPreviewCanvas
+            document={selectedBlueprint.document}
+            locale={locale}
+            className="blueprints-panel__preview-canvas"
+          />
+        </section>
       )}
       {pendingApplyRecord && (
         <ApplyBlueprintDialog

@@ -91,7 +91,7 @@
 - 新增：`easyanalyse-desktop/src/lib/documentHash.ts`
 - 新增：`easyanalyse-desktop/src/lib/documentHash.test.ts`
 - 验证通过：`npm test`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`
-- 已知非本次问题：`npm run build` 因 Windows 风格 icon 脚本路径 `..\scripts\generate_app_icons.py` 在当前 Linux 环境失败。
+- 已修复：`npm run build` 的 icon 生成脚本路径已改为跨 Linux 可用的 `python3 ../scripts/generate_app_icons.py`（环境修复提交 `1bc5dce`）。
 
 ### M1-T2 完成记录
 
@@ -188,7 +188,7 @@
 - 实现：蓝图列表、创建快照、选择蓝图、保存/重载 workspace 状态展示；卡片展示 lifecycle、validationState、appliedInfo、runtime current main document、issue/warning 计数与 sidecar dirty/clean 状态。
 - 覆盖：tab 切换、创建快照列表展示、dirty 隔离、主文档 hash 不变、未保存主文档提示、重复 action guard、archived/deleted 幂等、startup workspace 初始化。
 - 验证通过：`npm test -- --run`（13 files / 70 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
-- 已知非本次问题：`npm run build` 因 Windows 风格 icon 脚本路径 `..\scripts\generate_app_icons.py` 在当前 Linux 环境失败。
+- 已修复：`npm run build` 的 icon 生成脚本路径已改为跨 Linux 可用的 `python3 ../scripts/generate_app_icons.py`（环境修复提交 `1bc5dce`）。
 - Spec Reviewer：PASS；Quality Reviewer：三轮修复后 APPROVED。
 - 任务提交：`9bfcefc feat: add blueprint sidebar panel`。
 

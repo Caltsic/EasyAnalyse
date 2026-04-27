@@ -24,9 +24,12 @@
   "autonomyScope": {
     "allowedMilestones": [
       "M1",
-      "M2"
+      "M2",
+      "M3",
+      "M4",
+      "M5"
     ],
-    "currentHardLimit": "Do not implement Milestone 3/4/5 until M1/M2 blueprint loop is stable or user expands scope.",
+    "currentHardLimit": "User has explicitly authorized autonomous progression through M1-M5. Continue sequentially after each milestone passes review and tests; pause only for defined stop conditions or user decisions.",
     "canCommit": true,
     "canPush": true,
     "canMergeMain": false,

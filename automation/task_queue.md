@@ -61,20 +61,20 @@
   - 输出：测试补全、文档更新、端到端手测记录。
   - 验收：无 Agent 蓝图闭环完整可用，提交推送。
 
-## Milestone 3：Settings + Secrets（暂不自动执行）
+## Milestone 3：Settings + Secrets（M2 验收通过后自动执行）
 
 - [ ] M3-T1：App settings 基础结构
 - [ ] M3-T2：system/light/dark 主题迁移
 - [ ] M3-T3：Provider/Model 配置骨架
 - [ ] M3-T4：SecretStore/API key 存储策略
 
-## Milestone 4：Agent Protocol + Mock Agent（暂不自动执行）
+## Milestone 4：Agent Protocol + Mock Agent（M3 验收通过后自动执行）
 
 - [ ] M4-T1：AgentResponse parser/schema
 - [ ] M4-T2：mock provider
 - [ ] M4-T3：Agent 面板基础流
 
-## Milestone 5：真实 Provider（暂不自动执行）
+## Milestone 5：真实 Provider（M4 验收通过后自动执行；真实付费调用策略遇到不确定时暂停询问）
 
 - [ ] M5-T1：OpenAI-compatible adapter
 - [ ] M5-T2：DeepSeek preset

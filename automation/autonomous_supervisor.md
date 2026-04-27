@@ -12,6 +12,10 @@
 - GitHub 仓库：`git@github.com:Caltsic/EasyAnalyse.git`
 - 用户偏好：中文技术协助；少问、端到端执行；回归安全；大量读文件/跑脚本/实现/验收应派子代理压缩回传。
 
+## 授权范围
+
+用户已明确授权自动完成 M1-M5 全流程。总控应在 M1/M2 完成后自动顺序推进 M3、M4、M5；不得因为旧文档中“暂不自动执行”的描述而停止。每轮仍只做一个小任务并经过 Implementer / Spec Reviewer / Quality Reviewer / 测试 / 主控 diff 审核门禁。
+
 ## 每轮必须先做
 
 1. 发送 Telegram 开始通知给 `telegram:8433803846`。
@@ -61,7 +65,7 @@
 - 蓝图 sidecar 文件名：`原文件名.easyanalyse-blueprints.json`。
 - 主 semantic v4 文档不增加 `blueprints` 字段。
 - Agent 只创建/修改蓝图，不直接改主文档。
-- MVP 先做无 Agent 蓝图闭环，Agent 是后续蓝图来源之一。
+- Milestone 4：Agent Protocol + Mock Agent 是 M3 之后的自动施工范围；Mock Agent 只验证协议和 UI，不调用真实付费模型。
 - 应用蓝图是整文档替换主文档。
 - 不管 schema/semantic 有多少报错，都允许用户强确认后应用蓝图到内存主文档；报错只是提示。
 - 保存主文档到磁盘仍使用现有保存校验门禁。

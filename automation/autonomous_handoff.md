@@ -4,12 +4,15 @@
 
 在 `agent` 分支上落地 EasyAnalyse 桌面版蓝图系统，并在蓝图闭环稳定后再接入内置 Agent。
 
-当前阶段只授权自动推进：
+当前已授权自动顺序推进：
 
 - Milestone 1：Blueprint Core
 - Milestone 2：Blueprint UI 闭环
+- Milestone 3：Settings + Secrets
+- Milestone 4：Agent Protocol + Mock Agent
+- Milestone 5：真实 Provider
 
-Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
+执行方式：仍然每轮只做一个可验证小任务；M1/M2 完成后自动进入 M3，再进入 M4/M5。只有遇到 supervisor 定义的停止条件、测试连续失败、需要产品决策或高风险权限升级时才暂停询问用户。
 
 ## 最高优先文档
 
@@ -85,7 +88,9 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
 
 - 报错不阻止蓝图应用；应用确认只提示风险。
 - 保存到磁盘仍走现有严格校验。
-- 不要实现 Agent/Provider/API key，直到 M1/M2 完成。
+- M2-T6 完成后不要停在蓝图闭环；继续自动进入 M3 Settings + Secrets。
+- M3 完成后进入 M4 Mock Agent；M4 完成后进入 M5 真实 Provider。
+- M5 可以实现 provider adapter 与配置测试；如果涉及默认真实付费调用、API key 存储降级、或需要用户真实密钥，必须暂停询问。
 - 不要把蓝图写进主 document。
 - 不要使用旧的 `status='applied'` 模型。
 - Canvas 预览优先使用纯渲染层 `CircuitCanvasRenderer`，不要只靠 readOnly guard 掩盖写路径。

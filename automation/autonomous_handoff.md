@@ -27,9 +27,9 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知提交：`633efde`
-- 当前任务：`M1-T4 blueprintStore`
-- 当前阻塞：无。M1-T3 前端验证已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`；Rust 单元测试已新增但当前环境缺少 `cargo`，无法执行 `cargo test`。
+- 最近已知提交：`a50a90e`
+- 当前任务：`M1-T5 M1 集成验收`
+- 当前阻塞：无。M1-T4 前端验证已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 
 ## 最近完成
 
@@ -56,15 +56,24 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
   - 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
   - 替代验证：Rust 单元测试已新增，但当前环境 `cargo: command not found`，未能执行 `cargo test`。
 
+
+- M1-T4 已完成：新增 `blueprintStore` 与竞态安全测试。
+  - `easyanalyse-desktop/src/store/blueprintStore.ts` 导出 `useBlueprintStore` / `BlueprintState`。
+  - 支持 load/save workspace、未保存主文档 in-memory workspace、创建主文档快照、选择/归档/软删除、validateBlueprint、markApplied。
+  - `blueprintStore.dirty` 与 `editorStore.dirty` 隔离；实现不 import `editorStore`。
+  - sidecar 加载失败记录 `loadError` 并创建可继续使用的空 workspace；save/validation 错误分别记录 `saveError` / `validationError`。
+  - invalid 校验只写 `validationState='invalid'` 与 report，不丢弃蓝图；没有 `status='applied'`。
+  - 测试覆盖 async 竞态：overlapping load、save while mutating、validation stale result、concurrent createSnapshot lost update。
+  - 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 ## 下一轮建议
 
-执行 `M1-T4`：blueprintStore。
+执行 `M1-T5`：M1 集成验收。
 
 建议派子代理：
 
-1. Implementer：新增 `easyanalyse-desktop/src/store/blueprintStore.ts`，连接 M1-T1/T2/T3，支持 load/save workspace、dirty 隔离、创建主文档快照、选择/归档/软删蓝图。
-2. Spec Reviewer：检查 `blueprintStore.dirty` 不影响 `editorStore.dirty`、未保存主文档 `sidecarPath=null` 只保留内存、sidecar 加载失败不影响主文档、validation invalid 不丢弃蓝图。
-3. Quality Reviewer：检查不 import/use `editorStore` mutation、不改变主文档保存门禁、对 `loadBlueprintWorkspaceFromPath` 的 `unknown` 做 normalize 后再信任。
+1. Implementer：补 M1 端到端集成验收测试/文档，串起 hash、workspace、Tauri sidecar wrapper、blueprintStore。
+2. Spec Reviewer：检查 M1-01 至 M1-10 硬测试矩阵是否覆盖；确认主文档 JSON 不出现 `blueprints`。
+3. Quality Reviewer：检查 M1 API 命名与 M2 UI 接入风险，尤其 dirty 隔离和 sidecar 错误恢复。
 
 ## 重要提醒
 
@@ -87,4 +96,5 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
 - M1-T1 任务提交：`c4a435d feat: add blueprint document hashing types`
 - M1-T2 任务提交：`a343374 feat: add blueprint workspace utilities`
 - M1-T3 任务提交：`633efde`
-- 后续 handoff/state 更新可能在单独提交中记录。
+- M1-T3 handoff 更新提交：`ea75624`
+- M1-T4 任务提交：`a50a90e`。

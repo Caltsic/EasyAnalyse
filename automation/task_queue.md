@@ -22,7 +22,7 @@
   - 验收：sidecar 损坏不阻止主文档打开；未保存主文档时蓝图只在内存；主文档 JSON 不出现 blueprints。
   - 禁止：改变主文档保存语义。
 
-- [ ] **M1-T4：blueprintStore**
+- [x] **M1-T4：blueprintStore**
   - 输出：`src/store/blueprintStore.ts`，从当前主文档创建蓝图快照、加载/保存 workspace、dirty 状态隔离。
   - 验收：blueprintStore.dirty 不影响 editorStore.dirty；创建快照不修改主文档；sidecar 保存/加载通过测试。
   - 禁止：接 UI 大重构、Agent、Provider。
@@ -114,3 +114,14 @@
 - 覆盖：缺失 sidecar 返回 None/null、损坏 JSON 返回可读错误、非 `.easyanalyse-blueprints.json` 路径拒绝、pretty JSON 保存、允许语义 invalid 蓝图 JSON roundtrip。
 - 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 - 替代验证：已新增 Rust 单元测试，但当前环境缺少 `cargo`，`cd easyanalyse-desktop/src-tauri && cargo test` 无法运行（`cargo: command not found`）。
+
+
+### M1-T4 完成记录
+
+- 完成时间：2026-04-27 08:00 +0800
+- 新增：`easyanalyse-desktop/src/store/blueprintStore.ts`
+- 新增：`easyanalyse-desktop/src/store/blueprintStore.test.ts`
+- 实现：蓝图工作区 Zustand store；支持主文档加载 sidecar/in-memory workspace、保存 workspace、创建主文档快照、选择/归档/软删除、校验并记录 valid/invalid、记录 appliedInfo。
+- 覆盖：未保存主文档 `sidecarPath=null`、sidecar load/save、sidecar 加载失败可恢复、`blueprintStore.dirty` 与 `editorStore.dirty` 隔离、invalid 校验不丢弃蓝图、异步 load/save/validate/createSnapshot 竞态防护、缺失 id 操作 no-op。
+- 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- 任务提交：`a50a90e`。

@@ -10,6 +10,7 @@ interface BlueprintCardProps {
   validating?: boolean
   onSelect: () => void
   onValidate: () => void
+  onApply: () => void
   onArchive: () => void
   onDelete: () => void
 }
@@ -30,6 +31,7 @@ export function BlueprintCard({
   validating = false,
   onSelect,
   onValidate,
+  onApply,
   onArchive,
   onDelete,
 }: BlueprintCardProps) {
@@ -85,6 +87,9 @@ export function BlueprintCard({
         </button>
         <button className="ghost-button" type="button" onClick={onValidate} disabled={actionsDisabled || validating || isDeleted}>
           {validating ? 'Validating' : 'Validate'}
+        </button>
+        <button className="ghost-button" type="button" onClick={onApply} disabled={actionsDisabled || isDeleted}>
+          Apply
         </button>
         <button className="ghost-button" type="button" onClick={onArchive} disabled={actionsDisabled || !canArchive}>
           Archive

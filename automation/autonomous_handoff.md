@@ -30,8 +30,8 @@
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知任务提交：`9bfcefc`
-- 当前任务：`M2-T5 校验提示、摘要 diff、ApplyBlueprintDialog`
+- 最近已知任务提交：`049e28d`
+- 当前任务：`M2-T6 M2 集成验收与回归`
 - 当前阻塞：无。M2-T4 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。桌面编译/运行环境已补齐：Rust/Cargo、Tauri Linux 依赖、xvfb/dbus-x11 已安装；`npm run build`、`cargo test`、`npm run tauri:build` 均已通过，release binary 已用 xvfb 启动验证。环境/脚本修复提交：`1bc5dce`。
 
 ## 最近完成
@@ -65,24 +65,31 @@
   - Review：Spec Reviewer PASS；Quality Reviewer 三轮修复后 APPROVED。
   - 验证通过：`npm test -- --run`（13 files / 70 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
   - 任务提交：`9bfcefc`。
+- M2-T5 已完成：校验提示、摘要 diff、ApplyBlueprintDialog。
+  - 新增 `blueprintDiff.ts`，覆盖 device / terminal / label / view / document meta / raw JSON 摘要。
+  - 新增 `ApplyBlueprintDialog`，在 `BlueprintsPanel` 中接入 Apply；valid/invalid/unknown 都可进入确认，invalid/unknown 强提示但不阻止，base hash mismatch 显示整文档替换/no merge 风险。
+  - 确认后调用 `editorStore.applyBlueprintDocument` 替换内存主文档并 dirty=true，再 `blueprintStore.markApplied` 记录 `appliedInfo`；不直接保存主文档或 sidecar，不使用 `status='applied'`。
+  - 质量修复：确认弹窗默认焦点在取消按钮；捕获危险快捷键；Tab focus trap；应用中禁止 backdrop 关闭；弹窗打开时禁用蓝图卡片后台操作。
+  - 覆盖测试：valid/invalid/unknown 确认、强提示、base mismatch、diff terminal changed、appliedInfo/status、dirty+undo、键盘/焦点隔离。
+  - Review：Spec Reviewer 修复后 PASS；Quality Reviewer 修复后 APPROVED。
+  - 验证通过：`npm test -- --run`（14 files / 82 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+  - 任务提交：`049e28d`。
 
 ## 下一轮建议
 
-执行 `M2-T5`：校验提示、摘要 diff、ApplyBlueprintDialog。
+执行 `M2-T6`：M2 集成验收与回归。
 
 建议派子代理：
 
-1. Implementer：新增/完善 `lib/blueprintDiff.ts`、`components/blueprints/ApplyBlueprintDialog.tsx`，并接入 `BlueprintsPanel` 详情/操作区。
-2. Spec Reviewer：检查 valid/invalid/unknown 都可进入确认；invalid/unknown 只强提示、不阻止；确认后应用到内存主文档，不直接保存磁盘。
-3. Quality Reviewer：重点审查全局快捷键/弹窗焦点隔离、base hash mismatch 风险提示、`appliedInfo` 与 runtime `isCurrentMainDocument` 语义、dirty+undo 行为。
+1. Implementer：补齐 M2 端到端/集成验收测试与必要文档/手测记录，重点覆盖人工蓝图闭环：创建快照 -> sidecar -> 列表 -> 预览 -> 校验 -> diff -> 强确认应用 -> dirty + undo。
+2. Spec Reviewer：检查 M2 全部验收矩阵是否满足，尤其 invalid/unknown 可应用、保存磁盘仍走门禁、预览不改主文档、`appliedInfo` 与 runtime `isCurrentMainDocument` 语义。
+3. Quality Reviewer：重点审查 M2 各组件集成、一致性文案、全局快捷键/弹窗焦点隔离、异步 store 竞态与回归测试充分性。
 
 建议验收测试：
 
-- 校验报告展示 schema/semantic issues 与 warning/error 数量。
-- diff 摘要能显示 device/label/view/meta 级变化。
-- valid/invalid/unknown 蓝图都可进入确认；invalid/unknown 必须强提示。
-- 确认后调用 `editorStore.applyBlueprintDocument`，主文档 dirty=true 且 undo 可恢复。
-- `blueprintStore.markApplied` 更新 `appliedInfo`，但不使用 `status='applied'`。
+- 全量 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- 需要时补 E2E/集成测试或手测记录，证明无 Agent 蓝图闭环完整可用。
+- M2-T6 完成后自动进入 M3 Settings + Secrets，不要停止。
 
 ## 重要提醒
 
@@ -115,3 +122,4 @@
 - M2-T2 任务提交：`f534770`
 - M2-T3 任务提交：`e211bf1`
 - M2-T4 任务提交：`9bfcefc`
+- M2-T5 任务提交：`049e28d`

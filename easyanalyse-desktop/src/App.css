@@ -908,6 +908,71 @@
   color: var(--danger);
 }
 
+.apply-blueprint-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(0 0 0 / 42%);
+}
+
+.apply-blueprint-dialog {
+  width: min(760px, 100%);
+  max-height: min(86vh, 820px);
+  overflow: auto;
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-bg);
+  box-shadow: 0 18px 60px rgb(0 0 0 / 30%);
+}
+
+.apply-blueprint-dialog__header,
+.apply-blueprint-dialog__actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.apply-blueprint-dialog__header h3,
+.apply-blueprint-dialog__section h4 {
+  margin: 0;
+}
+
+.apply-blueprint-dialog__section {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--control-bg-soft);
+}
+
+.apply-blueprint-dialog__section ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.apply-blueprint-dialog__section pre {
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.apply-blueprint-dialog__risk {
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  border-radius: 8px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
 @media (orientation: landscape) and (max-height: 760px) {
   .viewer-shell__content {
     grid-template-rows: auto minmax(0, 1fr);

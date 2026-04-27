@@ -53,7 +53,7 @@
   - 输出：蓝图列表、创建快照、选择蓝图、保存/加载状态展示。
   - 验收：可人工创建多个蓝图；可看到 validationState/appliedInfo/current 标记。
 
-- [ ] **M2-T5：校验提示、摘要 diff、ApplyBlueprintDialog**
+- [x] **M2-T5：校验提示、摘要 diff、ApplyBlueprintDialog**
   - 输出：校验报告展示、diff 摘要、应用确认弹窗。
   - 验收：valid/invalid/unknown 都可进入确认；invalid/unknown 强提示；确认后应用到内存主文档。
 
@@ -193,4 +193,15 @@ M5 真实调用约束：用户已提供项目专用 DeepSeek API key；自动化
 - 已修复：`npm run build` 的 icon 生成脚本路径已改为跨 Linux 可用的 `python3 ../scripts/generate_app_icons.py`（环境修复提交 `1bc5dce`）。
 - Spec Reviewer：PASS；Quality Reviewer：三轮修复后 APPROVED。
 - 任务提交：`9bfcefc feat: add blueprint sidebar panel`。
+
+### M2-T5 完成记录
+
+- 完成时间：2026-04-27 23:19 +0800
+- 新增：`easyanalyse-desktop/src/lib/blueprintDiff.ts` 与 `blueprintDiff.test.ts`，提供 device / terminal / label / view / document meta / raw JSON 摘要 diff。
+- 新增：`easyanalyse-desktop/src/components/blueprints/ApplyBlueprintDialog.tsx`，展示校验报告、diff 摘要、base hash mismatch 整文档替换风险、invalid/unknown 强提示与二次确认。
+- 修改：`BlueprintsPanel` / `BlueprintCard` / `App.css`，接入 Apply 操作；确认后调用 `editorStore.applyBlueprintDocument`，再通过 `blueprintStore.markApplied` 写入 `appliedInfo`；不直接保存磁盘、不使用 `status='applied'`。
+- 质量修复：应用弹窗默认聚焦取消按钮而非破坏性确认；捕获并隔离 Enter/Space/Delete/Escape 等快捷键；Tab focus trap；应用中禁止 backdrop 关闭；弹窗打开时禁用蓝图卡片后台操作。
+- 覆盖：valid/invalid/unknown 均可进入确认，invalid/unknown 强提示，base hash mismatch 提示，确认后主文档 dirty 且 undo 可恢复，`appliedInfo` 保留且生命周期不变，diff 覆盖 terminal changed，弹窗键盘/焦点隔离。
+- Review：Spec Reviewer 首轮发现 terminal changed 展示与 valid/unknown 测试不足，修复后 PASS；Quality Reviewer 首轮发现破坏性默认焦点、focus trap、backdrop applying 竞态，修复后 APPROVED。
+- 验证通过：`npm test -- --run`（14 files / 82 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 

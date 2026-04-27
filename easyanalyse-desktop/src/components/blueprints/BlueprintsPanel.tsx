@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { hashDocument } from '../../lib/documentHash'
 import { useBlueprintStore } from '../../store/blueprintStore'
 import { useEditorStore } from '../../store/editorStore'
+import type { BlueprintRecord } from '../../types/blueprint'
+import { ApplyBlueprintDialog } from './ApplyBlueprintDialog'
 import { BlueprintCard } from './BlueprintCard'
 
 function getErrorMessage(error: unknown) {
@@ -26,6 +28,8 @@ export function BlueprintsPanel() {
   const archiveBlueprint = useBlueprintStore((state) => state.archiveBlueprint)
   const deleteBlueprint = useBlueprintStore((state) => state.deleteBlueprint)
   const selectBlueprint = useBlueprintStore((state) => state.selectBlueprint)
+  const markApplied = useBlueprintStore((state) => state.markApplied)
+  const applyBlueprintDocument = useEditorStore((state) => state.applyBlueprintDocument)
   const [busyMessage, setBusyMessage] = useState<string | null>(null)
   const [topActionBusy, setTopActionBusy] = useState(false)
   const activeTopActionTokenRef = useRef<number | null>(null)
@@ -34,6 +38,8 @@ export function BlueprintsPanel() {
   const [validatingBlueprintIds, setValidatingBlueprintIds] = useState<Set<string>>(() => new Set())
   const [actionError, setActionError] = useState<string | null>(null)
   const [currentMainHash, setCurrentMainHash] = useState<string | null>(workspace?.mainDocument?.hash ?? null)
+  const [pendingApplyRecord, setPendingApplyRecord] = useState<BlueprintRecord | null>(null)
+  const [applyBusy, setApplyBusy] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -54,6 +60,8 @@ export function BlueprintsPanel() {
   }, [document])
 
   const blueprints = useMemo(() => workspace?.blueprints ?? [], [workspace])
+  const applyModalOpen = pendingApplyRecord !== null
+  const blueprintActionsDisabled = topActionBusy || applyModalOpen || applyBusy
 
   const runTopAction = async (message: string, action: () => Promise<void>) => {
     if (activeTopActionTokenRef.current !== null) {
@@ -99,6 +107,9 @@ export function BlueprintsPanel() {
   }
 
   const handleValidate = async (id: string) => {
+    if (applyModalOpen || applyBusy) {
+      return
+    }
     if (validatingBlueprintIdsRef.current.has(id)) {
       return
     }
@@ -116,6 +127,29 @@ export function BlueprintsPanel() {
         validatingBlueprintIdsRef.current = next
         setValidatingBlueprintIds(next)
       }
+    }
+  }
+
+  const handleConfirmApply = async () => {
+    if (pendingApplyRecord === null || applyBusy) {
+      return
+    }
+    setApplyBusy(true)
+    try {
+      setActionError(null)
+      applyBlueprintDocument(pendingApplyRecord.document)
+      const appliedToMainDocumentHash = await hashDocument(useEditorStore.getState().document)
+      markApplied(pendingApplyRecord.id, {
+        appliedAt: new Date().toISOString(),
+        sourceBlueprintDocumentHash: pendingApplyRecord.documentHash,
+        appliedToMainDocumentHash,
+      })
+      setCurrentMainHash(appliedToMainDocumentHash)
+      setPendingApplyRecord(null)
+    } catch (error) {
+      setActionError(getErrorMessage(error))
+    } finally {
+      setApplyBusy(false)
     }
   }
 
@@ -164,15 +198,46 @@ export function BlueprintsPanel() {
               record={record}
               currentMainHash={currentMainHash}
               selected={record.id === selectedBlueprintId}
-              actionsDisabled={topActionBusy}
+              actionsDisabled={blueprintActionsDisabled}
               validating={validatingBlueprintIds.has(record.id)}
-              onSelect={() => selectBlueprint(record.id)}
+              onSelect={() => {
+                if (!blueprintActionsDisabled) {
+                  selectBlueprint(record.id)
+                }
+              }}
               onValidate={() => void handleValidate(record.id)}
-              onArchive={() => archiveBlueprint(record.id)}
-              onDelete={() => deleteBlueprint(record.id)}
+              onApply={() => {
+                if (!blueprintActionsDisabled) {
+                  setPendingApplyRecord(record)
+                }
+              }}
+              onArchive={() => {
+                if (!blueprintActionsDisabled) {
+                  archiveBlueprint(record.id)
+                }
+              }}
+              onDelete={() => {
+                if (!blueprintActionsDisabled) {
+                  deleteBlueprint(record.id)
+                }
+              }}
             />
           ))}
         </div>
+      )}
+      {pendingApplyRecord && (
+        <ApplyBlueprintDialog
+          record={pendingApplyRecord}
+          mainDocument={document}
+          currentMainHash={currentMainHash}
+          applying={applyBusy}
+          onCancel={() => {
+            if (!applyBusy) {
+              setPendingApplyRecord(null)
+            }
+          }}
+          onConfirm={() => void handleConfirmApply()}
+        />
       )}
     </section>
   )

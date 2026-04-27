@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from 'react'
+import { act, type ComponentProps } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DOCUMENT_HASH_ALGORITHM, hashDocument } from '../../lib/documentHash'
@@ -8,6 +8,7 @@ import { useBlueprintStore } from '../../store/blueprintStore'
 import { useEditorStore } from '../../store/editorStore'
 import type { BlueprintRecord } from '../../types/blueprint'
 import type { DocumentFile } from '../../types/document'
+import { ApplyBlueprintDialog } from './ApplyBlueprintDialog'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -85,6 +86,48 @@ function cardByTitle(host: ParentNode, title: string) {
   return Array.from(host.querySelectorAll('article')).find((card) => card.textContent?.includes(title))
 }
 
+async function createBlueprintRecord(overrides: Partial<BlueprintRecord> = {}): Promise<BlueprintRecord> {
+  const document = createDocument({ document: { ...createDocument().document, title: 'Blueprint Candidate' } })
+  return {
+    id: 'bp-modal-safety',
+    title: 'Modal safety blueprint',
+    lifecycleStatus: 'active',
+    validationState: 'valid',
+    validationReport: { detectedFormat: 'semantic-v4', schemaValid: true, semanticValid: true, issueCount: 0, issues: [] },
+    document,
+    documentHash: await hashDocument(document),
+    baseMainDocumentHash: await hashDocument(createDocument()),
+    source: 'manual_snapshot',
+    createdAt: '2026-04-27T02:00:00.000Z',
+    updatedAt: '2026-04-27T02:00:00.000Z',
+    ...overrides,
+  }
+}
+
+async function renderApplyDialog(props: Partial<ComponentProps<typeof ApplyBlueprintDialog>> = {}) {
+  const mainDocument = createDocument()
+  const record = props.record ?? await createBlueprintRecord()
+  const currentMainHash = props.currentMainHash ?? await hashDocument(mainDocument)
+  container = window.document.createElement('div')
+  window.document.body.appendChild(container)
+  root = createRoot(container)
+  const onCancel = props.onCancel ?? vi.fn()
+  const onConfirm = props.onConfirm ?? vi.fn()
+  await act(async () => {
+    root?.render(
+      <ApplyBlueprintDialog
+        record={record}
+        mainDocument={props.mainDocument ?? mainDocument}
+        currentMainHash={currentMainHash}
+        applying={props.applying ?? false}
+        onCancel={onCancel}
+        onConfirm={onConfirm}
+      />,
+    )
+  })
+  return { host: container, onCancel, onConfirm }
+}
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
   let reject!: (reason?: unknown) => void
@@ -109,6 +152,93 @@ beforeEach(() => {
 })
 
 describe('BlueprintsPanel', () => {
+  it('does not focus the destructive confirm action by default or apply from root Enter/Space', async () => {
+    const { host, onConfirm } = await renderApplyDialog()
+    const dialog = host.querySelector('[role="dialog"]') as HTMLElement
+    const confirmButton = firstButtonByText(host, 'Confirm apply') as HTMLButtonElement
+    const cancelButton = firstButtonByText(host, 'Cancel') as HTMLButtonElement
+
+    expect(window.document.activeElement).not.toBe(confirmButton)
+    expect(window.document.activeElement).toBe(cancelButton)
+
+    await act(async () => {
+      dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      dialog.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
+    })
+
+    expect(onConfirm).not.toHaveBeenCalled()
+  })
+
+  it('traps Tab focus inside the apply dialog controls', async () => {
+    const { host } = await renderApplyDialog()
+    const closeButton = host.querySelector('[aria-label="Close apply blueprint dialog"]') as HTMLButtonElement
+    const confirmButton = firstButtonByText(host, 'Confirm apply') as HTMLButtonElement
+
+    confirmButton.focus()
+    await act(async () => {
+      confirmButton.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+    })
+    expect(window.document.activeElement).toBe(closeButton)
+
+    await act(async () => {
+      closeButton.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }))
+    })
+    expect(window.document.activeElement).toBe(confirmButton)
+  })
+
+  it('handles Escape locally when not applying and blocks backdrop cancellation while applying', async () => {
+    const documentKeydown = vi.fn()
+    window.document.addEventListener('keydown', documentKeydown)
+    const { host, onCancel } = await renderApplyDialog()
+    const dialog = host.querySelector('[role="dialog"]') as HTMLElement
+    await act(async () => {
+      dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(onCancel).toHaveBeenCalledTimes(1)
+    expect(documentKeydown).not.toHaveBeenCalled()
+    window.document.removeEventListener('keydown', documentKeydown)
+
+    act(() => root?.unmount())
+    container?.remove()
+    root = null
+    container = null
+
+    const applyingDialog = await renderApplyDialog({ applying: true })
+    await act(async () => {
+      applyingDialog.host.querySelector('.apply-blueprint-dialog__backdrop')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(applyingDialog.onCancel).not.toHaveBeenCalled()
+  })
+
+  it('disables background blueprint actions while an apply confirmation modal is open', async () => {
+    const main = createDocument()
+    const mainHash = await hashDocument(main)
+    const base = await createBlueprintRecord({ baseMainDocumentHash: mainHash })
+    resetStores(main)
+    useBlueprintStore.setState({
+      workspace: {
+        ...createEmptyBlueprintWorkspace(),
+        mainDocument: { documentId: main.document.id, hash: mainHash, hashAlgorithm: DOCUMENT_HASH_ALGORITHM },
+        blueprints: [
+          { ...base, id: 'bp-open', title: 'Open modal blueprint' },
+          { ...base, id: 'bp-background', title: 'Background blueprint' },
+        ],
+      },
+    })
+    const host = await renderPanel()
+
+    await act(async () => {
+      firstButtonByText(cardByTitle(host, 'Open modal blueprint')!, 'Apply')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const backgroundCard = cardByTitle(host, 'Background blueprint')!
+    expect((firstButtonByText(backgroundCard, 'Select') as HTMLButtonElement).disabled).toBe(true)
+    expect((firstButtonByText(backgroundCard, 'Validate') as HTMLButtonElement).disabled).toBe(true)
+    expect((firstButtonByText(backgroundCard, 'Apply') as HTMLButtonElement).disabled).toBe(true)
+    expect((firstButtonByText(backgroundCard, 'Archive') as HTMLButtonElement).disabled).toBe(true)
+    expect((firstButtonByText(backgroundCard, 'Delete') as HTMLButtonElement).disabled).toBe(true)
+  })
+
   it('shows empty in-memory sidecar state and creates a snapshot without changing the main document canonical hash', async () => {
     const document = createDocument()
     resetStores(document)
@@ -327,5 +457,220 @@ describe('BlueprintsPanel', () => {
 
     expect(host.textContent).toContain('Snapshots capture the current unsaved editor state')
     expect(host.textContent).toContain('Save the main document to enable a persistent sidecar path')
+  })
+
+  it('opens valid blueprint confirmation and renders non-label terminal changes in the diff summary', async () => {
+    const main = createDocument()
+    const blueprintDoc = createDocument({
+      devices: [
+        {
+          ...main.devices[0],
+          terminals: [
+            { ...main.devices[0].terminals[0], direction: 'output' },
+            main.devices[0].terminals[1],
+          ],
+        },
+      ],
+    })
+    const mainHash = await hashDocument(main)
+    const blueprintHash = await hashDocument(blueprintDoc)
+    resetStores(main)
+    useBlueprintStore.setState({
+      workspace: {
+        ...createEmptyBlueprintWorkspace(),
+        mainDocument: { documentId: main.document.id, hash: mainHash, hashAlgorithm: DOCUMENT_HASH_ALGORITHM },
+        blueprints: [{
+          id: 'bp-valid-terminal-change',
+          title: 'Valid terminal change blueprint',
+          lifecycleStatus: 'active',
+          validationState: 'valid',
+          validationReport: { detectedFormat: 'semantic-v4', schemaValid: true, semanticValid: true, issueCount: 0, issues: [] },
+          document: blueprintDoc,
+          documentHash: blueprintHash,
+          baseMainDocumentHash: mainHash,
+          source: 'manual_snapshot',
+          createdAt: '2026-04-27T02:00:00.000Z',
+          updatedAt: '2026-04-27T02:00:00.000Z',
+        }],
+      },
+    })
+    const host = await renderPanel()
+
+    await act(async () => {
+      firstButtonByText(cardByTitle(host, 'Valid terminal change blueprint')!, 'Apply')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const dialogText = host.querySelector('[role="dialog"]')?.textContent
+    expect(dialogText).toContain('Apply blueprint')
+    expect(dialogText).toContain('State: valid')
+    expect(dialogText).not.toContain('Strong risk warning')
+    expect(dialogText).toContain('Terminals: +0 / -0 / ~1 / label changes 0')
+    expect(dialogText).toContain('Changed terminals')
+    expect(dialogText).toContain('R1 / A')
+  })
+
+  it('opens unknown blueprint confirmation and shows a strong risk warning', async () => {
+    const main = createDocument()
+    const blueprintDoc = createDocument({ document: { ...main.document, title: 'Unknown Replacement' } })
+    const mainHash = await hashDocument(main)
+    const blueprintHash = await hashDocument(blueprintDoc)
+    resetStores(main)
+    useBlueprintStore.setState({
+      workspace: {
+        ...createEmptyBlueprintWorkspace(),
+        mainDocument: { documentId: main.document.id, hash: mainHash, hashAlgorithm: DOCUMENT_HASH_ALGORITHM },
+        blueprints: [{
+          id: 'bp-unknown-warning',
+          title: 'Unknown warning blueprint',
+          lifecycleStatus: 'active',
+          validationState: 'unknown',
+          document: blueprintDoc,
+          documentHash: blueprintHash,
+          baseMainDocumentHash: mainHash,
+          source: 'manual_snapshot',
+          createdAt: '2026-04-27T02:00:00.000Z',
+          updatedAt: '2026-04-27T02:00:00.000Z',
+        }],
+      },
+    })
+    const host = await renderPanel()
+
+    await act(async () => {
+      firstButtonByText(cardByTitle(host, 'Unknown warning blueprint')!, 'Apply')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const dialogText = host.querySelector('[role="dialog"]')?.textContent
+    expect(dialogText).toContain('Apply blueprint')
+    expect(dialogText).toContain('State: unknown')
+    expect(dialogText).toContain('Strong risk warning')
+    expect(dialogText).toContain('this blueprint is unknown')
+  })
+
+  it('opens confirmation and applies valid, invalid, and unknown blueprints without saving to disk', async () => {
+    const main = createDocument()
+    const blueprintDoc = createDocument({
+      document: { ...main.document, title: 'Blueprint Applied Title' },
+      devices: [...main.devices, { id: 'c1', name: 'C1', kind: 'capacitor', terminals: [] }],
+    })
+    const mainHash = await hashDocument(main)
+    const blueprintHash = await hashDocument(blueprintDoc)
+    const base: BlueprintRecord = {
+      id: 'bp-valid',
+      title: 'Valid apply blueprint',
+      lifecycleStatus: 'active',
+      validationState: 'valid',
+      validationReport: { detectedFormat: 'semantic-v4', schemaValid: true, semanticValid: true, issueCount: 0, issues: [] },
+      document: blueprintDoc,
+      documentHash: blueprintHash,
+      baseMainDocumentHash: mainHash,
+      source: 'manual_snapshot',
+      createdAt: '2026-04-27T02:00:00.000Z',
+      updatedAt: '2026-04-27T02:00:00.000Z',
+    }
+    const markApplied = vi.fn(useBlueprintStore.getState().markApplied)
+    const saveWorkspace = vi.fn(async () => undefined)
+    resetStores(main)
+    useBlueprintStore.setState({
+      saveWorkspace,
+      markApplied,
+      workspace: {
+        ...createEmptyBlueprintWorkspace(),
+        mainDocument: { documentId: main.document.id, hash: mainHash, hashAlgorithm: DOCUMENT_HASH_ALGORITHM },
+        blueprints: [
+          base,
+          {
+            ...base,
+            id: 'bp-invalid',
+            title: 'Invalid apply blueprint',
+            validationState: 'invalid',
+            validationReport: {
+              detectedFormat: 'semantic-v4',
+              schemaValid: false,
+              semanticValid: false,
+              issueCount: 2,
+              issues: [
+                { severity: 'error', code: 'E_SCHEMA', message: 'schema issue' },
+                { severity: 'warning', code: 'W_SEM', message: 'semantic warning' },
+              ],
+            },
+          },
+          { ...base, id: 'bp-unknown', title: 'Unknown apply blueprint', validationState: 'unknown', validationReport: undefined },
+        ],
+      },
+    })
+    const applyBlueprintDocument = vi.spyOn(useEditorStore.getState(), 'applyBlueprintDocument')
+    const host = await renderPanel()
+
+    expect(firstButtonByText(cardByTitle(host, 'Valid apply blueprint')!, 'Apply')).toBeTruthy()
+    expect(firstButtonByText(cardByTitle(host, 'Invalid apply blueprint')!, 'Apply')).toBeTruthy()
+    expect(firstButtonByText(cardByTitle(host, 'Unknown apply blueprint')!, 'Apply')).toBeTruthy()
+
+    await act(async () => {
+      firstButtonByText(cardByTitle(host, 'Invalid apply blueprint')!, 'Apply')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(host.querySelector('[role="dialog"]')?.textContent).toContain('Apply blueprint')
+    expect(host.textContent).toContain('Errors: 1')
+    expect(host.textContent).toContain('Warnings: 1')
+    expect(host.textContent).toContain('Strong risk warning')
+    expect(host.textContent).toContain('save to disk may fail')
+    expect(host.textContent).toContain('Devices: +1 / -0 / ~0')
+
+    await act(async () => {
+      firstButtonByText(host, 'Confirm apply')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await new Promise((resolve) => window.setTimeout(resolve, 0))
+    })
+
+    expect(applyBlueprintDocument).toHaveBeenCalledWith(blueprintDoc)
+    expect(markApplied).toHaveBeenCalledWith('bp-invalid', expect.objectContaining({
+      sourceBlueprintDocumentHash: blueprintHash,
+      appliedToMainDocumentHash: expect.stringMatching(/^easyanalyse-document-canonical-sha256-v1:/),
+    }))
+    const appliedInfo = markApplied.mock.calls[0]?.[1]
+    expect(appliedInfo?.appliedToMainDocumentHash).toBe(await hashDocument(useEditorStore.getState().document))
+    expect(saveWorkspace).not.toHaveBeenCalled()
+    expect(useEditorStore.getState().document.document.title).toBe('Blueprint Applied Title')
+    expect(useEditorStore.getState().dirty).toBe(true)
+    const appliedRecord = useBlueprintStore.getState().workspace?.blueprints.find((record) => record.id === 'bp-invalid')
+    expect(appliedRecord?.lifecycleStatus).toBe('active')
+    expect(appliedRecord).not.toHaveProperty('status', 'applied')
+    await act(async () => {
+      useEditorStore.getState().undo()
+      await new Promise((resolve) => window.setTimeout(resolve, 0))
+    })
+    expect(useEditorStore.getState().document.document.title).toBe('UI Reference Circuit')
+  })
+
+  it('warns about whole-document replacement when the base main document hash mismatches', async () => {
+    const main = createDocument()
+    const blueprintDoc = createDocument({ document: { ...main.document, title: 'Replacement' } })
+    const blueprintHash = await hashDocument(blueprintDoc)
+    resetStores(main)
+    useBlueprintStore.setState({
+      workspace: {
+        ...createEmptyBlueprintWorkspace(),
+        mainDocument: { documentId: main.document.id, hash: await hashDocument(main), hashAlgorithm: DOCUMENT_HASH_ALGORITHM },
+        blueprints: [{
+          id: 'bp-mismatch',
+          title: 'Mismatched blueprint',
+          lifecycleStatus: 'active',
+          validationState: 'unknown',
+          document: blueprintDoc,
+          documentHash: blueprintHash,
+          baseMainDocumentHash: 'different-base-hash',
+          source: 'manual_snapshot',
+          createdAt: '2026-04-27T02:00:00.000Z',
+          updatedAt: '2026-04-27T02:00:00.000Z',
+        }],
+      },
+    })
+    const host = await renderPanel()
+
+    await act(async () => {
+      firstButtonByText(cardByTitle(host, 'Mismatched blueprint')!, 'Apply')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(host.querySelector('[role="dialog"]')?.textContent).toContain('whole-document replacement')
+    expect(host.querySelector('[role="dialog"]')?.textContent).toContain('no merge will be attempted')
   })
 })

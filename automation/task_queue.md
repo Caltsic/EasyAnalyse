@@ -150,4 +150,4 @@
 - 覆盖：apply 后 dirty/history/future/临时态清理、不写磁盘、undo/redo、invalid 蓝图可应用、stale validation、pending open stale result。
 - 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 - Spec Reviewer：PASS；Quality Reviewer：APPROVED；Final Integration Reviewer：PASS。
-- 任务提交：待提交。
+- 任务提交：`cda2c2a`。

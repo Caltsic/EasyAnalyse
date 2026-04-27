@@ -27,7 +27,7 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知任务提交：待提交
+- 最近已知任务提交：`cda2c2a`
 - 当前任务：`M2-T2 抽取 CircuitCanvasRenderer`
 - 当前阻塞：无。M2-T1 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 
@@ -79,4 +79,4 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
 - M1-T3 handoff 更新提交：`ea75624`
 - M1-T4 任务提交：`b1a984f`
 - M1-T5 任务提交：`d54041a`
-- M2-T1 任务提交：待提交
+- M2-T1 任务提交：`cda2c2a`

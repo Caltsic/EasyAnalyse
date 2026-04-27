@@ -65,12 +65,20 @@ describe('settings store storage warnings', () => {
     expect(persistedProvider).not.toHaveProperty(strippedKeyField)
   })
 
-  it('edits, deletes, and normalizes provider/model selection fallback', () => {
+  it('edits, deletes, cleans associated secret refs, and normalizes provider/model selection fallback', async () => {
+    const deletedRefs: string[] = []
+    const secretStore = {
+      deleteSecret: async (ref: string) => {
+        deletedRefs.push(ref)
+        return { deleted: true }
+      },
+    }
+
     useSettingsStore.getState().replaceSettings({
       agent: {
         providers: [
-          { id: 'p1', name: 'Provider 1', kind: 'deepseek', baseUrl: 'https://deepseek.invalid', models: ['chat'], defaultModel: 'chat' },
-          { id: 'p2', name: 'Provider 2', kind: 'anthropic', baseUrl: 'https://anthropic.invalid', models: ['claude-a', 'claude-b'] },
+          { id: 'p1', name: 'Provider 1', kind: 'deepseek', baseUrl: 'https://deepseek.invalid', models: ['chat'], defaultModel: 'chat', apiKeyRef: 'secret-ref:p1' },
+          { id: 'p2', name: 'Provider 2', kind: 'anthropic', baseUrl: 'https://anthropic.invalid', models: ['claude-a', 'claude-b'], apiKeyRef: 'secret-ref:p2' },
         ],
         selectedProviderId: 'p2',
         selectedModelId: 'claude-b',
@@ -92,12 +100,98 @@ describe('settings store storage warnings', () => {
     expect(useSettingsStore.getState().settings.agent.selectedProviderId).toBe('p2')
     expect(useSettingsStore.getState().settings.agent.selectedModelId).toBe('claude-c')
 
-    useSettingsStore.getState().deleteProvider('p2', null)
+    await useSettingsStore.getState().deleteProvider('p2', null, secretStore)
+    expect(deletedRefs).toEqual(['secret-ref:p2'])
     expect(useSettingsStore.getState().settings.agent.providers.map((provider) => provider.id)).toEqual(['p1'])
     expect(useSettingsStore.getState().settings.agent.selectedProviderId).toBe('p1')
     expect(useSettingsStore.getState().settings.agent.selectedModelId).toBe('chat')
 
-    useSettingsStore.getState().deleteProvider('p1', null)
+    await useSettingsStore.getState().deleteProvider('p1', null, secretStore)
+    expect(deletedRefs).toEqual(['secret-ref:p2', 'secret-ref:p1'])
     expect(useSettingsStore.getState().settings.agent).toEqual({ providers: [] })
+  })
+
+  it('clears only a provider apiKeyRef and deletes the secret ref while preserving metadata', async () => {
+    const deletedRefs: string[] = []
+    const secretStore = {
+      deleteSecret: async (ref: string) => {
+        deletedRefs.push(ref)
+        return { deleted: true }
+      },
+    }
+
+    useSettingsStore.getState().replaceSettings({
+      agent: {
+        providers: [
+          { id: 'p1', name: 'Provider 1', kind: 'deepseek', baseUrl: 'https://deepseek.invalid', models: ['chat'], defaultModel: 'chat', apiKeyRef: 'secret-ref:p1' },
+        ],
+        selectedProviderId: 'p1',
+        selectedModelId: 'chat',
+      },
+    }, null)
+
+    await useSettingsStore.getState().clearProviderApiKey('p1', null, secretStore)
+
+    expect(deletedRefs).toEqual(['secret-ref:p1'])
+    expect(useSettingsStore.getState().settings.agent.providers).toEqual([
+      { id: 'p1', name: 'Provider 1', kind: 'deepseek', baseUrl: 'https://deepseek.invalid', models: ['chat'], defaultModel: 'chat' },
+    ])
+    expect(useSettingsStore.getState().settings.agent.selectedProviderId).toBe('p1')
+    expect(useSettingsStore.getState().settings.agent.selectedModelId).toBe('chat')
+  })
+
+  it('does not delete provider secrets when settings persistence throws', async () => {
+    const deletedRefs: string[] = []
+    const storage: AppSettingsStorage = {
+      load: () => ({ settings: DEFAULT_APP_SETTINGS, warnings: [] }),
+      save: () => {
+        throw new Error('persist failed')
+      },
+      clear: () => ({ settings: DEFAULT_APP_SETTINGS, warnings: [] }),
+    }
+    useSettingsStore.getState().replaceSettings({
+      agent: {
+        providers: [
+          { id: 'p1', name: 'Provider 1', kind: 'deepseek', baseUrl: 'https://deepseek.invalid', models: ['chat'], apiKeyRef: 'secret-ref:p1' },
+        ],
+        selectedProviderId: 'p1',
+        selectedModelId: 'chat',
+      },
+    }, null)
+
+    await expect(useSettingsStore.getState().clearProviderApiKey('p1', storage, {
+      deleteSecret: async (ref: string) => {
+        deletedRefs.push(ref)
+        return { deleted: true }
+      },
+    })).rejects.toThrow('persist failed')
+
+    expect(deletedRefs).toEqual([])
+    expect(useSettingsStore.getState().settings.agent.providers[0].apiKeyRef).toBe('secret-ref:p1')
+  })
+
+  it('restores ordinary settings when secret deletion fails after clear/delete', async () => {
+    const failingSecretStore = {
+      deleteSecret: async () => {
+        throw new Error('secret delete failed')
+      },
+    }
+    useSettingsStore.getState().replaceSettings({
+      agent: {
+        providers: [
+          { id: 'p1', name: 'Provider 1', kind: 'deepseek', baseUrl: 'https://deepseek.invalid', models: ['chat'], apiKeyRef: 'secret-ref:p1' },
+          { id: 'p2', name: 'Provider 2', kind: 'anthropic', baseUrl: 'https://anthropic.invalid', models: ['claude'], apiKeyRef: 'secret-ref:p2' },
+        ],
+        selectedProviderId: 'p1',
+        selectedModelId: 'chat',
+      },
+    }, null)
+
+    await expect(useSettingsStore.getState().clearProviderApiKey('p1', null, failingSecretStore)).rejects.toThrow('secret delete failed')
+    expect(useSettingsStore.getState().settings.agent.providers.find((provider) => provider.id === 'p1')?.apiKeyRef).toBe('secret-ref:p1')
+
+    await expect(useSettingsStore.getState().deleteProvider('p2', null, failingSecretStore)).rejects.toThrow('secret delete failed')
+    expect(useSettingsStore.getState().settings.agent.providers.map((provider) => provider.id)).toEqual(['p1', 'p2'])
+    expect(useSettingsStore.getState().settings.agent.providers.find((provider) => provider.id === 'p2')?.apiKeyRef).toBe('secret-ref:p2')
   })
 })

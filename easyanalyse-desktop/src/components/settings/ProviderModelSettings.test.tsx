@@ -52,7 +52,7 @@ describe('ProviderModelSettings', () => {
     container.remove()
   })
 
-  it('renders a public provider/model settings entry without plaintext secret inputs', async () => {
+  it('renders provider/model settings with masked secret status and no editable plaintext ref field', async () => {
     useSettingsStore.getState().replaceSettings({
       agent: {
         providers: [
@@ -78,10 +78,15 @@ describe('ProviderModelSettings', () => {
     expect(container.textContent).toContain('Provider / Model')
     expect(container.textContent).toContain('DeepSeek Main')
     expect(container.textContent).toContain('deepseek-reasoner')
-    expect(container.querySelector('input[name="apiKey"]')).toBeNull()
+    expect(container.textContent).toContain('Secret reference')
+    expect(container.textContent).toContain('keychain://easy…main')
+    const apiKeyInput = container.querySelector<HTMLInputElement>('input[name="apiKey"]')
+    expect(apiKeyInput).not.toBeNull()
+    expect(apiKeyInput?.type).toBe('password')
+    expect(apiKeyInput?.autocomplete).toBe('off')
     expect(container.querySelector('input[name="password"]')).toBeNull()
     expect(container.querySelector('input[name="token"]')).toBeNull()
-    expect(container.querySelector('input[name="apiKeyRef"]')).not.toBeNull()
+    expect(container.querySelector('input[name="apiKeyRef"]')).toBeNull()
   })
 
   it('keeps an invalid draft in the form and shows warnings instead of clearing rejected providers', async () => {
@@ -101,6 +106,169 @@ describe('ProviderModelSettings', () => {
     expect(container.textContent).toContain('baseUrl')
   })
 
+  it('saves API key input through SecretStore, persists only apiKeyRef, and shows fallback warning', async () => {
+    const markerValue = `fixture-ui-secret-${crypto.randomUUID()}`
+    const savedValues: string[] = []
+    const secretStore = {
+      saveSecret: async ({ value }: { providerId: string; value: string }) => {
+        savedValues.push(value)
+        return { ref: 'secret-ref:ui-provider-ref', security: { kind: 'local-secret-file' as const, warning: 'Weak security: stored in local app data secret file fallback.' } }
+      },
+      deleteSecret: async () => ({ deleted: true }),
+      securityStatus: async () => ({ kind: 'local-secret-file' as const, warning: 'Weak security: stored in local app data secret file fallback.' }),
+    }
+
+    await act(async () => {
+      root.render(<ProviderModelSettings secretStore={secretStore} />)
+    })
+
+    await changeField(container, 'id', 'ui-provider')
+    await changeField(container, 'name', 'UI Provider')
+    await changeField(container, 'baseUrl', 'https://example.invalid/ui')
+    await changeField(container, 'models', 'ui-model')
+    await changeField(container, 'apiKey', markerValue)
+    await clickButton(container, 'Save provider metadata')
+    await act(async () => { await Promise.resolve() })
+
+    expect(savedValues).toEqual([markerValue])
+    const provider = useSettingsStore.getState().settings.agent.providers[0]
+    expect(provider.apiKeyRef).toBe('secret-ref:ui-provider-ref')
+    expect(JSON.stringify(useSettingsStore.getState().settings)).not.toContain(markerValue)
+    expect(container.textContent).toContain('Weak security')
+    expect(field(container, 'apiKey').value).toBe('')
+  })
+
+  it('rolls back a newly saved API key when provider metadata is rejected', async () => {
+    const deletedRefs: string[] = []
+    const secretStore = {
+      saveSecret: async () => ({ ref: 'secret-ref:orphan-candidate', security: { kind: 'native-keychain' as const } }),
+      deleteSecret: async (ref: string) => {
+        deletedRefs.push(ref)
+        return { deleted: true }
+      },
+      securityStatus: async () => ({ kind: 'native-keychain' as const }),
+    }
+
+    await act(async () => {
+      root.render(<ProviderModelSettings secretStore={secretStore} />)
+    })
+
+    await changeField(container, 'id', 'bad-provider')
+    await changeField(container, 'name', 'Bad Provider')
+    await changeField(container, 'baseUrl', '/relative/path')
+    await changeField(container, 'models', 'model-a')
+    await changeField(container, 'apiKey', `fixture-ui-secret-${crypto.randomUUID()}`)
+    await clickButton(container, 'Save provider metadata')
+    await act(async () => { await Promise.resolve() })
+
+    expect(useSettingsStore.getState().settings.agent.providers).toHaveLength(0)
+    expect(deletedRefs).toEqual(['secret-ref:orphan-candidate'])
+    expect(container.textContent).toContain('Provider metadata was rejected')
+  })
+
+  it('deletes the old secret ref after a replacement API key is persisted', async () => {
+    const deletedRefs: string[] = []
+    const secretStore = {
+      saveSecret: async () => ({ ref: 'secret-ref:new-key', security: { kind: 'native-keychain' as const } }),
+      deleteSecret: async (ref: string) => {
+        deletedRefs.push(ref)
+        return { deleted: true }
+      },
+      securityStatus: async () => ({ kind: 'native-keychain' as const }),
+    }
+    useSettingsStore.getState().replaceSettings({
+      agent: {
+        providers: [
+          { id: 'replace-provider', name: 'Replace Provider', kind: 'anthropic', baseUrl: 'https://example.invalid/replace', models: ['replace-model'], apiKeyRef: 'secret-ref:old-key' },
+        ],
+        selectedProviderId: 'replace-provider',
+        selectedModelId: 'replace-model',
+      },
+    }, null)
+
+    await act(async () => {
+      root.render(<ProviderModelSettings secretStore={secretStore} />)
+    })
+    await clickButton(container, 'Edit')
+    await changeField(container, 'apiKey', `fixture-replacement-secret-${crypto.randomUUID()}`)
+    await clickButton(container, 'Save provider metadata')
+    await act(async () => { await Promise.resolve() })
+
+    expect(useSettingsStore.getState().settings.agent.providers[0].apiKeyRef).toBe('secret-ref:new-key')
+    expect(deletedRefs).toEqual(['secret-ref:old-key'])
+  })
+
+  it('shows a readable error when clearing a saved API key fails', async () => {
+    const secretStore = {
+      saveSecret: async ({ value }: { providerId: string; value: string }) => ({ ref: `secret-ref:${value}`, security: { kind: 'native-keychain' as const } }),
+      deleteSecret: async () => {
+        throw new Error('secret backend unavailable')
+      },
+      securityStatus: async () => ({ kind: 'native-keychain' as const }),
+    }
+    useSettingsStore.getState().replaceSettings({
+      agent: {
+        providers: [
+          { id: 'error-provider', name: 'Error Provider', kind: 'anthropic', baseUrl: 'https://example.invalid/error', models: ['error-model'], apiKeyRef: 'secret-ref:error-key' },
+        ],
+        selectedProviderId: 'error-provider',
+        selectedModelId: 'error-model',
+      },
+    }, null)
+
+    await act(async () => {
+      root.render(<ProviderModelSettings secretStore={secretStore} />)
+    })
+    await clickButton(container, 'Clear API key')
+    await act(async () => { await Promise.resolve() })
+
+    expect(container.textContent).toContain('Unable to clear API key')
+    expect(container.textContent).toContain('secret backend unavailable')
+  })
+
+  it('clears a saved API key through SecretStore without deleting provider metadata', async () => {
+    const deletedRefs: string[] = []
+    const secretStore = {
+      saveSecret: async ({ value }: { providerId: string; value: string }) => ({ ref: `secret-ref:${value}`, security: { kind: 'native-keychain' as const } }),
+      deleteSecret: async (ref: string) => {
+        deletedRefs.push(ref)
+        return { deleted: true }
+      },
+      securityStatus: async () => ({ kind: 'native-keychain' as const }),
+    }
+    useSettingsStore.getState().replaceSettings({
+      agent: {
+        providers: [
+          { id: 'keep-provider', name: 'Keep Provider', kind: 'anthropic', baseUrl: 'https://example.invalid/keep', models: ['keep-model'], apiKeyRef: 'secret-ref:clear-me' },
+        ],
+        selectedProviderId: 'keep-provider',
+        selectedModelId: 'keep-model',
+      },
+    }, null)
+
+    await act(async () => {
+      root.render(<ProviderModelSettings secretStore={secretStore} />)
+    })
+
+    expect(container.textContent).toContain('Secret reference')
+    await clickButton(container, 'Clear API key')
+    await act(async () => { await Promise.resolve() })
+
+    expect(deletedRefs).toEqual(['secret-ref:clear-me'])
+    const provider = useSettingsStore.getState().settings.agent.providers[0]
+    expect(provider).toMatchObject({
+      id: 'keep-provider',
+      name: 'Keep Provider',
+      kind: 'anthropic',
+      baseUrl: 'https://example.invalid/keep',
+      models: ['keep-model'],
+    })
+    expect(provider).not.toHaveProperty('apiKeyRef')
+    expect(useSettingsStore.getState().settings.agent.selectedProviderId).toBe('keep-provider')
+    expect(container.textContent).toContain('Keep Provider')
+    expect(container.textContent).not.toContain('Secret reference')
+  })
+
   it('adds, edits, selects, and deletes provider metadata through the UI', async () => {
     await act(async () => {
       root.render(<ProviderModelSettings />)
@@ -112,7 +280,7 @@ describe('ProviderModelSettings', () => {
     await changeField(container, 'baseUrl', 'https://example.invalid/a')
     await changeField(container, 'models', 'claude-a\nclaude-b')
     await changeField(container, 'defaultModel', 'claude-b')
-    await changeField(container, 'apiKeyRef', 'secret-ref:provider-a')
+    await changeField(container, 'apiKey', `fixture-ui-secret-${crypto.randomUUID()}`)
     await clickButton(container, 'Save provider metadata')
 
     await changeField(container, 'id', 'provider-b')
@@ -149,7 +317,9 @@ describe('ProviderModelSettings', () => {
     const providerACards = Array.from(container.querySelectorAll('article')).filter((article) => article.textContent?.includes('Provider A'))
     expect(providerACards).toHaveLength(1)
     await act(async () => {
-      providerACards[0].querySelectorAll('button')[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      const deleteButton = Array.from(providerACards[0].querySelectorAll('button')).find((button) => button.textContent === 'Delete')
+      expect(deleteButton).toBeDefined()
+      deleteButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     expect(container.textContent).not.toContain('Provider A')

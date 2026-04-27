@@ -1,12 +1,14 @@
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use easyanalyse_core::{
     default_document, validate_value, CoreError, DocumentFile, ValidationReport,
 };
-use serde::Serialize;
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
+use tauri::{AppHandle, Manager};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,6 +23,319 @@ pub struct OpenDocumentResult {
 pub struct SaveDocumentResult {
     path: String,
     report: ValidationReport,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretStoreSecurityStatus {
+    kind: String,
+    warning: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretSaveResult {
+    r#ref: String,
+    security: SecretStoreSecurityStatus,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretDeleteResult {
+    deleted: bool,
+}
+
+const SECRET_STORE_FILE_NAME: &str = "easyanalyse-secrets.json";
+const SECRET_REF_PREFIX: &str = "secret-ref:";
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+const SECRET_KEYRING_SERVICE: &str = "EasyAnalyse API Keys";
+const SECRET_STORE_WEAK_SECURITY_WARNING: &str = "Weak security: stored in local app data secret file fallback instead of an OS keychain or credential manager.";
+
+#[tauri::command]
+pub fn secret_store_status() -> SecretStoreSecurityStatus {
+    secret_store_status_for_native_availability(native_keychain_available())
+}
+
+#[tauri::command]
+pub fn secret_store_save(
+    app: AppHandle,
+    provider_id: String,
+    value: String,
+    r#ref: String,
+) -> Result<SecretSaveResult, String> {
+    let secret_ref = validate_secret_ref(r#ref)?;
+    if provider_id.trim().is_empty() {
+        return Err("Provider id is required before saving an API key secret".to_string());
+    }
+    if value.trim().is_empty() {
+        return Err("Cannot save an empty API key secret".to_string());
+    }
+
+    if native_keychain_available() && native_secret_save(&secret_ref, &value).is_ok() {
+        return Ok(SecretSaveResult {
+            r#ref: secret_ref,
+            security: native_keychain_status(),
+        });
+    }
+
+    let mut secrets = read_secret_map(&app)?;
+    secrets.insert(secret_ref.clone(), Value::String(value));
+    write_secret_map(&app, &secrets)?;
+
+    Ok(SecretSaveResult {
+        r#ref: secret_ref,
+        security: local_secret_file_status(),
+    })
+}
+
+#[tauri::command]
+pub fn secret_store_read(app: AppHandle, r#ref: String) -> Result<Option<String>, String> {
+    let secret_ref = validate_secret_ref(r#ref)?;
+    if native_keychain_available() {
+        match native_secret_read(&secret_ref) {
+            Ok(Some(value)) => return Ok(Some(value)),
+            Ok(None) | Err(_) => {}
+        }
+    }
+    let secrets = read_secret_map(&app)?;
+    Ok(secrets
+        .get(&secret_ref)
+        .and_then(Value::as_str)
+        .map(ToString::to_string))
+}
+
+#[tauri::command]
+pub fn secret_store_delete(app: AppHandle, r#ref: String) -> Result<SecretDeleteResult, String> {
+    let secret_ref = validate_secret_ref(r#ref)?;
+    let native_deleted = if native_keychain_available() {
+        native_secret_delete(&secret_ref).unwrap_or(false)
+    } else {
+        false
+    };
+    let mut secrets = read_secret_map(&app)?;
+    let deleted = secrets.remove(&secret_ref).is_some() || native_deleted;
+    write_secret_map(&app, &secrets)?;
+    Ok(SecretDeleteResult { deleted })
+}
+
+fn secret_store_status_for_native_availability(native_available: bool) -> SecretStoreSecurityStatus {
+    if native_available {
+        native_keychain_status()
+    } else {
+        local_secret_file_status()
+    }
+}
+
+fn native_keychain_status() -> SecretStoreSecurityStatus {
+    SecretStoreSecurityStatus {
+        kind: "native-keychain".to_string(),
+        warning: None,
+    }
+}
+
+fn native_keychain_available() -> bool {
+    native_keychain_command().is_some()
+}
+
+enum NativeKeychainCommand {
+    #[cfg(target_os = "linux")]
+    SecretTool,
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    KeyringCrate,
+}
+
+fn command_exists(binary: &str) -> bool {
+    Command::new(binary)
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok()
+}
+
+fn native_keychain_command() -> Option<NativeKeychainCommand> {
+    #[cfg(target_os = "linux")]
+    {
+        if command_exists("secret-tool") {
+            return Some(NativeKeychainCommand::SecretTool);
+        }
+    }
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        return Some(NativeKeychainCommand::KeyringCrate);
+    }
+    None
+}
+
+fn native_secret_save(secret_ref: &str, value: &str) -> Result<(), String> {
+    match native_keychain_command().ok_or_else(|| "Native keychain unavailable".to_string())? {
+        #[cfg(target_os = "linux")]
+        NativeKeychainCommand::SecretTool => {
+            let mut child = Command::new("secret-tool")
+                .args([
+                    "store",
+                    "--label=EasyAnalyse API key",
+                    "service",
+                    "easyanalyse",
+                    "account",
+                    secret_ref,
+                ])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .map_err(|error| error.to_string())?;
+            if let Some(mut stdin) = child.stdin.take() {
+                use std::io::Write;
+                stdin.write_all(value.as_bytes()).map_err(|error| error.to_string())?;
+                drop(stdin);
+            }
+            let status = child.wait().map_err(|error| error.to_string())?;
+            if status.success() {
+                Ok(())
+            } else {
+                Err("Native keychain save failed".to_string())
+            }
+        }
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        NativeKeychainCommand::KeyringCrate => {
+            let entry = keyring::Entry::new(SECRET_KEYRING_SERVICE, secret_ref).map_err(|error| error.to_string())?;
+            entry.set_password(value).map_err(|error| error.to_string())
+        }
+    }
+}
+fn native_secret_read(secret_ref: &str) -> Result<Option<String>, String> {
+    match native_keychain_command().ok_or_else(|| "Native keychain unavailable".to_string())? {
+        #[cfg(target_os = "linux")]
+        NativeKeychainCommand::SecretTool => {
+            let output = Command::new("secret-tool")
+                .args(["lookup", "service", "easyanalyse", "account", secret_ref])
+                .stderr(Stdio::null())
+                .output()
+                .map_err(|error| error.to_string())?;
+            if output.status.success() {
+                Ok(Some(String::from_utf8_lossy(&output.stdout).trim_end_matches('\n').to_string()))
+            } else {
+                Ok(None)
+            }
+        }
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        NativeKeychainCommand::KeyringCrate => {
+            let entry = keyring::Entry::new(SECRET_KEYRING_SERVICE, secret_ref).map_err(|error| error.to_string())?;
+            match entry.get_password() {
+                Ok(value) => Ok(Some(value)),
+                Err(keyring::Error::NoEntry) => Ok(None),
+                Err(error) => Err(error.to_string()),
+            }
+        }
+    }
+}
+
+fn native_secret_delete(secret_ref: &str) -> Result<bool, String> {
+    match native_keychain_command().ok_or_else(|| "Native keychain unavailable".to_string())? {
+        #[cfg(target_os = "linux")]
+        NativeKeychainCommand::SecretTool => {
+            let status = Command::new("secret-tool")
+                .args(["clear", "service", "easyanalyse", "account", secret_ref])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .map_err(|error| error.to_string())?;
+            Ok(status.success())
+        }
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        NativeKeychainCommand::KeyringCrate => {
+            let entry = keyring::Entry::new(SECRET_KEYRING_SERVICE, secret_ref).map_err(|error| error.to_string())?;
+            match entry.delete_credential() {
+                Ok(()) => Ok(true),
+                Err(keyring::Error::NoEntry) => Ok(false),
+                Err(error) => Err(error.to_string()),
+            }
+        }
+    }
+}
+
+fn local_secret_file_status() -> SecretStoreSecurityStatus {
+    SecretStoreSecurityStatus {
+        kind: "local-secret-file".to_string(),
+        warning: Some(SECRET_STORE_WEAK_SECURITY_WARNING.to_string()),
+    }
+}
+
+fn validate_secret_ref(secret_ref: String) -> Result<String, String> {
+    let trimmed = secret_ref.trim().to_string();
+    let valid = trimmed.starts_with(SECRET_REF_PREFIX)
+        && trimmed[SECRET_REF_PREFIX.len()..]
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-' | '/'));
+    if valid {
+        Ok(trimmed)
+    } else {
+        Err("Invalid secret reference. Expected secret-ref:<id>.".to_string())
+    }
+}
+
+fn secret_store_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let directory = app.path().app_data_dir().map_err(|error| error.to_string())?;
+    Ok(directory.join(SECRET_STORE_FILE_NAME))
+}
+
+fn read_secret_map(app: &AppHandle) -> Result<Map<String, Value>, String> {
+    let path = secret_store_path(app)?;
+    let content = match fs::read_to_string(&path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Map::new()),
+        Err(error) => return Err(error.to_string()),
+    };
+    let value: Value = serde_json::from_str(&content).map_err(|error| error.to_string())?;
+    match value {
+        Value::Object(map) => Ok(map),
+        _ => Ok(Map::new()),
+    }
+}
+
+fn write_secret_map_to_path(path: &Path, secrets: &Map<String, Value>) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        set_owner_only_dir_permissions(parent)?;
+    }
+    let content = serde_json::to_string_pretty(secrets).map_err(|error| error.to_string())?;
+    let mut file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(path)
+        .map_err(|error| error.to_string())?;
+    set_owner_only_file_permissions(path)?;
+    use std::io::Write;
+    file.write_all(content.as_bytes()).map_err(|error| error.to_string())
+}
+
+fn write_secret_map(app: &AppHandle, secrets: &Map<String, Value>) -> Result<(), String> {
+    let path = secret_store_path(app)?;
+    write_secret_map_to_path(&path, secrets)
+}
+
+#[cfg(unix)]
+fn set_owner_only_file_permissions(path: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|error| error.to_string())
+}
+
+#[cfg(not(unix))]
+fn set_owner_only_file_permissions(_path: &Path) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_owner_only_dir_permissions(path: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(|error| error.to_string())
+}
+
+#[cfg(not(unix))]
+fn set_owner_only_dir_permissions(_path: &Path) -> Result<(), String> {
+    Ok(())
 }
 
 #[tauri::command]
@@ -203,11 +518,14 @@ fn validation_summary(report: &ValidationReport) -> String {
 mod tests {
     use super::{
         decode_json_text, get_blueprint_sidecar_path, load_blueprint_workspace_from_path,
-        save_blueprint_workspace_to_path,
+        save_blueprint_workspace_to_path, secret_store_status_for_native_availability,
+        write_secret_map_to_path,
     };
     use serde_json::json;
     use std::fs;
     use std::path::PathBuf;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn unique_temp_path(file_name: &str) -> PathBuf {
@@ -316,5 +634,59 @@ mod tests {
     fn rejects_invalid_utf16_lengths() {
         let error = decode_json_text(&[0xFF, 0xFE, 0x7B]).expect_err("odd utf-16 length should fail");
         assert_eq!(error, "Invalid UTF-16 byte length");
+    }
+
+    #[test]
+    fn secret_store_status_prioritizes_native_backend_when_available() {
+        let native_status = secret_store_status_for_native_availability(true);
+        assert_eq!(native_status.kind, "native-keychain");
+        assert!(native_status.warning.is_none());
+
+        let fallback_status = secret_store_status_for_native_availability(false);
+        assert_eq!(fallback_status.kind, "local-secret-file");
+        assert!(fallback_status
+            .warning
+            .expect("fallback warning should be present")
+            .contains("Weak security"));
+    }
+
+    #[test]
+    fn source_does_not_use_macos_security_password_argument() {
+        let source = include_str!("commands.rs");
+        assert!(!source.contains(&format!("{}{}", "add-generic", "-password")));
+        assert!(!source.contains("\"-w\",\n                    value"));
+    }
+
+    #[test]
+    fn source_closes_secret_tool_stdin_before_waiting() {
+        let source = include_str!("commands.rs");
+        assert!(source.contains("child.stdin.take()"));
+        assert!(source.contains("drop(stdin)"));
+    }
+
+    #[test]
+    fn source_falls_back_when_native_read_returns_none() {
+        let source = include_str!("commands.rs");
+        assert!(source.contains("Ok(Some(value)) => return Ok(Some(value))"));
+        assert!(!source.contains("if let Ok(value) = native_secret_read(&secret_ref) {\n            return Ok(value);"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_secret_file_fallback_uses_owner_only_permissions() {
+        let directory = unique_temp_path("secret-permissions");
+        let path = directory.join("easyanalyse-secrets.json");
+        let mut secrets = serde_json::Map::new();
+        secrets.insert("secret-ref:test".to_string(), json!("fixture-secret"));
+
+        write_secret_map_to_path(&path, &secrets).expect("secret map should be written");
+
+        let file_mode = fs::metadata(&path).expect("secret file should exist").permissions().mode() & 0o777;
+        let directory_mode = fs::metadata(&directory).expect("secret directory should exist").permissions().mode() & 0o777;
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir(&directory);
+
+        assert_eq!(file_mode, 0o600);
+        assert_eq!(directory_mode, 0o700);
     }
 }

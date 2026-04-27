@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { defaultSecretStore, maskSecretRef, type SecretStore, type SecretStoreSecurityStatus } from '../../lib/secretStore'
 import { useSettingsStore } from '../../store/settingsStore'
 import type { AgentProviderKind, AgentProviderPublicConfig } from '../../types/settings'
 
@@ -12,6 +13,7 @@ interface ProviderDraft {
   modelsText: string
   defaultModel: string
   apiKeyRef: string
+  apiKey: string
 }
 
 const EMPTY_DRAFT: ProviderDraft = {
@@ -22,6 +24,7 @@ const EMPTY_DRAFT: ProviderDraft = {
   modelsText: '',
   defaultModel: '',
   apiKeyRef: '',
+  apiKey: '',
 }
 
 function draftFromProvider(provider: AgentProviderPublicConfig): ProviderDraft {
@@ -33,6 +36,7 @@ function draftFromProvider(provider: AgentProviderPublicConfig): ProviderDraft {
     modelsText: provider.models.join('\n'),
     defaultModel: provider.defaultModel ?? '',
     apiKeyRef: provider.apiKeyRef ?? '',
+    apiKey: '',
   }
 }
 
@@ -48,28 +52,111 @@ function providerFromDraft(draft: ProviderDraft) {
   }
 }
 
-export function ProviderModelSettings() {
+export interface ProviderModelSettingsProps {
+  secretStore?: Pick<SecretStore, 'saveSecret' | 'deleteSecret' | 'securityStatus'>
+}
+
+export function ProviderModelSettings({ secretStore = defaultSecretStore }: ProviderModelSettingsProps = {}) {
   const settings = useSettingsStore((state) => state.settings)
   const warnings = useSettingsStore((state) => state.warnings)
   const upsertProvider = useSettingsStore((state) => state.upsertProvider)
   const deleteProvider = useSettingsStore((state) => state.deleteProvider)
+  const clearProviderApiKey = useSettingsStore((state) => state.clearProviderApiKey)
   const selectProvider = useSettingsStore((state) => state.selectProvider)
   const selectModel = useSettingsStore((state) => state.selectModel)
   const [draft, setDraft] = useState<ProviderDraft>(EMPTY_DRAFT)
+  const [secretStatus, setSecretStatus] = useState<SecretStoreSecurityStatus | null>(null)
+  const [secretWarning, setSecretWarning] = useState<string | null>(null)
+  const [operationError, setOperationError] = useState<string | null>(null)
+  const [busyAction, setBusyAction] = useState<string | null>(null)
 
   const selectedProvider = useMemo(
     () => settings.agent.providers.find((provider) => provider.id === settings.agent.selectedProviderId),
     [settings.agent.providers, settings.agent.selectedProviderId],
   )
 
+  useEffect(() => {
+    let cancelled = false
+    void secretStore.securityStatus().then((status) => {
+      if (!cancelled) {
+        setSecretStatus(status)
+        setSecretWarning(status.warning ?? null)
+      }
+    }).catch((error: unknown) => {
+      if (!cancelled) {
+        setSecretWarning(error instanceof Error ? error.message : String(error))
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [secretStore])
+
   const updateDraft = <Key extends keyof ProviderDraft>(key: Key, value: ProviderDraft[Key]) => {
     setDraft((current) => ({ ...current, [key]: value }))
   }
 
-  const saveDraft = () => {
-    const accepted = upsertProvider(providerFromDraft(draft))
-    if (accepted) {
+  const readableError = (error: unknown) => error instanceof Error ? error.message : String(error)
+
+  const saveDraft = async () => {
+    setOperationError(null)
+    setBusyAction('save')
+    let newApiKeyRef: string | undefined
+    const oldApiKeyRef = draft.apiKeyRef || undefined
+    try {
+      let apiKeyRef = draft.apiKeyRef
+      const secretValue = draft.apiKey.trim()
+      if (secretValue.length > 0) {
+        const result = await secretStore.saveSecret({ providerId: draft.id, value: secretValue })
+        apiKeyRef = result.ref
+        newApiKeyRef = result.ref
+        setSecretStatus(result.security)
+        setSecretWarning(result.security.warning ?? null)
+      }
+      const accepted = upsertProvider(providerFromDraft({ ...draft, apiKeyRef, apiKey: '' }))
+      if (!accepted) {
+        if (newApiKeyRef) {
+          await secretStore.deleteSecret(newApiKeyRef)
+        }
+        setOperationError('Provider metadata was rejected; the newly saved API key was removed.')
+        return
+      }
+      if (newApiKeyRef && oldApiKeyRef && oldApiKeyRef !== newApiKeyRef) {
+        await secretStore.deleteSecret(oldApiKeyRef)
+      }
       setDraft(EMPTY_DRAFT)
+    } catch (error) {
+      if (newApiKeyRef) {
+        await secretStore.deleteSecret(newApiKeyRef).catch(() => undefined)
+      }
+      setOperationError(`Unable to save provider metadata or API key. ${readableError(error)}`)
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  const clearApiKey = async (provider: AgentProviderPublicConfig) => {
+    setOperationError(null)
+    setBusyAction(`clear:${provider.id}`)
+    try {
+      await clearProviderApiKey(provider.id, undefined, secretStore)
+      setDraft((current) => current.id === provider.id ? { ...current, apiKeyRef: '', apiKey: '' } : current)
+    } catch (error) {
+      setOperationError(`Unable to clear API key. ${readableError(error)}`)
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  const deleteProviderWithSecrets = async (provider: AgentProviderPublicConfig) => {
+    setOperationError(null)
+    setBusyAction(`delete:${provider.id}`)
+    try {
+      await deleteProvider(provider.id, undefined, secretStore)
+    } catch (error) {
+      setOperationError(`Unable to delete provider. ${readableError(error)}`)
+    } finally {
+      setBusyAction(null)
     }
   }
 
@@ -81,15 +168,19 @@ export function ProviderModelSettings() {
           <h2>Provider / Model</h2>
         </div>
         <p className="settings-panel__note">
-          Public provider metadata only. API keys are handled by the secret store in a later milestone; this form only accepts an optional reference id.
+          Public provider metadata only. API keys are saved to the SecretStore and ordinary settings persist only opaque apiKeyRef values.
+          {secretStatus?.kind && ` Secret backend: ${secretStatus.kind}.`}
         </p>
       </div>
 
-      {warnings.length > 0 && (
+      {(warnings.length > 0 || secretWarning) && (
         <div className="settings-panel__warnings" role="status">
           {warnings.map((warning, index) => <p key={`${index}-${warning}`}>{warning}</p>)}
+          {secretWarning && <p>{secretWarning}</p>}
         </div>
       )}
+
+      {operationError && <div className="settings-panel__warnings" role="alert"><p>{operationError}</p></div>}
 
       <div className="settings-panel__section">
         <label>
@@ -129,11 +220,12 @@ export function ProviderModelSettings() {
               <h3>{provider.name}</h3>
               <p>{provider.kind} · {provider.baseUrl}</p>
               <p>{provider.models.join(', ')}</p>
-              {provider.apiKeyRef && <p>Secret reference: {provider.apiKeyRef}</p>}
+              {provider.apiKeyRef && <p>Secret reference: {maskSecretRef(provider.apiKeyRef)}</p>}
             </div>
             <div className="settings-panel__actions">
               <button className="ghost-button" type="button" onClick={() => setDraft(draftFromProvider(provider))}>Edit</button>
-              <button className="ghost-button" type="button" onClick={() => deleteProvider(provider.id)}>Delete</button>
+              {provider.apiKeyRef && <button className="ghost-button" type="button" disabled={busyAction !== null} onClick={() => void clearApiKey(provider)}>{busyAction === `clear:${provider.id}` ? 'Clearing API key…' : 'Clear API key'}</button>}
+              <button className="ghost-button" type="button" disabled={busyAction !== null} onClick={() => void deleteProviderWithSecrets(provider)}>{busyAction === `delete:${provider.id}` ? 'Deleting…' : 'Delete'}</button>
             </div>
           </article>
         ))}
@@ -167,12 +259,12 @@ export function ProviderModelSettings() {
           <input name="defaultModel" value={draft.defaultModel} onChange={(event) => updateDraft('defaultModel', event.target.value)} placeholder="optional" />
         </label>
         <label>
-          API key reference
-          <input name="apiKeyRef" value={draft.apiKeyRef} onChange={(event) => updateDraft('apiKeyRef', event.target.value)} placeholder="secret-ref:provider-id" />
+          API key
+          <input name="apiKey" type="password" autoComplete="off" value={draft.apiKey} onChange={(event) => updateDraft('apiKey', event.target.value)} placeholder={draft.apiKeyRef ? 'Saved; enter a new key to replace' : 'Enter key to save in SecretStore'} />
         </label>
         <div className="settings-panel__actions">
-          <button type="button" onClick={saveDraft}>Save provider metadata</button>
-          <button className="ghost-button" type="button" onClick={() => setDraft(EMPTY_DRAFT)}>Clear</button>
+          <button type="button" disabled={busyAction !== null} onClick={() => void saveDraft()}>{busyAction === 'save' ? 'Saving…' : 'Save provider metadata'}</button>
+          <button className="ghost-button" type="button" disabled={busyAction !== null} onClick={() => setDraft(EMPTY_DRAFT)}>Clear</button>
         </div>
       </div>
     </section>

@@ -5,6 +5,7 @@ import {
   normalizeAppSettings,
   type AppSettingsStorage,
 } from '../lib/appSettings'
+import type { SecretStore } from '../lib/secretStore'
 import type { AgentProviderPublicConfig, AppSettings } from '../types/settings'
 
 export interface SettingsState {
@@ -15,7 +16,8 @@ export interface SettingsState {
   replaceSettings(settings: unknown, storage?: AppSettingsStorage | null): void
   reset(storage?: AppSettingsStorage | null): void
   upsertProvider(provider: unknown, storage?: AppSettingsStorage | null): boolean
-  deleteProvider(providerId: string, storage?: AppSettingsStorage | null): void
+  deleteProvider(providerId: string, storage?: AppSettingsStorage | null, secretStore?: Pick<SecretStore, 'deleteSecret'>): Promise<void>
+  clearProviderApiKey(providerId: string, storage?: AppSettingsStorage | null, secretStore?: Pick<SecretStore, 'deleteSecret'>): Promise<void>
   selectProvider(providerId: string | undefined, storage?: AppSettingsStorage | null): void
   selectModel(modelId: string | undefined, storage?: AppSettingsStorage | null): void
 }
@@ -72,13 +74,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       return false
     }
 
+    const existingProvider = current.agent.providers.find((item) => item.id === normalizedProvider.id)
+    const providerToPersist = normalizedProvider.apiKeyRef === undefined && existingProvider?.apiKeyRef
+      ? { ...normalizedProvider, apiKeyRef: existingProvider.apiKeyRef }
+      : normalizedProvider
     const existingSelectedProviderId = current.agent.selectedProviderId
-    const nextProviders = replaceProvider(current.agent.providers, normalizedProvider)
-    const selectedProviderId = existingSelectedProviderId === normalizedProvider.id || !existingSelectedProviderId
-      ? normalizedProvider.id
+    const nextProviders = replaceProvider(current.agent.providers, providerToPersist)
+    const selectedProviderId = existingSelectedProviderId === providerToPersist.id || !existingSelectedProviderId
+      ? providerToPersist.id
       : existingSelectedProviderId
-    const selectedModelId = selectedProviderId === normalizedProvider.id
-      ? (normalizedProvider.defaultModel ?? normalizedProvider.models[0])
+    const selectedModelId = selectedProviderId === providerToPersist.id
+      ? (providerToPersist.defaultModel ?? providerToPersist.models[0])
       : current.agent.selectedModelId
     const result = persistSettings({
       ...current,
@@ -92,9 +98,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     return result.settings.agent.providers.some((item) => item.id === normalizedProvider.id)
   },
 
-  deleteProvider: (providerId, storage = defaultStorage()) => {
+  deleteProvider: async (providerId, storage = defaultStorage(), secretStore) => {
     const current = get().settings
-    const nextProviders = current.agent.providers.filter((provider) => provider.id !== providerId.trim())
+    const trimmedProviderId = providerId.trim()
+    const deletedProvider = current.agent.providers.find((provider) => provider.id === trimmedProviderId)
+    const nextProviders = current.agent.providers.filter((provider) => provider.id !== trimmedProviderId)
     const result = persistSettings({
       ...current,
       agent: {
@@ -104,6 +112,43 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       },
     }, storage)
     set({ settings: result.settings, loaded: true, warnings: result.warnings })
+    if (deletedProvider?.apiKeyRef && secretStore) {
+      try {
+        await secretStore.deleteSecret(deletedProvider.apiKeyRef)
+      } catch (error) {
+        const restored = persistSettings(current, storage)
+        set({ settings: restored.settings, loaded: true, warnings: restored.warnings })
+        throw error
+      }
+    }
+  },
+
+  clearProviderApiKey: async (providerId, storage = defaultStorage(), secretStore) => {
+    const current = get().settings
+    const trimmedProviderId = providerId.trim()
+    const provider = current.agent.providers.find((item) => item.id === trimmedProviderId)
+    if (!provider) {
+      return
+    }
+    const providerWithoutApiKey = { ...provider }
+    delete providerWithoutApiKey.apiKeyRef
+    const result = persistSettings({
+      ...current,
+      agent: {
+        ...current.agent,
+        providers: replaceProvider(current.agent.providers, providerWithoutApiKey),
+      },
+    }, storage)
+    set({ settings: result.settings, loaded: true, warnings: result.warnings })
+    if (provider.apiKeyRef && secretStore) {
+      try {
+        await secretStore.deleteSecret(provider.apiKeyRef)
+      } catch (error) {
+        const restored = persistSettings(current, storage)
+        set({ settings: restored.settings, loaded: true, warnings: restored.warnings })
+        throw error
+      }
+    }
   },
 
   selectProvider: (providerId, storage = defaultStorage()) => {

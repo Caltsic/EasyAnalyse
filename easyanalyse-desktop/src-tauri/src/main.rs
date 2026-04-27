@@ -25,6 +25,10 @@ fn run() {
             commands::get_blueprint_sidecar_path,
             commands::load_blueprint_workspace_from_path,
             commands::save_blueprint_workspace_to_path,
+            commands::secret_store_status,
+            commands::secret_store_save,
+            commands::secret_store_read,
+            commands::secret_store_delete,
             share::start_mobile_share,
             share::stop_mobile_share,
         ])

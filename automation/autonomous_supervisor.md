@@ -18,42 +18,59 @@
 
 ## 每轮必须先做
 
-1. 发送 Telegram 开始通知给 `telegram:8433803846`。
-2. `cd /home/ubuntu/.hermes/hermes-agent/workspace/EasyAnalyse`。
-3. 检查 `git status --short --branch`。
-4. 确认当前分支是 `agent`；否则切换到 `agent`。
-5. 如果工作区已有未提交改动，先阅读 `automation/autonomous_handoff.md` 和 git diff 判断是否为上轮遗留；不要覆盖未知改动。
-6. 在安全时执行 `git pull --rebase origin agent`。
-7. 阅读本目录控制文件和最高优先规划。
-8. 从 `automation/task_queue.md` 选择下一个未完成、未阻塞、依赖已满足的小任务。
+1. `cd /home/ubuntu/.hermes/hermes-agent/workspace/EasyAnalyse`。
+2. **在任何 Telegram 开始通知、git status、git pull、读大量文件或派子代理之前，先获取运行锁**：
+   ```bash
+   python3 automation/autonomous_lock.py acquire --task "$(python3 - <<'PY'
+import json
+print(json.load(open('automation/autonomous_state.json')).get('currentTask','unknown'))
+PY
+)"
+   ```
+   - 如果输出 `AUTONOMOUS_LOCK=ACQUIRED` 且退出码为 0：继续本轮。
+   - 如果输出 `AUTONOMOUS_LOCK=HELD` 且退出码为 75：说明上一轮仍在运行，本轮只发送 Telegram “检测到运行锁，跳过本轮”并立即结束；不得做 git 修改。
+   - 如果输出 `AUTONOMOUS_LOCK=STALE` 后成功 acquire：发送 Telegram stale lock 提示并继续。
+3. 获取锁成功后，发送 Telegram 开始通知给 `telegram:8433803846`。
+4. 检查 `git status --short --branch`。
+5. 确认当前分支是 `agent`；否则切换到 `agent`。
+6. 如果工作区已有未提交改动，先阅读 `automation/autonomous_handoff.md` 和 git diff 判断是否为上轮遗留；不要覆盖未知改动。
+7. 在安全时执行 `git pull --rebase origin agent`。
+8. 阅读本目录控制文件和最高优先规划。
+9. 从 `automation/task_queue.md` 选择下一个未完成、未阻塞、依赖已满足的小任务。
+10. 正常结束、失败退出、决定暂停问用户前，必须执行 `python3 automation/autonomous_lock.py release` 尽力释放本轮锁。
 
 
 ## 运行锁与 30 分钟轮询
 
-当前自动施工调度采用“短周期轮询 + 仓库运行锁”模式：cronjob 每 30 分钟启动一次 fresh supervisor。每轮必须先检查并维护运行锁，防止上一轮尚未结束时并发改同一仓库。
+当前自动施工调度采用“短周期轮询 + 仓库运行锁”模式：cronjob 每 30 分钟启动一次 fresh supervisor。每轮必须通过确定性脚本 `automation/autonomous_lock.py` 原子获取运行锁，防止上一轮尚未结束时并发改同一仓库。
 
-锁文件：`automation/.autonomous_run.lock`（不提交仓库）。
+锁文件：`automation/.autonomous_run.lock`（不提交仓库，已加入 `.gitignore`）。
 
-每轮开始时必须执行：
+锁实现要求：
 
-1. 如果锁文件不存在：创建锁文件后继续执行。
-2. 如果锁文件存在且 `startedAt` 距当前时间不超过 6 小时：认为上一轮仍在运行或尚未安全释放，本轮只发送 Telegram “检测到运行锁，跳过本轮”并退出，不做 git 修改。
-3. 如果锁文件存在且超过 6 小时：认为是 stale lock；读取并记录旧锁内容，发送 Telegram stale lock 提示，删除旧锁并创建新锁后继续。
-4. 正常结束、失败退出或决定暂停问用户前，都必须尽力删除本轮创建的锁文件。
+1. 不允许用“先看文件是否存在、再写文件”的人工 check-then-create 方式；必须使用 `automation/autonomous_lock.py acquire`，该脚本用 `O_CREAT|O_EXCL` 原子创建锁。
+2. 当前 live cronjob 还配置了 preflight script：`~/.hermes/scripts/easyanalyse_autonomous_preflight.py`。如果 cron prompt 注入的 preflight context 显示 `EASYANALYSE_PREFLIGHT_LOCK=ACQUIRED`，说明锁已经在模型启动前取得，本轮不要再次 acquire，只需继续执行并在结束前 release。
+3. 如果 preflight context 显示 `EASYANALYSE_PREFLIGHT_LOCK=HELD`，本轮只发送 skip 通知并结束；不得运行 `git pull`、不得派子代理、不得改仓库。
+4. 如果没有 preflight context（例如人工手动运行 supervisor），必须在任何 Telegram 开始通知、git status、git pull 或文件写入之前手动运行 `python3 automation/autonomous_lock.py acquire --task <currentTask>`。
+5. 锁超过 6 小时才按 stale lock 处理。脚本会优先使用 lock `startedAt`，解析失败时用 lock 文件 mtime，避免 malformed lock 永久卡死。
+6. 每轮只释放自己本轮持有的锁；正常结束、失败退出、暂停问用户前都必须尽力 release。
+7. 如果发现 lock acquire/release 脚本异常，不要继续自动施工；记录 blocked 并询问用户。
 
-锁文件建议内容：
+锁文件内容由脚本写入，示例：
 
 ```json
 {
+  "branch": "agent",
+  "host": "...",
   "job": "EasyAnalyse Agent Branch Autonomous Builder",
+  "lockVersion": 1,
+  "pid": 12345,
   "startedAt": "ISO-8601",
-  "pidHint": "optional",
-  "task": "M3-T1",
-  "branch": "agent"
+  "task": "M3-T1"
 }
 ```
 
-禁止把锁文件加入 git。若发现锁文件被 `git status` 显示为 untracked，应保持未提交；如需可把 `automation/.autonomous_run.lock` 加入 `.git/info/exclude`，不要改项目 `.gitignore`，除非单独有理由。
+禁止把锁文件加入 git。项目 `.gitignore` 已忽略 `automation/.autonomous_run.lock`；提交前仍需确认 `git status --short` 不包含该文件。
 
 ## 每轮执行模型
 

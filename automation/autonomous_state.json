@@ -19,7 +19,7 @@
   ],
   "blockedTasks": [],
   "lastCommit": "d5624cf",
-  "lastRunAt": "2026-04-28T02:54:36+08:00",
+  "lastRunAt": "2026-04-28T03:00:00+08:00",
   "testStatus": "M2-T6 passed: npm test -- --run (14 files / 83 tests); npx tsc -b --pretty false; npm run lint; npx vite build. Spec Reviewer: PASS; Quality Reviewer re-review: APPROVED; Final Integration Reviewer: PASS/READY.",
   "requiresUserDecision": false,
   "userDecisionPrompt": null,
@@ -56,7 +56,19 @@
     "createdAfterCommit": "1913a65",
     "mode": "polling_with_lock",
     "lockFile": "automation/.autonomous_run.lock",
-    "lockTtlHours": 6
+    "lockTtlHours": 6,
+    "lockHelper": "automation/autonomous_lock.py",
+    "lockAcquireMustPrecede": [
+      "telegram_start",
+      "git_status",
+      "git_pull",
+      "subagents",
+      "repo_writes"
+    ],
+    "lockAtomic": "O_CREAT|O_EXCL",
+    "preflightScript": "easyanalyse_autonomous_preflight.py",
+    "preflightAcquiresLock": true,
+    "preflightScriptLocation": "~/.hermes/scripts/easyanalyse_autonomous_preflight.py"
   },
   "lastTaskCommit": "442642d"
 }

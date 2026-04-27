@@ -17,3 +17,6 @@ easyanalyse-mobile-android/app/build/
 easyanalyse-mobile-android/local.properties
 easyanalyse-mobile-android/keystore.properties
 easyanalyse-mobile-android/signing/
+
+# Autonomous builder runtime lock (local only)
+automation/.autonomous_run.lock

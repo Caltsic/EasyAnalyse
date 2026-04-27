@@ -19,8 +19,9 @@
 
 - 当前 cronjob 频率：`every 30m`。
 - 当前运行模式：短周期轮询 + 仓库运行锁。
-- 锁文件：`automation/.autonomous_run.lock`，不提交。
-- 每轮启动时先检查锁；锁未过期则跳过本轮，锁超过 6 小时按 stale lock 处理。
+- 锁文件：`automation/.autonomous_run.lock`，不提交，已加入 `.gitignore`。
+- 每轮启动后优先依赖 cron preflight script `~/.hermes/scripts/easyanalyse_autonomous_preflight.py` 原子获取锁；如果 preflight 未运行，才手动执行 `python3 automation/autonomous_lock.py acquire --task <currentTask>`。只有拿到 `AUTONOMOUS_LOCK=ACQUIRED` / `EASYANALYSE_PREFLIGHT_LOCK=ACQUIRED` 后才能发送开始通知、git pull、派子代理或改仓库。
+- 锁未过期则跳过本轮，锁超过 6 小时按 stale lock 处理；结束/失败/暂停前必须运行 `python3 automation/autonomous_lock.py release`。
 - 目的：任务完成后最多约 30 分钟进入下一轮，同时避免多轮并发改同一分支。
 
 ## 最高优先文档
@@ -125,9 +126,9 @@
 
 - Job ID：`02e4bfaf3360`
 - 名称：`EasyAnalyse Agent Branch Autonomous Builder`
-- 频率：`every 2h`
+- 频率：`every 30m`
 - deliver：`origin`
-- 每轮仍会主动发送 Telegram 开始/结束通知（若运行环境暴露对应发送工具；本 cron 交付也会由系统自动处理最终响应）。
+- 运行模式：短周期轮询 + 原子运行锁；cron prompt 与 `automation/autonomous_supervisor.md` 都要求先 acquire lock，再发开始通知/读写仓库。
 
 ## 最近任务提交
 

@@ -1,6 +1,6 @@
 # EasyAnalyse 自主施工任务队列
 
-> 执行规则：cronjob 每 30 分钟启动一次；每轮先检查 `automation/.autonomous_run.lock` 防并发，然后优先完成一个最小任务。完成后把 `[ ]` 改为 `[x]`，必要时追加 commit/test 信息。阻塞任务用 `[!]` 标记并写明原因。
+> 执行规则：cronjob 每 30 分钟启动一次；每轮先通过 `automation/autonomous_lock.py` / cron preflight 原子获取 `automation/.autonomous_run.lock` 防并发，然后优先完成一个最小任务。完成后把 `[ ]` 改为 `[x]`，必要时追加 commit/test 信息。阻塞任务用 `[!]` 标记并写明原因。
 
 ## Milestone 1：Blueprint Core（无 Agent、无 Provider）
 

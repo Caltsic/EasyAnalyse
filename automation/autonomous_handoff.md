@@ -40,9 +40,9 @@
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知任务提交：`442642d`
-- 当前任务：`M3-T1 App settings 基础结构`
-- 当前阻塞：无。M2-T4 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。桌面编译/运行环境已补齐：Rust/Cargo、Tauri Linux 依赖、xvfb/dbus-x11 已安装；`npm run build`、`cargo test`、`npm run tauri:build` 均已通过，release binary 已用 xvfb 启动验证。环境/脚本修复提交：`1bc5dce`。
+- 最近已知任务提交：`89577eb`
+- 当前任务：`M3-T2 system/light/dark 主题迁移`
+- 当前阻塞：无。M3-T1 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。M2-T4 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。桌面编译/运行环境已补齐：Rust/Cargo、Tauri Linux 依赖、xvfb/dbus-x11 已安装；`npm run build`、`cargo test`、`npm run tauri:build` 均已通过，release binary 已用 xvfb 启动验证。环境/脚本修复提交：`1bc5dce`。
 
 ## 最近完成
 
@@ -97,21 +97,30 @@
   - Review：Spec Reviewer PASS；Quality Reviewer 修复后 APPROVED；Final Integration Reviewer PASS/READY。
   - 任务提交：`442642d`。
 
+
+- M3-T1 已完成：App settings 基础结构。
+  - 新增 `types/settings.ts`、`lib/appSettings.ts`、`store/settingsStore.ts` 及测试。
+  - AppSettings 现在包含 `basic.locale`、`appearance.theme`、`agent.providers/selectedProviderId/selectedModelId`，Provider public config 只保存公开 metadata 与 `apiKeyRef`。
+  - normalize/serialize 使用 allowlist，剥离 `apiKey`/`password` 等 plaintext secret-like 字段；storage wrapper 对 corrupt JSON、localStorage 不可用、read/write/clear 异常返回 readable warnings。
+  - Review：Spec Reviewer 修复 `basic` group 后 PASS；Quality Reviewer 修复 storage error handling 后 APPROVED；Final Integration Reviewer PASS/READY。
+  - 验证通过：`npm test -- --run`（16 files / 95 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+  - 任务提交：`89577eb`。
+
 ## 下一轮建议
 
-执行 `M3-T1`：App settings 基础结构。
+执行 `M3-T2`：system/light/dark 主题迁移。
 
 建议派子代理：
 
-1. Implementer：实现 M3-T1 App settings 基础结构。先侦察现有 theme/settings/tauri 存储方式，新增最小 AppSettings 类型、默认值、序列化/迁移/本地持久化 wrapper 或 store 骨架；只做普通设置基础设施，不接 API key 明文、不做 Provider 调用。
-2. Spec Reviewer：检查 M3-T1 是否只建立 Settings 基础结构，是否为后续 appearance/provider/model/secret 分组预留清晰边界，是否未把 secrets 写入仓库/文档/sidecar。
-3. Quality Reviewer：重点审查设置迁移兼容性、默认值、错误处理、测试覆盖、与现有主题/状态初始化的集成风险。
+1. Implementer：在现有 `useTheme` / `theme.ts` / `App.tsx` 基础上把主题源迁移到 AppSettings `appearance.theme`，支持 `system | light | dark`，保留即时生效与持久化。不要改 semantic v4、蓝图 apply/save 语义或 secrets。
+2. Spec Reviewer：检查 M3-T2 是否只做主题迁移，是否使用 M3-T1 AppSettings 基础，是否保留现有 light/dark 行为并正确支持 system。
+3. Quality Reviewer：重点审查系统主题 media query 监听、localStorage 旧 key 迁移、状态初始化/SSR 安全、测试覆盖与无 plaintext secret 风险。
 
 建议验收测试：
 
-- 针对 M3-T1 的新增单元测试/集成测试。
+- 针对 M3-T2 的新增单元/集成测试：system 默认、light/dark 强制、旧 `easyanalyse.theme` migration、system media query 切换。
 - 回归 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
-- 当前 M2-T6 已完成；下一轮自动进入 M3 Settings + Secrets。
+- M3-T1 已完成；继续推进 M3 Settings + Secrets。
 
 ## 重要提醒
 
@@ -146,3 +155,4 @@
 - M2-T4 任务提交：`9bfcefc`
 - M2-T5 任务提交：`e9dbc19`
 - M2-T6 任务提交：`442642d`
+- M3-T1 任务提交：`89577eb`

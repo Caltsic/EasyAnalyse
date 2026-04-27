@@ -63,7 +63,7 @@
 
 ## Milestone 3：Settings + Secrets（M2 验收通过后自动执行）
 
-- [ ] M3-T1：App settings 基础结构
+- [x] M3-T1：App settings 基础结构
 - [ ] M3-T2：system/light/dark 主题迁移
 - [ ] M3-T3：Provider/Model 配置骨架
 - [ ] M3-T4：SecretStore/API key 存储策略
@@ -216,3 +216,15 @@ M5 真实调用约束：用户已提供项目专用 DeepSeek API key；自动化
 - 验证通过：`npm test -- --run`（14 files / 83 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 - Review：Spec Reviewer PASS；Quality Reviewer 修复后 APPROVED；Final Integration Reviewer PASS/READY。
 - 任务提交：`442642d test: tighten m2 blueprint acceptance coverage`。
+
+### M3-T1 完成记录
+
+- 完成时间：2026-04-28 04:18 +0800
+- 新增：`easyanalyse-desktop/src/types/settings.ts`，定义 `AppSettings`、`basic`、`appearance`、Provider public config、`apiKeyRef` 边界。
+- 新增：`easyanalyse-desktop/src/lib/appSettings.ts`，实现默认设置、迁移/normalize、序列化、可替换 localStorage wrapper 与可读 storage warning。
+- 新增：`easyanalyse-desktop/src/store/settingsStore.ts`，提供最小 Zustand settings store skeleton（load / replaceSettings / reset）。
+- 新增测试：`appSettings.test.ts`、`settingsStore.test.ts`，覆盖默认值、partial/legacy migration、secret-like 字段剥离、provider/model selection normalize、corrupt/unavailable storage、reset warning propagation。
+- Review：Spec Reviewer 修复 `basic` group 后 PASS；Quality Reviewer 修复 storage error handling 后 APPROVED；Final Integration Reviewer PASS/READY。
+- 验证通过：`npm test -- --run`（16 files / 95 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- 任务提交：`89577eb feat: add app settings foundation`。
+

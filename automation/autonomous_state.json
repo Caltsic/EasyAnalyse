@@ -3,7 +3,7 @@
   "branch": "agent",
   "remote": "origin/agent",
   "currentMilestone": "M3",
-  "currentTask": "M3-T1",
+  "currentTask": "M3-T2",
   "completedTasks": [
     "M1-T1",
     "M1-T2",
@@ -15,12 +15,13 @@
     "M2-T3",
     "M2-T4",
     "M2-T5",
-    "M2-T6"
+    "M2-T6",
+    "M3-T1"
   ],
   "blockedTasks": [],
-  "lastCommit": "c3ea9cd",
-  "lastRunAt": "2026-04-28T03:22:00+08:00",
-  "testStatus": "30m polling lock hardening verified: autonomous_lock.py py_compile/status/acquire/held/release/preflight acquired/preflight held; cronjob updated with preflight script; no active lock; gitignore covers lock file.",
+  "lastCommit": "89577eb",
+  "lastRunAt": "2026-04-28T04:18:00+08:00",
+  "testStatus": "M3-T1 AppSettings foundation verified: npm test -- --run (16 files / 95 tests), npx tsc -b --pretty false, npm run lint, npx vite build; spec review PASS, quality review APPROVED, final integration PASS.",
   "requiresUserDecision": false,
   "userDecisionPrompt": null,
   "autonomyScope": {
@@ -70,5 +71,5 @@
     "preflightAcquiresLock": true,
     "preflightScriptLocation": "~/.hermes/scripts/easyanalyse_autonomous_preflight.py"
   },
-  "lastTaskCommit": "442642d"
+  "lastTaskCommit": "89577eb"
 }

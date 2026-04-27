@@ -30,7 +30,7 @@
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知任务提交：`049e28d`
+- 最近已知任务提交：`e9dbc19`
 - 当前任务：`M2-T6 M2 集成验收与回归`
 - 当前阻塞：无。M2-T4 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。桌面编译/运行环境已补齐：Rust/Cargo、Tauri Linux 依赖、xvfb/dbus-x11 已安装；`npm run build`、`cargo test`、`npm run tauri:build` 均已通过，release binary 已用 xvfb 启动验证。环境/脚本修复提交：`1bc5dce`。
 
@@ -73,7 +73,7 @@
   - 覆盖测试：valid/invalid/unknown 确认、强提示、base mismatch、diff terminal changed、appliedInfo/status、dirty+undo、键盘/焦点隔离。
   - Review：Spec Reviewer 修复后 PASS；Quality Reviewer 修复后 APPROVED。
   - 验证通过：`npm test -- --run`（14 files / 82 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
-  - 任务提交：`049e28d`。
+  - 任务提交：`e9dbc19`。
 
 ## 下一轮建议
 
@@ -122,4 +122,4 @@
 - M2-T2 任务提交：`f534770`
 - M2-T3 任务提交：`e211bf1`
 - M2-T4 任务提交：`9bfcefc`
-- M2-T5 任务提交：`049e28d`
+- M2-T5 任务提交：`e9dbc19`

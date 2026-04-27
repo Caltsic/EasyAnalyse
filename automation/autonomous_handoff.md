@@ -40,9 +40,9 @@
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知任务提交：`89577eb`
-- 当前任务：`M3-T2 system/light/dark 主题迁移`
-- 当前阻塞：无。M3-T1 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。M2-T4 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。桌面编译/运行环境已补齐：Rust/Cargo、Tauri Linux 依赖、xvfb/dbus-x11 已安装；`npm run build`、`cargo test`、`npm run tauri:build` 均已通过，release binary 已用 xvfb 启动验证。环境/脚本修复提交：`1bc5dce`。
+- 最近已知任务提交：`c056c01`
+- 当前任务：`M3-T3 Provider/Model 配置骨架`
+- 当前阻塞：无。M3-T2 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。M3-T1 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。M2-T4 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。桌面编译/运行环境已补齐：Rust/Cargo、Tauri Linux 依赖、xvfb/dbus-x11 已安装；`npm run build`、`cargo test`、`npm run tauri:build` 均已通过，release binary 已用 xvfb 启动验证。环境/脚本修复提交：`1bc5dce`。
 
 ## 最近完成
 
@@ -105,22 +105,30 @@
   - Review：Spec Reviewer 修复 `basic` group 后 PASS；Quality Reviewer 修复 storage error handling 后 APPROVED；Final Integration Reviewer PASS/READY。
   - 验证通过：`npm test -- --run`（16 files / 95 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
   - 任务提交：`89577eb`。
+- M3-T2 已完成：system/light/dark 主题迁移。
+  - `useTheme` 现在以 AppSettings `appearance.theme` 为偏好源，支持 `system | light | dark`；对 Canvas/UI 仍输出解析后的 `light | dark` effective theme。
+  - `system` 模式监听 `prefers-color-scheme: dark`，系统配色变化会即时更新 DOM `data-theme`/`colorScheme`，不会把解析值写回覆盖 `system` 偏好。
+  - 旧 `easyanalyse.theme` 会迁移到 AppSettings；当 AppSettings 已存在时清理 stale/divergent legacy key，避免主题双源分歧。
+  - 新增 `theme.test.ts` 与 `useTheme.test.tsx`，覆盖 system 默认、强制 light/dark、legacy migration/cleanup、显式持久化、media query 切换与 toggle。
+  - Review：Spec Reviewer 修复后 PASS；Quality Reviewer 修复后 APPROVED。
+  - 验证通过：`npm test -- --run`（18 files / 103 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+  - 任务提交：`c056c01`。
 
 ## 下一轮建议
 
-执行 `M3-T2`：system/light/dark 主题迁移。
+执行 `M3-T3`：Provider/Model 配置骨架。
 
 建议派子代理：
 
-1. Implementer：在现有 `useTheme` / `theme.ts` / `App.tsx` 基础上把主题源迁移到 AppSettings `appearance.theme`，支持 `system | light | dark`，保留即时生效与持久化。不要改 semantic v4、蓝图 apply/save 语义或 secrets。
-2. Spec Reviewer：检查 M3-T2 是否只做主题迁移，是否使用 M3-T1 AppSettings 基础，是否保留现有 light/dark 行为并正确支持 system。
-3. Quality Reviewer：重点审查系统主题 media query 监听、localStorage 旧 key 迁移、状态初始化/SSR 安全、测试覆盖与无 plaintext secret 风险。
+1. Implementer：在 M3-T1 AppSettings agent.providers / selectedProviderId / selectedModelId 基础上实现 provider/model public config 骨架与设置入口；只保存公开 metadata 与 `apiKeyRef`，不得实现 SecretStore 或写入 plaintext API key。
+2. Spec Reviewer：检查是否只做 Provider/Model 配置骨架，是否保持 AppSettings allowlist/secret stripping，是否不触碰真实 Provider 调用。
+3. Quality Reviewer：重点审查 provider/model selection normalize、缺失/删除 provider 后 selected id fallback、UI/Store 状态一致性、无 secret 泄漏、测试覆盖。
 
 建议验收测试：
 
-- 针对 M3-T2 的新增单元/集成测试：system 默认、light/dark 强制、旧 `easyanalyse.theme` migration、system media query 切换。
+- Provider/model public config 增删改/选择 normalize、secret-like 字段剥离、legacy/partial migration、settings store persistence。
 - 回归 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
-- M3-T1 已完成；继续推进 M3 Settings + Secrets。
+- M3-T2 已完成；继续推进 M3 Settings + Secrets。
 
 ## 重要提醒
 
@@ -156,3 +164,4 @@
 - M2-T5 任务提交：`e9dbc19`
 - M2-T6 任务提交：`442642d`
 - M3-T1 任务提交：`89577eb`
+- M3-T2 任务提交：`c056c01`

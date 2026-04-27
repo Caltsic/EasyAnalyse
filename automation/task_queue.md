@@ -64,7 +64,7 @@
 ## Milestone 3：Settings + Secrets（M2 验收通过后自动执行）
 
 - [x] M3-T1：App settings 基础结构
-- [ ] M3-T2：system/light/dark 主题迁移
+- [x] M3-T2：system/light/dark 主题迁移
 - [ ] M3-T3：Provider/Model 配置骨架
 - [ ] M3-T4：SecretStore/API key 存储策略
 
@@ -228,3 +228,14 @@ M5 真实调用约束：用户已提供项目专用 DeepSeek API key；自动化
 - 验证通过：`npm test -- --run`（16 files / 95 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 - 任务提交：`89577eb feat: add app settings foundation`。
 
+### M3-T2 完成记录
+
+- 完成时间：2026-04-28 05:04 +0800
+- 修改：`easyanalyse-desktop/src/lib/theme.ts`、`easyanalyse-desktop/src/lib/useTheme.ts`。
+- 新增测试：`easyanalyse-desktop/src/lib/theme.test.ts`、`easyanalyse-desktop/src/lib/useTheme.test.tsx`。
+- 实现：主题偏好迁移到 AppSettings `appearance.theme`，支持 `system | light | dark`；`system` 根据系统配色解析并监听变化；强制 light/dark 保持即时应用与持久化。
+- 兼容：旧 `easyanalyse.theme` 会迁移进 AppSettings；当 AppSettings 已存在时会 best-effort 清理 stale/divergent legacy key，避免双源分歧。
+- 覆盖：system 默认、强制 light/dark、legacy migration、divergent legacy cleanup、显式偏好持久化、系统 media query 切换与 toggle 持久化。
+- Review：Spec Reviewer 修复后 PASS；Quality Reviewer 修复后 APPROVED。
+- 验证通过：`npm test -- --run`（18 files / 103 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- 任务提交：`c056c01 feat: migrate theme preference to app settings`。

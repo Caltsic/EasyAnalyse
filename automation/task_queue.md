@@ -45,7 +45,7 @@
   - 验收：主 CanvasView 仍可编辑；renderer 可被预览复用；预览前后 mainDocumentHash 不变。
   - 禁止：只用 readOnly guard 掩盖所有写路径。
 
-- [ ] **M2-T3：BlueprintPreviewCanvas**
+- [x] **M2-T3：BlueprintPreviewCanvas**
   - 输出：只读蓝图预览组件。
   - 验收：拖拽/Delete/Space/快捷键不改主文档；预览组件不调用 editorStore mutation。
 
@@ -164,3 +164,16 @@
 - 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 - Spec Reviewer：PASS；Quality Reviewer 修复后 APPROVED；Final Integration Reviewer：PASS。
 - 任务提交：`f534770`。
+
+### M2-T3 完成记录
+
+- 完成时间：2026-04-27 17:39 +0800
+- 新增：`easyanalyse-desktop/src/components/blueprints/BlueprintPreviewCanvas.tsx`
+- 新增：`easyanalyse-desktop/src/components/blueprints/BlueprintPreviewCanvas.test.tsx`
+- 新增：`easyanalyse-desktop/src/components/blueprints/BlueprintPreviewCanvas.integration.test.tsx`
+- 修改：`easyanalyse-desktop/package.json`、`easyanalyse-desktop/package-lock.json`，新增 devDependency `jsdom` 以支持 DOM 交互回归测试。
+- 实现：基于 `CircuitCanvasRenderer` 的只读蓝图预览组件，显式 `interactive={false}`，不 import/use `editorStore`，不传主文档 mutation callbacks。
+- 覆盖：预览渲染前后主文档 canonical hash 不变；无 mutation callbacks；focused preview 隔离 Delete/Space/Home/Escape 与 Ctrl/Cmd Save/Open/New/Undo/Redo/Home 等全局快捷键；真实 renderer 路径下非交互预览 pointer events 不暴露 draggable 写路径。
+- 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- Spec Reviewer：修复后 PASS；Quality Reviewer：修复后 APPROVED；Final Integration Reviewer：PASS/READY。
+- 任务提交：`e211bf1`。

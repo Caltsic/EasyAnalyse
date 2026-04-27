@@ -208,11 +208,11 @@ M5 真实调用约束：用户已提供项目专用 DeepSeek API key；自动化
 
 ### M2-T6 完成记录
 
-- 完成时间：2026-04-28 01:45 +0800
+- 完成时间：2026-04-28 01:58 +0800
 - 新增：`docs/manual-tests/m2-blueprint-ui-loop-acceptance.md`。
 - 修改：`BlueprintsPanel` 接入选中蓝图的 `BlueprintPreviewCanvas` 只读预览区域。
-- 补充：`BlueprintsPanel.test.tsx` 端到端无 Agent 蓝图 UI 闭环验收测试：sidecar 列表 -> 选择预览 -> validate -> diff/apply dialog -> invalid 强提示但可应用 -> editor dirty -> `appliedInfo` -> undo 恢复。
-- 修复：验收测试使用 normalized main fixture 并重置 editor history/future，避免异步 validation normalization 导致 hash 断言脆弱。
+- 补充：`BlueprintsPanel.test.tsx` 端到端无 Agent 蓝图 UI 闭环验收测试：sidecar 列表 -> 选择预览 -> validate -> diff/apply dialog -> invalid 强提示但可应用 -> editor dirty -> `appliedInfo` -> undo 恢复；断言 preview 接收选中蓝图 document。
+- 质量修复：手测文档澄清 panel 测试使用 seeded store 与 mocked preview；真实 preview renderer 和磁盘 sidecar 加载由既有专项测试覆盖。
 - 验证通过：`npm test -- --run`（14 files / 83 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
-- Review：Spec Reviewer PASS；Quality Reviewer 关注的 fixture normalization/preview 隔离风险已通过修复与现有 preview tests 覆盖。
-- 任务提交：`f02e73f test: add m2 blueprint loop acceptance coverage`。
+- Review：Spec Reviewer PASS；Quality Reviewer 修复后 APPROVED；Final Integration Reviewer PASS/READY。
+- 任务提交：`442642d test: tighten m2 blueprint acceptance coverage`。

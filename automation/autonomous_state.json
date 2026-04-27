@@ -18,9 +18,9 @@
     "M2-T6"
   ],
   "blockedTasks": [],
-  "lastCommit": "f02e73f",
-  "lastRunAt": "2026-04-28T01:45:00+08:00",
-  "testStatus": "M2-T6 passed: npm test -- --run (14 files / 83 tests); npx tsc -b --pretty false; npm run lint; npx vite build. Spec Reviewer: PASS; Quality Reviewer: reviewed, concerns addressed/verified by normalization fix and existing preview isolation tests.",
+  "lastCommit": "442642d",
+  "lastRunAt": "2026-04-28T01:58:31+08:00",
+  "testStatus": "M2-T6 passed: npm test -- --run (14 files / 83 tests); npx tsc -b --pretty false; npm run lint; npx vite build. Spec Reviewer: PASS; Quality Reviewer re-review: APPROVED; Final Integration Reviewer: PASS/READY.",
   "requiresUserDecision": false,
   "userDecisionPrompt": null,
   "autonomyScope": {
@@ -55,5 +55,5 @@
     "deliver": "origin",
     "createdAfterCommit": "1913a65"
   },
-  "lastTaskCommit": "f02e73f"
+  "lastTaskCommit": "442642d"
 }

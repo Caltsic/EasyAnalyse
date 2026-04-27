@@ -30,7 +30,7 @@
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知任务提交：`f02e73f`
+- 最近已知任务提交：`442642d`
 - 当前任务：`M3-T1 App settings 基础结构`
 - 当前阻塞：无。M2-T4 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。桌面编译/运行环境已补齐：Rust/Cargo、Tauri Linux 依赖、xvfb/dbus-x11 已安装；`npm run build`、`cargo test`、`npm run tauri:build` 均已通过，release binary 已用 xvfb 启动验证。环境/脚本修复提交：`1bc5dce`。
 
@@ -79,9 +79,11 @@
 - M2-T6 已完成：M2 集成验收与回归。
   - 新增 M2 手测验收文档：`docs/manual-tests/m2-blueprint-ui-loop-acceptance.md`。
   - `BlueprintsPanel` 现在在选中蓝图时显示只读 `BlueprintPreviewCanvas` 预览。
-  - 新增无 Agent 蓝图闭环验收测试：sidecar/list/select/preview/validate/diff/apply/dirty/undo。
+  - 新增无 Agent 蓝图闭环验收测试：sidecar/list/select/preview/validate/diff/apply/dirty/undo；补充断言确认 preview 接收的是选中蓝图 document，不是主文档或错误记录。
+  - Quality 修复：手测文档已明确区分 panel/store 合约测试、磁盘 sidecar 加载覆盖与真实 preview renderer 专项测试，避免夸大 mock 覆盖范围。
   - 验证通过：`npm test -- --run`（14 files / 83 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
-  - 任务提交：`f02e73f`。
+  - Review：Spec Reviewer PASS；Quality Reviewer 修复后 APPROVED；Final Integration Reviewer PASS/READY。
+  - 任务提交：`442642d`。
 
 ## 下一轮建议
 
@@ -89,14 +91,14 @@
 
 建议派子代理：
 
-1. Implementer：补齐 M2 端到端/集成验收测试与必要文档/手测记录，重点覆盖人工蓝图闭环：创建快照 -> sidecar -> 列表 -> 预览 -> 校验 -> diff -> 强确认应用 -> dirty + undo。
-2. Spec Reviewer：检查 M2 全部验收矩阵是否满足，尤其 invalid/unknown 可应用、保存磁盘仍走门禁、预览不改主文档、`appliedInfo` 与 runtime `isCurrentMainDocument` 语义。
-3. Quality Reviewer：重点审查 M2 各组件集成、一致性文案、全局快捷键/弹窗焦点隔离、异步 store 竞态与回归测试充分性。
+1. Implementer：实现 M3-T1 App settings 基础结构。先侦察现有 theme/settings/tauri 存储方式，新增最小 AppSettings 类型、默认值、序列化/迁移/本地持久化 wrapper 或 store 骨架；只做普通设置基础设施，不接 API key 明文、不做 Provider 调用。
+2. Spec Reviewer：检查 M3-T1 是否只建立 Settings 基础结构，是否为后续 appearance/provider/model/secret 分组预留清晰边界，是否未把 secrets 写入仓库/文档/sidecar。
+3. Quality Reviewer：重点审查设置迁移兼容性、默认值、错误处理、测试覆盖、与现有主题/状态初始化的集成风险。
 
 建议验收测试：
 
-- 全量 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
-- 需要时补 E2E/集成测试或手测记录，证明无 Agent 蓝图闭环完整可用。
+- 针对 M3-T1 的新增单元测试/集成测试。
+- 回归 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 - 当前 M2-T6 已完成；下一轮自动进入 M3 Settings + Secrets。
 
 ## 重要提醒
@@ -131,3 +133,4 @@
 - M2-T3 任务提交：`e211bf1`
 - M2-T4 任务提交：`9bfcefc`
 - M2-T5 任务提交：`e9dbc19`
+- M2-T6 任务提交：`442642d`

@@ -721,7 +721,9 @@ describe('BlueprintsPanel', () => {
       firstButtonByText(cardByTitle(host, 'M2 acceptance blueprint')!, 'Select')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(host.querySelector('[aria-current="true"]')?.textContent).toContain('M2 acceptance blueprint')
-    expect(host.querySelector('[aria-label="Blueprint preview canvas"]')).toBeTruthy()
+    const previewCanvas = host.querySelector('[aria-label="Blueprint preview canvas"]') as HTMLElement | null
+    expect(previewCanvas).toBeTruthy()
+    expect(previewCanvas?.dataset.documentTitle).toBe('Accepted Blueprint Replacement')
     expect(await hashDocument(useEditorStore.getState().document)).toBe(mainHash)
 
     await act(async () => {

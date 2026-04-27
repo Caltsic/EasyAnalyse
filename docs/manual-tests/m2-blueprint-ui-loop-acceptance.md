@@ -7,8 +7,8 @@ Scope: Milestone 2 regression for the manual blueprint workflow only. No Agent/p
 
 Covered by `easyanalyse-desktop/src/components/blueprints/BlueprintsPanel.test.tsx`:
 
-1. Load/list a sidecar workspace (`*.easyanalyse-blueprints.json`) without adding blueprint data to the main semantic-v4 JSON.
-2. Select a blueprint and render the read-only `BlueprintPreviewCanvas` path.
+1. Render a seeded sidecar workspace state (`*.easyanalyse-blueprints.json` path and blueprint list) without adding blueprint data to the main semantic-v4 JSON. This is a panel/store-rendering contract test; it does not exercise disk sidecar loading.
+2. Select a blueprint and pass the selected blueprint document to the preview slot. The preview component is mocked in this panel test, so real `BlueprintPreviewCanvas` rendering is covered by its dedicated unit/integration tests.
 3. Validate a blueprint and surface invalid state, issue count, and warning count without blocking apply.
 4. Open the apply confirmation dialog and show summary diff/risk warning.
 5. Confirm apply as an in-memory whole-document replacement: editor becomes dirty, sidecar save is not called, `appliedInfo` is recorded, and no legacy `status='applied'` field is introduced.

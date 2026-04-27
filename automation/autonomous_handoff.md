@@ -27,9 +27,9 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知任务提交：`cda2c2a`
-- 当前任务：`M2-T2 抽取 CircuitCanvasRenderer`
-- 当前阻塞：无。M2-T1 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- 最近已知任务提交：`f534770`
+- 当前任务：`M2-T3 BlueprintPreviewCanvas`
+- 当前阻塞：无。M2-T2 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 
 ## 最近完成
 
@@ -38,21 +38,32 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
   - 行为：normalize 后整文档替换内存主文档；`dirty=true`；当前文档进入 history；future 清空；触发 validation；不写磁盘。
   - undo/redo：应用后 undo 恢复旧主文档，redo 恢复蓝图文档。
   - invalid/unknown/valid 策略：apply 阶段不因校验问题阻止；保存磁盘仍走现有保存门禁。
-  - 临时态：应用时重置 selection 为 document，清空 pending device、focus、viewport animation。
-  - 竞态修复：应用时递增 `documentOperationToken`，防止 pending `openDocument/newDocument` 旧结果覆盖蓝图；validation 继续由 token 防 stale。
-  - 测试：新增 `easyanalyse-desktop/src/store/editorStore.test.ts` 覆盖 apply/undo/redo、不写磁盘、invalid 可应用、validation stale、pending open stale。
-  - Review：Spec Reviewer PASS；Quality Reviewer 修复后 APPROVED；Final Integration Reviewer PASS。
+  - 任务提交：`cda2c2a`。
+- M2-T2 已完成：抽取 `CircuitCanvasRenderer`。
+  - 新增 `easyanalyse-desktop/src/components/canvas/CircuitCanvasRenderer.tsx` 与测试。
+  - `CanvasView.tsx` 现在作为 `editorStore` 连接层，传入 document、locale、theme、selection、focus、viewport animation 与交互 callbacks。
+  - `CircuitCanvasRenderer` 不 import/use `editorStore`，不直接调用主文档 mutation；写路径都由可选 callbacks 承载。
+  - 为后续预览安全，renderer 默认 `interactive=false`；无 callbacks/静态预览场景不会启用 Konva draggable；主画布 `CanvasView` 显式传 `interactive` 保持编辑交互。
+  - 测试覆盖静态渲染、禁止 store/direct mutation、默认非 draggable、interactive/CanvasView 启用 draggable。
+  - Review：Spec Reviewer PASS；Quality Reviewer 首轮发现 lint 和默认 draggable 问题，修复后 APPROVED；Final Integration Reviewer PASS。
   - 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+  - 任务提交：`f534770`。
 
 ## 下一轮建议
 
-执行 `M2-T2`：抽取 `CircuitCanvasRenderer`。
+执行 `M2-T3`：实现 `BlueprintPreviewCanvas`。
 
 建议派子代理：
 
-1. Implementer：按 TDD/小步迁移从 `CanvasView.tsx` 抽纯渲染层 `components/canvas/CircuitCanvasRenderer.tsx`，保持主画布现有交互不回归。
-2. Spec Reviewer：检查 renderer 不 import/use `editorStore` mutation，CanvasView 仅组合 renderer 并传交互 callbacks。
-3. Quality Reviewer：重点审查预览架构边界，不能只靠 readOnly guard；关注拖拽/Delete/Space/selection/focus 等隐性写路径。
+1. Implementer：基于 `CircuitCanvasRenderer` 新增 `components/blueprints/BlueprintPreviewCanvas.tsx`，传入蓝图 `DocumentFile`，默认只读/非交互，可支持本地预览 viewport/pan/zoom，但不得触发主文档 mutation。
+2. Spec Reviewer：检查 preview 不 import/use `editorStore` mutation，预览前后主文档 hash 不变，invalid/unknown 不被预览拒绝。
+3. Quality Reviewer：重点审查拖拽/Delete/Space/selection/focus 等隐性写路径；不要只靠 CSS 或事件冒泡阻断。
+
+建议验收测试：
+
+- 渲染 preview 时 main document canonical hash 不变。
+- Preview 默认不启用 draggable/mutation callbacks。
+- 预览组件源码不 import `editorStore` 或主文档 mutation。
 
 ## 重要提醒
 
@@ -61,7 +72,7 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
 - 不要实现 Agent/Provider/API key，直到 M1/M2 完成。
 - 不要把蓝图写进主 document。
 - 不要使用旧的 `status='applied'` 模型。
-- Canvas 预览优先拆纯渲染层 `CircuitCanvasRenderer`，不要只靠 readOnly guard 掩盖写路径。
+- Canvas 预览优先使用纯渲染层 `CircuitCanvasRenderer`，不要只靠 readOnly guard 掩盖写路径。
 
 ## 自主施工 cronjob
 
@@ -69,7 +80,7 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
 - 名称：`EasyAnalyse Agent Branch Autonomous Builder`
 - 频率：`every 2h`
 - deliver：`origin`
-- 每轮仍会主动发送 Telegram 开始/结束通知（若运行环境暴露对应发送工具）。
+- 每轮仍会主动发送 Telegram 开始/结束通知（若运行环境暴露对应发送工具；本 cron 交付也会由系统自动处理最终响应）。
 
 ## 最近任务提交
 
@@ -80,3 +91,4 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
 - M1-T4 任务提交：`b1a984f`
 - M1-T5 任务提交：`d54041a`
 - M2-T1 任务提交：`cda2c2a`
+- M2-T2 任务提交：`f534770`

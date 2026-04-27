@@ -40,7 +40,7 @@
   - 验收：应用后 undo 恢复旧文档；redo 恢复蓝图文档；保存仍走现有门禁。
   - 禁止：在 apply 阶段阻止 invalid 文档。
 
-- [ ] **M2-T2：抽取 CircuitCanvasRenderer**
+- [x] **M2-T2：抽取 CircuitCanvasRenderer**
   - 输出：纯渲染组件，不依赖 editorStore mutation。
   - 验收：主 CanvasView 仍可编辑；renderer 可被预览复用；预览前后 mainDocumentHash 不变。
   - 禁止：只用 readOnly guard 掩盖所有写路径。
@@ -151,3 +151,16 @@
 - 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 - Spec Reviewer：PASS；Quality Reviewer：APPROVED；Final Integration Reviewer：PASS。
 - 任务提交：`cda2c2a`。
+
+### M2-T2 完成记录
+
+- 完成时间：2026-04-27 15:00 +0800
+- 新增：`easyanalyse-desktop/src/components/canvas/CircuitCanvasRenderer.tsx`
+- 新增：`easyanalyse-desktop/src/components/canvas/CircuitCanvasRenderer.test.tsx`
+- 修改：`easyanalyse-desktop/src/components/CanvasView.tsx`
+- 实现：从 `CanvasView` 抽出 `CircuitCanvasRenderer`，`CanvasView` 只负责连接 `editorStore` 并传入 document、locale、theme、selection、focus、viewport animation 与交互 callbacks。
+- 质量修复：renderer 默认 `interactive=false`，无 callbacks/预览场景不会暴露 Konva draggable 写路径；主 `CanvasView` 显式传 `interactive` 保持编辑行为。
+- 覆盖：静态 document 渲染、禁止 editorStore/direct mutation import/call、默认非 draggable、interactive/CanvasView 可启用 draggable。
+- 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- Spec Reviewer：PASS；Quality Reviewer 修复后 APPROVED；Final Integration Reviewer：PASS。
+- 任务提交：`f534770`。

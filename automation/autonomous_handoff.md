@@ -46,6 +46,8 @@
 
 ## 最近完成
 
+- 30 分钟轮询防卡死 review 已完成：新增 `automation/autonomous_lock.py` 原子锁，live cronjob 已配置 `~/.hermes/scripts/easyanalyse_autonomous_preflight.py` 作为 preflight，在模型启动前获取锁；锁未过期时本轮跳过，不运行 git/subagent/写文件；结束前 release。任务提交：`c3ea9cd`。
+
 - M1-T1 至 M1-T5 已完成并验证通过，详见 `automation/task_queue.md` 完成记录。
 - M2-T1 已完成：新增 `editorStore.applyBlueprintDocument(document)`。
   - 行为：normalize 后整文档替换内存主文档；`dirty=true`；当前文档进入 history；future 清空；触发 validation；不写磁盘。

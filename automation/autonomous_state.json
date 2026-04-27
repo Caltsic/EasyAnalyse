@@ -18,9 +18,9 @@
     "M2-T6"
   ],
   "blockedTasks": [],
-  "lastCommit": "d5624cf",
-  "lastRunAt": "2026-04-28T03:00:00+08:00",
-  "testStatus": "M2-T6 passed: npm test -- --run (14 files / 83 tests); npx tsc -b --pretty false; npm run lint; npx vite build. Spec Reviewer: PASS; Quality Reviewer re-review: APPROVED; Final Integration Reviewer: PASS/READY.",
+  "lastCommit": "c3ea9cd",
+  "lastRunAt": "2026-04-28T03:22:00+08:00",
+  "testStatus": "30m polling lock hardening verified: autonomous_lock.py py_compile/status/acquire/held/release/preflight acquired/preflight held; cronjob updated with preflight script; no active lock; gitignore covers lock file.",
   "requiresUserDecision": false,
   "userDecisionPrompt": null,
   "autonomyScope": {

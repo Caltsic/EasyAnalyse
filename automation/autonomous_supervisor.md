@@ -27,9 +27,37 @@
 7. 阅读本目录控制文件和最高优先规划。
 8. 从 `automation/task_queue.md` 选择下一个未完成、未阻塞、依赖已满足的小任务。
 
+
+## 运行锁与 30 分钟轮询
+
+当前自动施工调度采用“短周期轮询 + 仓库运行锁”模式：cronjob 每 30 分钟启动一次 fresh supervisor。每轮必须先检查并维护运行锁，防止上一轮尚未结束时并发改同一仓库。
+
+锁文件：`automation/.autonomous_run.lock`（不提交仓库）。
+
+每轮开始时必须执行：
+
+1. 如果锁文件不存在：创建锁文件后继续执行。
+2. 如果锁文件存在且 `startedAt` 距当前时间不超过 6 小时：认为上一轮仍在运行或尚未安全释放，本轮只发送 Telegram “检测到运行锁，跳过本轮”并退出，不做 git 修改。
+3. 如果锁文件存在且超过 6 小时：认为是 stale lock；读取并记录旧锁内容，发送 Telegram stale lock 提示，删除旧锁并创建新锁后继续。
+4. 正常结束、失败退出或决定暂停问用户前，都必须尽力删除本轮创建的锁文件。
+
+锁文件建议内容：
+
+```json
+{
+  "job": "EasyAnalyse Agent Branch Autonomous Builder",
+  "startedAt": "ISO-8601",
+  "pidHint": "optional",
+  "task": "M3-T1",
+  "branch": "agent"
+}
+```
+
+禁止把锁文件加入 git。若发现锁文件被 `git status` 显示为 untracked，应保持未提交；如需可把 `automation/.autonomous_run.lock` 加入 `.git/info/exclude`，不要改项目 `.gitignore`，除非单独有理由。
+
 ## 每轮执行模型
 
-每轮默认只完成一个小任务；如果任务极小且测试已覆盖，可以合并相邻子任务，但必须在 handoff 中说明理由。
+每轮默认只完成一个小任务；如果任务极小且测试已覆盖，可以合并相邻子任务，但必须在 handoff 中说明理由。调度频率为每 30 分钟一次，依靠运行锁避免并发。
 
 代码任务必须执行以下审核/测试门禁；纯文档任务可合并审查，但仍必须说明验证方式：
 

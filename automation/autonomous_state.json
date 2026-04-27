@@ -19,7 +19,7 @@
   ],
   "blockedTasks": [],
   "lastCommit": "442642d",
-  "lastRunAt": "2026-04-28T01:58:31+08:00",
+  "lastRunAt": "2026-04-28T02:53:51+08:00",
   "testStatus": "M2-T6 passed: npm test -- --run (14 files / 83 tests); npx tsc -b --pretty false; npm run lint; npx vite build. Spec Reviewer: PASS; Quality Reviewer re-review: APPROVED; Final Integration Reviewer: PASS/READY.",
   "requiresUserDecision": false,
   "userDecisionPrompt": null,
@@ -51,9 +51,12 @@
   "cronJob": {
     "jobId": "02e4bfaf3360",
     "name": "EasyAnalyse Agent Branch Autonomous Builder",
-    "schedule": "every 2h",
+    "schedule": "every 30m",
     "deliver": "origin",
-    "createdAfterCommit": "1913a65"
+    "createdAfterCommit": "1913a65",
+    "mode": "polling_with_lock",
+    "lockFile": "automation/.autonomous_run.lock",
+    "lockTtlHours": 6
   },
   "lastTaskCommit": "442642d"
 }

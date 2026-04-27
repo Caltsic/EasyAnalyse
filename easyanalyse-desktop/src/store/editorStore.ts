@@ -20,6 +20,7 @@ import {
 import { setStoredTerminalAnchor } from '../lib/geometry'
 import { getStoredLocale, translate } from '../lib/i18n'
 import { makeId } from '../lib/ids'
+import { useBlueprintStore } from './blueprintStore'
 import {
   isTauriRuntime,
   newDocumentCommand,
@@ -351,6 +352,7 @@ function nextNetworkLineView(document: DocumentFile, label: string): NetworkLine
 
 export const useEditorStore = create<EditorState>((set, get) => {
   let validationToken = 0
+  let documentOperationToken = 0
 
   const requestValidation = async (document: DocumentFile) => {
     const token = ++validationToken
@@ -389,11 +391,12 @@ export const useEditorStore = create<EditorState>((set, get) => {
       resetHistory?: boolean
       statusMessage?: string | null
     },
-  ) => {
+  ): DocumentFile => {
     const normalized = normalizeDocumentLocal(document)
+    const hasFilePathOption = Object.prototype.hasOwnProperty.call(options ?? {}, 'filePath')
     set((state) => ({
       document: normalized,
-      filePath: options?.filePath ?? state.filePath,
+      filePath: hasFilePathOption ? (options?.filePath ?? null) : state.filePath,
       dirty: options?.dirty ?? state.dirty,
       selection: options?.selection ?? state.selection,
       pendingDeviceShape: null,
@@ -409,6 +412,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     }))
 
     void requestValidation(normalized)
+    return normalized
   }
 
   const mutateDocument = (
@@ -437,8 +441,11 @@ export const useEditorStore = create<EditorState>((set, get) => {
     void requestValidation(normalized)
   }
 
-  const loadDocumentFromPath = async (path: string) => {
+  const loadDocumentFromPath = async (path: string, operationToken: number) => {
     const result = await openDocumentFromPath(path)
+    if (operationToken !== documentOperationToken) {
+      return
+    }
     if (!result.document) {
       throw new Error('Document could not be opened')
     }
@@ -447,15 +454,17 @@ export const useEditorStore = create<EditorState>((set, get) => {
       validationReport: result.report,
     })
 
-    replaceDocument(result.document, {
-      filePath: result.path ?? path,
+    const filePath = result.path ?? path
+    const normalized = replaceDocument(result.document, {
+      filePath,
       dirty: false,
       selection: { entityType: 'document' },
       resetHistory: true,
       statusMessage: withLocale(get().locale, 'statusLoaded', {
-        path: result.path ?? path,
+        path: filePath,
       }),
     })
+    await useBlueprintStore.getState().loadForMainDocument(filePath, normalized)
   }
 
   return {
@@ -485,23 +494,31 @@ export const useEditorStore = create<EditorState>((set, get) => {
       })
     },
     newDocument: async () => {
+      const operationToken = ++documentOperationToken
       try {
         const locale = get().locale
         const document = isTauriRuntime()
           ? await newDocumentCommand(withLocale(locale, 'untitledCircuit'))
           : buildDefaultDocument(withLocale(locale, 'untitledCircuit'))
-        replaceDocument(document, {
+        if (operationToken !== documentOperationToken) {
+          return
+        }
+        const normalized = replaceDocument(document, {
           filePath: null,
           dirty: false,
           selection: { entityType: 'document' },
           resetHistory: true,
           statusMessage: withLocale(locale, 'statusNewDocument'),
         })
+        await useBlueprintStore.getState().loadForMainDocument(null, normalized)
       } catch (error) {
-        set({ statusMessage: getErrorMessage(error) })
+        if (operationToken === documentOperationToken) {
+          set({ statusMessage: getErrorMessage(error) })
+        }
       }
     },
     openDocument: async () => {
+      const operationToken = ++documentOperationToken
       try {
         const path = normalizeDialogPath(
           await open({
@@ -510,14 +527,19 @@ export const useEditorStore = create<EditorState>((set, get) => {
             filters: FILE_FILTERS,
           }),
         )
+        if (operationToken !== documentOperationToken) {
+          return
+        }
         if (!path) {
           set({ statusMessage: withLocale(get().locale, 'statusOpenCancelled') })
           return
         }
 
-        await loadDocumentFromPath(path)
+        await loadDocumentFromPath(path, operationToken)
       } catch (error) {
-        set({ statusMessage: getErrorMessage(error) })
+        if (operationToken === documentOperationToken) {
+          set({ statusMessage: getErrorMessage(error) })
+        }
       }
     },
     saveDocument: async () => {

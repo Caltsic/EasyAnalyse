@@ -130,20 +130,15 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
     }
 
     if (filePath === null) {
-      set((state) => {
-        if (requestVersion !== loadRequestVersion) {
-          return {}
-        }
-        return {
-          workspace:
-            state.workspace === null
-              ? createWorkspaceForDocument(null, mainDocument, mainHash)
-              : withUpdatedMainDocumentRef(state.workspace, null, mainDocument, mainHash),
-          sidecarPath: null,
-          dirty: false,
-          selectedBlueprintId: null,
-          loadError: null,
-        }
+      if (requestVersion !== loadRequestVersion) {
+        return
+      }
+      set({
+        workspace: createWorkspaceForDocument(null, mainDocument, mainHash),
+        sidecarPath: null,
+        dirty: false,
+        selectedBlueprintId: null,
+        loadError: null,
       })
       return
     }

@@ -27,9 +27,9 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知提交：`b1a984f`
-- 当前任务：`M1-T5 M1 集成验收`
-- 当前阻塞：无。M1-T4 前端验证已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- 最近已知提交：待本轮提交后回填
+- 当前任务：`M2-T1 editorStore.applyBlueprintDocument`
+- 当前阻塞：无。M1-T5 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 
 ## 最近完成
 
@@ -55,8 +55,6 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
   - sidecar 缺失返回 `None/null`，损坏 JSON 返回可读 parse error，非 `.easyanalyse-blueprints.json` 路径拒绝 IO，保存使用 pretty JSON，不做 semantic v4 蓝图内容门禁。
   - 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
   - 替代验证：Rust 单元测试已新增，但当前环境 `cargo: command not found`，未能执行 `cargo test`。
-
-
 - M1-T4 已完成：新增 `blueprintStore` 与竞态安全测试。
   - `easyanalyse-desktop/src/store/blueprintStore.ts` 导出 `useBlueprintStore` / `BlueprintState`。
   - 支持 load/save workspace、未保存主文档 in-memory workspace、创建主文档快照、选择/归档/软删除、validateBlueprint、markApplied。
@@ -65,15 +63,23 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
   - invalid 校验只写 `validationState='invalid'` 与 report，不丢弃蓝图；没有 `status='applied'`。
   - 测试覆盖 async 竞态：overlapping load、save while mutating、validation stale result、concurrent createSnapshot lost update。
   - 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- M1-T5 已完成：新增 M1 蓝图核心集成验收。
+  - 新增 `easyanalyse-desktop/src/store/blueprintCoreIntegration.test.ts`。
+  - `editorStore.openDocument` 在主文档打开后加载对应 sidecar workspace；`editorStore.newDocument` 初始化未保存文档空 workspace。
+  - `blueprintStore.loadForMainDocument(null)` 改为创建全新空 workspace，避免新文档继承旧 sidecar 蓝图。
+  - 覆盖：重新打开恢复蓝图列表、创建 manual snapshot 并保存 sidecar、主文档不出现 `blueprints`、dirty 隔离、损坏 sidecar 可恢复、normalized hash metadata、overlapping open stale result 防护。
+  - Spec Reviewer：PASS；Quality Reviewer：APPROVED。
+  - 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+
 ## 下一轮建议
 
-执行 `M1-T5`：M1 集成验收。
+执行 `M2-T1`：`editorStore.applyBlueprintDocument`。
 
 建议派子代理：
 
-1. Implementer：补 M1 端到端集成验收测试/文档，串起 hash、workspace、Tauri sidecar wrapper、blueprintStore。
-2. Spec Reviewer：检查 M1-01 至 M1-10 硬测试矩阵是否覆盖；确认主文档 JSON 不出现 `blueprints`。
-3. Quality Reviewer：检查 M1 API 命名与 M2 UI 接入风险，尤其 dirty 隔离和 sidecar 错误恢复。
+1. Implementer：按 TDD 为 `editorStore.applyBlueprintDocument(document: DocumentFile)` 增加测试与实现，要求整文档替换、history 增加、future 清空、dirty=true、触发 validation，不写磁盘、不阻止 invalid。
+2. Spec Reviewer：检查 M2-T1 是否满足应用后 undo/redo 可恢复、保存仍走现有门禁、应用阶段不阻止 invalid。
+3. Quality Reviewer：检查 async validation stale token、history/future 语义、selection/pending/focus 状态清理，不要污染 blueprintStore。
 
 ## 重要提醒
 
@@ -97,4 +103,5 @@ Milestone 3/4/5 暂不自动实施，除非 M1/M2 稳定或用户明确扩权。
 - M1-T2 任务提交：`a343374 feat: add blueprint workspace utilities`
 - M1-T3 任务提交：`633efde`
 - M1-T3 handoff 更新提交：`ea75624`
-- M1-T4 任务提交：`b1a984f`。
+- M1-T4 任务提交：`b1a984f`
+- M1-T5 任务提交：待提交

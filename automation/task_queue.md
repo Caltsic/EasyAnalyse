@@ -27,7 +27,7 @@
   - 验收：blueprintStore.dirty 不影响 editorStore.dirty；创建快照不修改主文档；sidecar 保存/加载通过测试。
   - 禁止：接 UI 大重构、Agent、Provider。
 
-- [ ] **M1-T5：M1 集成验收**
+- [x] **M1-T5：M1 集成验收**
   - 输出：补充测试/文档，确保 M1 端到端可用。
   - 验收：能从当前文档创建蓝图快照并保存 sidecar；重新打开后恢复蓝图列表；工作区干净提交。
 
@@ -125,3 +125,16 @@
 - 覆盖：未保存主文档 `sidecarPath=null`、sidecar load/save、sidecar 加载失败可恢复、`blueprintStore.dirty` 与 `editorStore.dirty` 隔离、invalid 校验不丢弃蓝图、异步 load/save/validate/createSnapshot 竞态防护、缺失 id 操作 no-op。
 - 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 - 任务提交：`b1a984f`。
+
+
+### M1-T5 完成记录
+
+- 完成时间：2026-04-27 10:22 +0800
+- 新增：`easyanalyse-desktop/src/store/blueprintCoreIntegration.test.ts`
+- 修改：`easyanalyse-desktop/src/store/editorStore.ts`
+- 修改：`easyanalyse-desktop/src/store/blueprintStore.ts`
+- 实现：`editorStore.openDocument` 在主文档打开后加载对应蓝图 sidecar workspace；`editorStore.newDocument` 初始化未保存文档的空蓝图 workspace；`blueprintStore.loadForMainDocument(null)` 不再继承旧 sidecar workspace。
+- 覆盖：重新打开主文档恢复蓝图列表、创建 manual snapshot 并保存 sidecar、主文档不出现 `blueprints`、editor/blueprint dirty 隔离、new document 清空旧蓝图、sidecar 损坏时主文档仍打开并记录错误、metadata hash 使用 normalized editor document、overlapping open stale result 防护。
+- 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- Spec Reviewer：PASS；Quality Reviewer：APPROVED。
+- 任务提交：待提交。

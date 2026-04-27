@@ -124,4 +124,4 @@
 - 实现：蓝图工作区 Zustand store；支持主文档加载 sidecar/in-memory workspace、保存 workspace、创建主文档快照、选择/归档/软删除、校验并记录 valid/invalid、记录 appliedInfo。
 - 覆盖：未保存主文档 `sidecarPath=null`、sidecar load/save、sidecar 加载失败可恢复、`blueprintStore.dirty` 与 `editorStore.dirty` 隔离、invalid 校验不丢弃蓝图、异步 load/save/validate/createSnapshot 竞态防护、缺失 id 操作 no-op。
 - 验证通过：`npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
-- 任务提交：`a50a90e`。
+- 任务提交：`b1a984f`。

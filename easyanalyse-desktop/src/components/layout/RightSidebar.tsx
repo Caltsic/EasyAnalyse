@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { Inspector } from '../Inspector'
+import { AgentPanel } from '../agent/AgentPanel'
 import { BlueprintsPanel } from '../blueprints/BlueprintsPanel'
 
-type RightSidebarTab = 'inspector' | 'blueprints'
+type RightSidebarTab = 'inspector' | 'blueprints' | 'agent'
 
 export function RightSidebar() {
   const [activeTab, setActiveTab] = useState<RightSidebarTab>('inspector')
@@ -32,6 +33,17 @@ export function RightSidebar() {
         >
           Blueprints
         </button>
+        <button
+          id="right-sidebar-agent-tab"
+          className={activeTab === 'agent' ? 'right-sidebar__tab is-active' : 'right-sidebar__tab'}
+          role="tab"
+          type="button"
+          aria-selected={activeTab === 'agent'}
+          aria-controls="right-sidebar-agent"
+          onClick={() => setActiveTab('agent')}
+        >
+          Agent
+        </button>
       </div>
 
       <div className="right-sidebar__panel">
@@ -44,7 +56,8 @@ export function RightSidebar() {
           >
             <Inspector />
           </div>
-        ) : (
+        ) : null}
+        {activeTab === 'blueprints' ? (
           <div
             id="right-sidebar-blueprints"
             role="tabpanel"
@@ -53,7 +66,17 @@ export function RightSidebar() {
           >
             <BlueprintsPanel />
           </div>
-        )}
+        ) : null}
+        {activeTab === 'agent' ? (
+          <div
+            id="right-sidebar-agent"
+            role="tabpanel"
+            aria-labelledby="right-sidebar-agent-tab"
+            className="right-sidebar__tabpanel"
+          >
+            <AgentPanel />
+          </div>
+        ) : null}
       </div>
     </aside>
   )

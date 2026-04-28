@@ -19,6 +19,13 @@ vi.mock('../blueprints/BlueprintsPanel', async () => {
   }
 })
 
+vi.mock('../agent/AgentPanel', async () => {
+  const React = await import('react')
+  return {
+    AgentPanel: () => React.createElement('section', { 'data-testid': 'mock-agent-panel' }, 'Agent workspace'),
+  }
+})
+
 let root: Root | null = null
 let container: HTMLDivElement | null = null
 
@@ -43,18 +50,21 @@ afterEach(() => {
 })
 
 describe('RightSidebar', () => {
-  it('shows Inspector by default and switches to the Blueprints tab without adding another column', async () => {
+  it('shows Inspector by default and switches to the Blueprints and Agent tabs without adding another column', async () => {
     const host = await renderSidebar()
 
     expect(host.querySelector('.right-sidebar')).toBeInstanceOf(HTMLElement)
     expect(host.querySelectorAll('.right-sidebar')).toHaveLength(1)
     expect(host.querySelector('[data-testid="mock-inspector"]')).toBeInstanceOf(HTMLElement)
     expect(host.querySelector('[data-testid="mock-blueprints-panel"]')).toBeNull()
+    expect(host.querySelector('[data-testid="mock-agent-panel"]')).toBeNull()
 
     const inspectorTab = host.querySelector<HTMLButtonElement>('[role="tab"][aria-controls="right-sidebar-inspector"]')
     const blueprintsTab = host.querySelector<HTMLButtonElement>('[role="tab"][aria-controls="right-sidebar-blueprints"]')
+    const agentTab = host.querySelector<HTMLButtonElement>('[role="tab"][aria-controls="right-sidebar-agent"]')
     expect(inspectorTab?.getAttribute('aria-selected')).toBe('true')
     expect(blueprintsTab?.getAttribute('aria-selected')).toBe('false')
+    expect(agentTab?.getAttribute('aria-selected')).toBe('false')
 
     await act(async () => {
       blueprintsTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -62,7 +72,20 @@ describe('RightSidebar', () => {
 
     expect(inspectorTab?.getAttribute('aria-selected')).toBe('false')
     expect(blueprintsTab?.getAttribute('aria-selected')).toBe('true')
+    expect(agentTab?.getAttribute('aria-selected')).toBe('false')
     expect(host.querySelector('[data-testid="mock-inspector"]')).toBeNull()
     expect(host.querySelector('[data-testid="mock-blueprints-panel"]')).toBeInstanceOf(HTMLElement)
+    expect(host.querySelector('[data-testid="mock-agent-panel"]')).toBeNull()
+
+    await act(async () => {
+      agentTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(inspectorTab?.getAttribute('aria-selected')).toBe('false')
+    expect(blueprintsTab?.getAttribute('aria-selected')).toBe('false')
+    expect(agentTab?.getAttribute('aria-selected')).toBe('true')
+    expect(host.querySelector('[data-testid="mock-inspector"]')).toBeNull()
+    expect(host.querySelector('[data-testid="mock-blueprints-panel"]')).toBeNull()
+    expect(host.querySelector('[data-testid="mock-agent-panel"]')).toBeInstanceOf(HTMLElement)
   })
 })

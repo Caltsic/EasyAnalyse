@@ -12,6 +12,10 @@ import {
   validateDocumentCommand,
 } from '../lib/tauri'
 import type {
+  AgentBlueprintCandidate,
+  AgentResponseParseIssue,
+} from '../types/agent'
+import type {
   BlueprintAppliedInfo,
   BlueprintMainDocumentRef,
   BlueprintRecord,
@@ -27,6 +31,10 @@ export interface BlueprintState {
   loadError: string | null
   saveError: string | null
   validationError: string | null
+  addAgentBlueprintCandidates(
+    candidates: AgentBlueprintCandidate[],
+    context: { mainDocument: DocumentFile; filePath: string | null; issues?: AgentResponseParseIssue[] },
+  ): Promise<BlueprintRecord[]>
   loadForMainDocument(filePath: string | null, mainDocument: DocumentFile): Promise<void>
   saveWorkspace(): Promise<void>
   createSnapshotFromDocument(
@@ -111,6 +119,7 @@ function isReportValid(report: ValidationReport): boolean {
 
 let loadRequestVersion = 0
 let validationRequestVersion = 0
+let candidateInsertionVersion = 0
 const validationTokensById = new Map<string, number>()
 
 export const useBlueprintStore = create<BlueprintState>((set, get) => ({
@@ -122,8 +131,72 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
   saveError: null,
   validationError: null,
 
+  addAgentBlueprintCandidates: async (candidates, context) => {
+    const insertionVersion = ++candidateInsertionVersion
+    const mainHash = await hashDocument(context.mainDocument)
+    if (insertionVersion !== candidateInsertionVersion) {
+      return []
+    }
+
+    const records = await Promise.all(
+      candidates.map((candidate, index) =>
+        createBlueprintFromDocument({
+          document: candidate.document,
+          title: candidate.title,
+          description: candidate.summary,
+          baseMainDocumentHash: mainHash,
+          source: 'agent',
+          validationState: candidate.issues.some((issue) => issue.severity === 'error') ? 'invalid' : 'unknown',
+          tags: ['agent'],
+          notes: [candidate.rationale, ...candidate.tradeoffs.map((tradeoff) => `Tradeoff: ${tradeoff}`), ...(candidate.notes ?? [])]
+            .filter(Boolean)
+            .join('\n'),
+          extensions: {
+            agentCandidate: {
+              highlightedLabels: candidate.highlightedLabels ?? [],
+              issues: candidate.issues,
+              parseIssues: (context.issues ?? []).filter((issue) => issue.candidateIndex === index),
+            },
+          },
+        }),
+      ),
+    )
+    if (insertionVersion !== candidateInsertionVersion) {
+      return []
+    }
+
+    let inserted: BlueprintRecord[] = []
+    set((state) => {
+      const currentWorkspace = state.workspace
+      const workspace = currentWorkspace ?? createWorkspaceForDocument(context.filePath, context.mainDocument, mainHash)
+      const mainDocument = workspace.mainDocument
+      const pathMatches = (mainDocument?.path ?? null) === context.filePath
+      const idMatches = mainDocument?.documentId === context.mainDocument.document.id
+      const hashMatches = mainDocument?.hash === mainHash
+
+      if (currentWorkspace !== null && (!pathMatches || !idMatches || !hashMatches)) {
+        inserted = []
+        return {}
+      }
+
+      inserted = records
+      return {
+        workspace: {
+          ...workspace,
+          updatedAt: new Date().toISOString(),
+          blueprints: [...workspace.blueprints, ...records],
+        },
+        selectedBlueprintId: records.at(-1)?.id ?? state.selectedBlueprintId,
+        dirty: records.length > 0 ? true : state.dirty,
+      }
+    })
+
+    return inserted
+  },
+
   loadForMainDocument: async (filePath, mainDocument) => {
     const requestVersion = ++loadRequestVersion
+    ++candidateInsertionVersion
     const mainHash = await hashDocument(mainDocument)
     if (requestVersion !== loadRequestVersion) {
       return

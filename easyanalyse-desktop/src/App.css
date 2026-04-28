@@ -169,7 +169,7 @@
 
 .right-sidebar__tabs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   padding: 8px;
   border-bottom: 1px solid var(--border);
@@ -193,6 +193,101 @@
 .right-sidebar__tabpanel {
   min-height: 0;
   height: 100%;
+}
+
+.agent-panel {
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px;
+  overflow: auto;
+}
+
+.agent-panel__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.agent-panel__header h2 {
+  margin: 0 0 6px;
+}
+
+.agent-panel__header p,
+.agent-card p,
+.agent-panel__notice {
+  margin: 0;
+  color: var(--muted);
+}
+
+.agent-panel__status {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  text-transform: capitalize;
+}
+
+.agent-panel__status--running {
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  color: var(--accent);
+}
+
+.agent-panel__status--error,
+.agent-panel__status--cancelled {
+  border-color: color-mix(in srgb, var(--danger) 42%, transparent);
+  color: var(--danger);
+}
+
+.agent-panel__form,
+.agent-panel__results,
+.agent-card {
+  display: grid;
+  gap: 10px;
+}
+
+.agent-panel__form textarea {
+  min-width: 0;
+  resize: vertical;
+}
+
+.agent-panel__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.agent-panel__notice,
+.agent-card {
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--control-bg-soft);
+}
+
+.agent-card h3 {
+  margin: 0;
+}
+
+.agent-card__candidate-list,
+.agent-card ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.agent-card__candidate-list li {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.agent-card--error,
+.agent-card--issues {
+  border-color: color-mix(in srgb, var(--danger) 32%, var(--border));
 }
 
 .inspector-shell {

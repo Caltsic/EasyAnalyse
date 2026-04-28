@@ -3,7 +3,7 @@
   "branch": "agent",
   "remote": "origin/agent",
   "currentMilestone": "M5",
-  "currentTask": "M5-T4",
+  "currentTask": "COMPLETE",
   "completedTasks": [
     "M1-T1",
     "M1-T2",
@@ -25,12 +25,13 @@
     "M4-T3",
     "M5-T1",
     "M5-T2",
-    "M5-T3"
+    "M5-T3",
+    "M5-T4"
   ],
   "blockedTasks": [],
-  "lastCommit": "4039270",
-  "lastRunAt": "2026-04-28T22:18:28+08:00",
-  "testStatus": "M5-T3 Anthropic adapter verified: Implementer TDD RED/GREEN completed; Spec Reviewer PASS after TDD fixes for non-JSON HTTP error mapping and text-block whitespace preservation; Quality Reviewer APPROVED; Final Integration Reviewer PASS/READY. Controller gates passed: npm test -- --run (26 files / 187 tests), npx tsc -b --pretty false, npm run lint, npx vite build, and git diff --check. Task commit 4039270 pushed/ready for origin/agent.",
+  "lastCommit": "872ddb3",
+  "lastRunAt": "2026-04-29T00:35:41+08:00",
+  "testStatus": "M5-T4 provider runtime request controls verified: Implementer TDD RED/GREEN completed; Spec Reviewer PASS after timeout enforcement fix for non-cooperative operations; Quality Reviewer APPROVED after lint and finite retry normalization fixes; Final Integration Reviewer PASS/READY. Controller gates passed: npm test -- --run (27 files / 200 tests), npx tsc -b --pretty false, npm run lint, npx vite build, and git diff --check. Task commit 872ddb3 created locally for push to origin/agent.",
   "requiresUserDecision": false,
   "userDecisionPrompt": null,
   "autonomyScope": {
@@ -84,5 +85,5 @@
     "preflightExportsRunId": true,
     "staleReclaimMutex": "automation/.autonomous_run.lock.reclaim"
   },
-  "lastTaskCommit": "4039270"
+  "lastTaskCommit": "872ddb3"
 }

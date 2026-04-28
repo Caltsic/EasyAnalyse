@@ -79,7 +79,7 @@
 - [x] M5-T1：OpenAI-compatible adapter
 - [x] M5-T2：DeepSeek preset
 - [x] M5-T3：Anthropic adapter
-- [ ] M5-T4：timeout/cancel/retry/context budget
+- [x] M5-T4：timeout/cancel/retry/context budget
 
 M5 真实调用约束：用户已提供项目专用 DeepSeek API key；自动化任务可从仓库外 `/home/ubuntu/.config/EasyAnalyse/secrets/deepseek_api_key` 读取。不得把 key 明文写入仓库、主文档、sidecar、普通设置、prompt 日志或 Telegram。真实 API smoke test 必须低成本、最小化；若出现高额费用风险或默认调用策略不确定，再暂停询问。
 
@@ -341,3 +341,14 @@ M5 真实调用约束：用户已提供项目专用 DeepSeek API key；自动化
 - Review：Spec Reviewer 修复后 PASS；Quality Reviewer APPROVED；Final Integration Reviewer PASS/READY。
 - 验证通过：`npm test -- --run`（26 files / 187 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`、`git diff --check`。
 - 任务提交：`4039270 feat: add anthropic provider adapter`。
+
+### M5-T4 完成记录
+
+- 完成时间：2026-04-29 00:35 +0800
+- 新增：`easyanalyse-desktop/src/lib/agentProviderRuntime.ts` 与 `easyanalyse-desktop/src/lib/agentProviderRuntime.test.ts`。
+- 修改：`openAiCompatibleProvider` / `anthropicProvider` 共享 provider error code 与 AbortError 映射；OpenAI-compatible、DeepSeek（OpenAI-compatible 路径）和 Anthropic adapters 仍只使用 injected fetch，不默认调用真实网络。
+- 实现：`runProviderWithControls` 提供 AbortSignal 传播、用户取消非重试、强制 timeout（包括不理会 abort 的 late provider operation）、retry allowlist、deterministic/clamped backoff、secret redaction；`checkAgentContextBudget` 提供纯上下文预算估算/拒绝，不 mutation 主文档。
+- 覆盖：外部 cancel、cooperative/non-cooperative timeout、timeout retry 与 late-result suppression、network/timeout/429/5xx retry、auth/model/schema/bad request/config/context/cancel 不重试、非有限 retry 选项归一化、context budget、API key redaction、adapter AbortError -> cancellation。
+- Review：Spec Reviewer 首轮发现 timeout 依赖 cooperative abort，TDD 修复后 PASS；Quality Reviewer 首轮发现 lint 与非有限 retry 配置风险，TDD 修复后 APPROVED；Final Integration Reviewer PASS/READY。
+- 验证通过：`npm test -- --run`（27 files / 200 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`、`git diff --check`。
+- 任务提交：`872ddb3 feat: add provider runtime request controls`。

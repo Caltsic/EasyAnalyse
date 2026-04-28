@@ -40,12 +40,22 @@
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知任务提交：`4039270`
+- 最近已知任务提交：`872ddb3`
 - 最近修复提交：`9857e69 fix: repair blueprint agent settings automation regressions`
-- 当前任务：`M5-T4 timeout/cancel/retry/context budget`
-- 当前阻塞：无。M5-T3 Anthropic adapter 已完成并通过验证；自动化可继续推进 M5-T4。
+- 当前任务：`COMPLETE`
+- 当前阻塞：无。M5-T4 provider runtime request controls 已完成并通过验证；Milestone 1-5 任务队列已全部完成。
 
 ## 最近完成
+
+- M5-T4 已完成：timeout/cancel/retry/context budget。
+  - 新增 `easyanalyse-desktop/src/lib/agentProviderRuntime.ts` 与 `agentProviderRuntime.test.ts`，实现纯 provider request-control utility：AbortSignal 传播、外部 cancel、强制 timeout、retry allowlist、deterministic/clamped backoff、secret redaction、context budget 检查。
+  - Timeout 不再依赖 provider/fetch cooperative abort；`runSingleAttempt` 会 race operation 与 timeout/external cancel，late resolving operation 不会覆盖最终结果，timeout 仍可按 retry policy 重试。
+  - 扩展 provider error code：`AGENT_PROVIDER_TIMEOUT`、`AGENT_PROVIDER_CANCELLED`、`AGENT_PROVIDER_CONTEXT_TOO_LARGE`；OpenAI-compatible/DeepSeek 路径与 Anthropic adapters 将 fetch `AbortError` 映射为非重试 cancellation，而不是 retryable network error。
+  - 安全边界：不调用真实 Provider、不读取 DeepSeek key、不调用 global fetch/Tauri/SecretStore/settings/editor/blueprintStore；API key 只作为 redaction input，不进入 error/toJSON/retry metadata。
+  - 质量修复：Spec Reviewer 首轮发现 non-cooperative timeout gap，TDD 补回归并修复；Quality Reviewer 首轮发现 lint unused args 与 non-finite retry config 风险，TDD 修复为 finite bounded normalization 后 APPROVED。
+  - Review：Spec Reviewer PASS；Quality Reviewer APPROVED；Final Integration Reviewer PASS/READY。
+  - 验证通过：`npm test -- --run`（27 files / 200 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`、`git diff --check`。
+  - 任务提交：`872ddb3`。
 
 - M5-T3 已完成：Anthropic adapter。
   - 新增 `easyanalyse-desktop/src/lib/anthropicProvider.ts` 与 `anthropicProvider.test.ts`，实现 Anthropic Messages provider adapter：`POST /v1/messages`、`x-api-key` / `anthropic-version` headers、system/user payload、text content block 拼接后解析 AgentResponse v1。
@@ -201,17 +211,7 @@
 
 ## 下一轮建议
 
-执行 `M5-T4`：timeout/cancel/retry/context budget。
-
-建议派子代理：
-
-1. Implementer：在现有 provider adapter / AgentPanel 边界上补齐可取消、超时、重试和上下文预算能力；优先做小而可验证的 provider-run helper 或 request-control utility，不要直接默认调用真实付费模型。
-2. Spec Reviewer：检查 retry 只作用于网络/超时/429/5xx 等可重试错误，缺 API key/401/403/model unavailable/schema/semantic/user cancel 不自动重试；取消后不写半截响应或污染蓝图列表。
-3. Quality Reviewer：重点审查 AbortSignal 传播、超时清理、重试退避/抖动可测试、stale/cancel race、防止真实网络 fallback、防止 API key 进入日志/error metadata。
-
-建议验收测试：
-
-- 覆盖 AbortSignal 取消、timeout 映射、retryable/non-retryable 错误分类、重试次数与退避、context/token budget 截断或拒绝策略、取消/超时后不提交蓝图；回归 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。真实 provider smoke test 仍须等明确低成本策略/连接测试任务。
+当前 `automation/task_queue.md` 中 Milestone 1-5 已全部完成。若 cron 后续继续触发，应先确认队列没有新增未完成任务；没有新增任务时无需施工，可静默结束或仅做状态巡检。真实 Provider smoke test / 默认真实调用策略如需继续推进，应由用户追加低成本调用策略或新任务后再执行。
 
 ## 重要提醒
 
@@ -256,3 +256,4 @@
 - M5-T1 任务提交：`122abd2`
 - M5-T2 任务提交：`de11784`
 - M5-T3 任务提交：`4039270`
+- M5-T4 任务提交：`872ddb3`

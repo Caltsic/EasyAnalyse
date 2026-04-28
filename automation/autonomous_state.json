@@ -3,7 +3,7 @@
   "branch": "agent",
   "remote": "origin/agent",
   "currentMilestone": "M4",
-  "currentTask": "M4-T1",
+  "currentTask": "M4-T2",
   "completedTasks": [
     "M1-T1",
     "M1-T2",
@@ -19,12 +19,13 @@
     "M3-T1",
     "M3-T2",
     "M3-T3",
-    "M3-T4"
+    "M3-T4",
+    "M4-T1"
   ],
   "blockedTasks": [],
-  "lastCommit": "d60e507",
-  "lastRunAt": "2026-04-28T07:38:00+08:00",
-  "testStatus": "M3-T4 SecretStore/API key storage verified: spec review PASS, quality review APPROVED, final integration PASS; npm test -- --run (20 files / 123 tests), npx tsc -b --pretty false, npm run lint, npx vite build, cargo test --manifest-path src-tauri/Cargo.toml (14 tests).",
+  "lastCommit": "5d7953b",
+  "lastRunAt": "2026-04-28T13:40:54+08:00",
+  "testStatus": "M4-T1 AgentResponse parser/schema verified: spec review PASS, quality review APPROVED, final integration PASS; npm test -- --run (21 files / 135 tests), npx tsc -b --pretty false, npm run lint, npx vite build.",
   "requiresUserDecision": false,
   "userDecisionPrompt": null,
   "autonomyScope": {
@@ -74,5 +75,5 @@
     "preflightAcquiresLock": true,
     "preflightScriptLocation": "~/.hermes/scripts/easyanalyse_autonomous_preflight.py"
   },
-  "lastTaskCommit": "d60e507"
+  "lastTaskCommit": "5d7953b"
 }

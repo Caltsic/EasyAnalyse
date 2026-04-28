@@ -40,9 +40,9 @@
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知任务提交：`d60e507`
-- 当前任务：`M4-T1 AgentResponse parser/schema`
-- 当前阻塞：无。M3-T4 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`、`cargo test --manifest-path src-tauri/Cargo.toml`；Spec Reviewer PASS，Quality Reviewer APPROVED，Final Integration Reviewer PASS/READY。
+- 最近已知任务提交：`5d7953b`
+- 当前任务：`M4-T2 mock provider`
+- 当前阻塞：无。M4-T1 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`；Spec Reviewer PASS，Quality Reviewer APPROVED，Final Integration Reviewer PASS/READY。
 
 ## 最近完成
 
@@ -134,20 +134,29 @@
   - Review：Spec Reviewer PASS；Quality Reviewer 多轮修复后 APPROVED；Final Integration Reviewer PASS/READY。
   - 任务提交：`d60e507`。
 
+
+- M4-T1 已完成：AgentResponse parser/schema。
+  - 新增 `types/agent.ts`，定义 AgentResponse v1、capabilities、message/blueprints/patch/question/error response、parse result/issue 类型。
+  - 新增 `lib/agentResponse.ts`，实现纯 parser/schema：JSON string/object 输入、schemaVersion/kind readable rejection、base fields/capabilities normalize、message/blueprints/question/error 解析；patch 仅 deferred/unsupported warning，不应用 patch。
+  - 蓝图候选：保留 object-shaped semantic v4 candidate document，即使语义 invalid 也只附 issues 不丢弃；非 object document 直接 readable parse error；forbidden legacy topology 字段会在 root/device/terminal 位置报告，同时跳过 properties/metadata/extensions 开放子树减少误报。
+  - 覆盖测试：valid message/blueprints/question/error、unknown schema/kind、capabilities normalization、optional notes、invalid candidate retained、forbidden legacy fields、non-object document rejection、no main/source mutation。
+  - Review：Spec Reviewer 修复后 PASS；Quality Reviewer 修复后 APPROVED；Final Integration Reviewer PASS/READY。
+  - 验证通过：`npm test -- --run`（21 files / 135 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+  - 任务提交：`5d7953b`。
+
 ## 下一轮建议
 
-执行 `M4-T1`：AgentResponse parser/schema。
+执行 `M4-T2`：mock provider。
 
 建议派子代理：
 
-1. Implementer：实现 AgentResponse v1 parser/schema，拒绝未知 schema/kind，解析 structured JSON；document validation issues 只能记录为候选蓝图问题，不得阻止候选存储。
-2. Spec Reviewer：检查是否只做协议 parser/schema，不接真实 Provider、不直接 mutate main document、不改变 semantic v4。
-3. Quality Reviewer：重点审查 schema/kind/capabilities 校验、错误消息可读性、invalid document 仍可作为 blueprint candidate 保存的边界、测试覆盖。
+1. Implementer：在 M4-T1 `parseAgentResponse` 基础上实现本地 mock provider/adapter，返回结构化 AgentResponse v1，不调用真实网络或 API key；mock provider 应能产生 message/error/question 与 valid/invalid blueprint candidates，供后续 Agent 面板基础流使用。
+2. Spec Reviewer：检查是否只做 mock provider，不接真实 Provider、不读 secret、不直接 mutate main document、不改 semantic v4/保存门禁；确认输出经过 AgentResponse parser。
+3. Quality Reviewer：重点审查 deterministic mock 输出、invalid candidate 保留、错误消息可读性、无网络/secret 泄漏、测试覆盖。
 
 建议验收测试：
 
-- AgentResponse v1 parser/schema：valid message/blueprints/error；unknown schema/kind rejection；capabilities normalize；invalid semantic document issues retained but candidate not dropped；no main document mutation。
-- 回归 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- mock provider 成功返回 parseable AgentResponse v1；支持 valid/invalid candidate；error/question 场景；不调用 fetch/invoke secret store；不写主文档；回归 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 
 ## 重要提醒
 

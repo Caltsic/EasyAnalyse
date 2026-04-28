@@ -70,7 +70,7 @@
 
 ## Milestone 4：Agent Protocol + Mock Agent（M3 验收通过后自动执行）
 
-- [ ] M4-T1：AgentResponse parser/schema
+- [x] M4-T1：AgentResponse parser/schema
 - [ ] M4-T2：mock provider
 - [ ] M4-T3：Agent 面板基础流
 
@@ -264,3 +264,15 @@ M5 真实调用约束：用户已提供项目专用 DeepSeek API key；自动化
 - Review：Spec Reviewer PASS；Quality Reviewer 多轮修复后 APPROVED；Final Integration Reviewer PASS/READY。
 - 验证通过：`npm test -- --run`（20 files / 123 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`、`cargo test --manifest-path src-tauri/Cargo.toml`（14 tests）。
 - 任务提交：`d60e507 feat: add secret store api key management`。
+
+
+### M4-T1 完成记录
+
+- 完成时间：2026-04-28 13:40 +0800
+- 新增：`easyanalyse-desktop/src/types/agent.ts`，定义 AgentResponse v1、capabilities、message/blueprints/patch/question/error response 类型与 parse result/issue 类型。
+- 新增：`easyanalyse-desktop/src/lib/agentResponse.ts`，实现纯 AgentResponse parser/schema：接受 JSON string 或 object，校验 `schemaVersion='agent-response-v1'` 与 kind，支持 message/blueprints/question/error，patch 仅作为 unsupported/deferred warning，不执行 patch。
+- 新增：`easyanalyse-desktop/src/lib/agentResponse.test.ts`，覆盖 valid message/blueprints/question/error、unknown schema/kind rejection、capabilities normalization、optional notes、invalid candidate retained、forbidden legacy topology issue、non-object document rejection、no main/source mutation。
+- 质量修复：candidate document 必须是 object-shaped 才能作为可保留语义 v4 候选；语义 invalid object 文档仍保留并附 issues；legacy topology 扫描保留 root/device/terminal 检测，同时跳过 `properties`/`metadata`/`extensions` 等开放元数据子树以减少误报。
+- Review：Spec Reviewer 修复后 PASS；Quality Reviewer 修复后 APPROVED；Final Integration Reviewer PASS/READY。
+- 验证通过：`npm test -- --run`（21 files / 135 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- 任务提交：`5d7953b feat: add agent response parser schema`。

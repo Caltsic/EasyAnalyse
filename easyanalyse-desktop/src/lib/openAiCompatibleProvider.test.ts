@@ -11,6 +11,7 @@ import {
   type OpenAiCompatibleFetch,
   type ProviderBuildInput,
 } from './openAiCompatibleProvider'
+import { DEEPSEEK_PROVIDER_PRESET } from './providerPresets'
 
 const apiKey = ['sk', 'test', 'm5'].join('-')
 
@@ -223,6 +224,35 @@ describe('openAiCompatibleProvider', () => {
       modelId: 'gpt-test',
       responseId: 'chatcmpl-test',
       finishReason: 'stop',
+    })
+    expectNoApiKey(result.metadata)
+  })
+
+  it('supports the DeepSeek preset through the OpenAI-compatible injected fetch path', async () => {
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => jsonResponse(openAiChatBody(agentMessage('DeepSeek preset response'))))
+
+    const result = await runOpenAiCompatibleProvider({
+      ...baseBuildInput(),
+      provider: DEEPSEEK_PROVIDER_PRESET,
+      model: { id: DEEPSEEK_PROVIDER_PRESET.defaultModel ?? 'deepseek-chat' },
+      fetch: fetchMock,
+      currentDocument: createDocument(),
+    })
+
+    expect(openAiCompatibleProviderAdapter.supports(DEEPSEEK_PROVIDER_PRESET, { id: 'deepseek-chat' })).toBe(true)
+    expect(openAiCompatibleProviderAdapter.supports(DEEPSEEK_PROVIDER_PRESET, { id: 'deepseek-reasoner' })).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(globalThis.fetch).not.toHaveBeenCalled()
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('https://api.deepseek.com/v1/chat/completions')
+    expect(init.method).toBe('POST')
+    expect(init.headers).toMatchObject({ Authorization: `Bearer ${apiKey}` })
+    expect(JSON.parse(init.body).model).toBe('deepseek-chat')
+    expect(result.metadata).toMatchObject({
+      adapterId: 'openai-compatible',
+      requestFormat: 'openai-chat-completions',
+      providerId: 'deepseek',
+      modelId: 'deepseek-chat',
     })
     expectNoApiKey(result.metadata)
   })

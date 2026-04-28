@@ -14,7 +14,7 @@ export interface AgentProviderConfig {
   name?: string
   kind: AgentProviderKind
   baseUrl: string
-  models?: string[]
+  models?: readonly string[]
   defaultModel?: string
   apiKeyRef?: string
 }

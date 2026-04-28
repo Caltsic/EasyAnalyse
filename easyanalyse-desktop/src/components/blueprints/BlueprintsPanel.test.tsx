@@ -260,6 +260,9 @@ describe('BlueprintsPanel', () => {
     await act(async () => {
       firstButtonByText(host, 'Create snapshot')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain('UI Reference Circuit'))
+    })
 
     expect(host.textContent).toContain('UI Reference Circuit')
     expect(host.textContent).toContain('manual_snapshot')

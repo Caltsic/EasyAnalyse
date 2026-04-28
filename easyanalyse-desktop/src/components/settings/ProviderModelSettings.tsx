@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { defaultSecretStore, maskSecretRef, type SecretStore, type SecretStoreSecurityStatus } from '../../lib/secretStore'
+import { cloneProviderPreset, DEEPSEEK_PROVIDER_PRESET, type ProviderPreset } from '../../lib/providerPresets'
 import { useSettingsStore } from '../../store/settingsStore'
 import type { AgentProviderKind, AgentProviderPublicConfig } from '../../types/settings'
 
@@ -39,6 +40,21 @@ function draftFromProvider(provider: AgentProviderPublicConfig): ProviderDraft {
     apiKeyRef: provider.apiKeyRef ?? '',
     apiKey: '',
     editingProviderId: provider.id,
+  }
+}
+
+function draftFromPreset(preset: ProviderPreset, existingProvider?: AgentProviderPublicConfig): ProviderDraft {
+  const provider = cloneProviderPreset(preset)
+  return {
+    id: provider.id,
+    name: provider.name,
+    kind: provider.kind,
+    baseUrl: provider.baseUrl,
+    modelsText: provider.models.join('\n'),
+    defaultModel: provider.defaultModel ?? '',
+    apiKeyRef: existingProvider?.apiKeyRef ?? '',
+    apiKey: '',
+    editingProviderId: existingProvider?.id,
   }
 }
 
@@ -96,6 +112,12 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
 
   const updateDraft = <Key extends keyof ProviderDraft>(key: Key, value: ProviderDraft[Key]) => {
     setDraft((current) => ({ ...current, [key]: value }))
+  }
+
+  const applyDeepSeekPreset = () => {
+    const existingProvider = settings.agent.providers.find((provider) => provider.id === DEEPSEEK_PROVIDER_PRESET.id)
+    setOperationError(null)
+    setDraft(draftFromPreset(DEEPSEEK_PROVIDER_PRESET, existingProvider))
   }
 
   const readableError = (error: unknown) => error instanceof Error ? error.message : String(error)
@@ -242,6 +264,14 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
             </div>
           </article>
         ))}
+      </div>
+
+      <div className="settings-panel__section" aria-label="Provider presets">
+        <div>
+          <p className="eyebrow">Provider presets</p>
+          <p className="settings-panel__note">Start from public provider metadata, then optionally add an API key before saving.</p>
+        </div>
+        <button className="ghost-button" type="button" disabled={busyAction !== null} onClick={applyDeepSeekPreset}>Use DeepSeek preset</button>
       </div>
 
       <div className="settings-panel__form" aria-label="Provider metadata form">

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_APP_SETTINGS } from '../../lib/appSettings'
+import { DEEPSEEK_PROVIDER_PRESET } from '../../lib/providerPresets'
 import { useSettingsStore } from '../../store/settingsStore'
 import { ProviderModelSettings } from './ProviderModelSettings'
 
@@ -136,6 +137,131 @@ describe('ProviderModelSettings', () => {
     expect(JSON.stringify(useSettingsStore.getState().settings)).not.toContain(markerValue)
     expect(container.textContent).toContain('Weak security')
     expect(field(container, 'apiKey').value).toBe('')
+  })
+
+  it('fills and saves the DeepSeek preset as public metadata without saving a blank API key', async () => {
+    const secretStore = {
+      saveSecret: vi.fn(async () => {
+        throw new Error('SecretStore saveSecret must not be called for a blank preset API key')
+      }),
+      deleteSecret: vi.fn(async () => ({ deleted: true })),
+      securityStatus: vi.fn(async () => ({ kind: 'native-keychain' as const })),
+    }
+
+    await act(async () => {
+      root.render(<ProviderModelSettings secretStore={secretStore} />)
+    })
+
+    await clickButton(container, 'Use DeepSeek preset')
+
+    expect(field(container, 'id').value).toBe('deepseek')
+    expect(field(container, 'name').value).toBe('DeepSeek')
+    expect(field(container, 'kind').value).toBe('deepseek')
+    expect(field(container, 'baseUrl').value).toBe('https://api.deepseek.com/v1')
+    expect(field(container, 'models').value).toBe('deepseek-chat\ndeepseek-reasoner')
+    expect(field(container, 'defaultModel').value).toBe('deepseek-chat')
+    expect(field(container, 'apiKey').value).toBe('')
+
+    await clickButton(container, 'Save provider metadata')
+    await act(async () => { await Promise.resolve() })
+
+    expect(secretStore.saveSecret).not.toHaveBeenCalled()
+    const settings = useSettingsStore.getState().settings
+    expect(settings.agent.providers).toEqual([DEEPSEEK_PROVIDER_PRESET])
+    expect(settings.agent.selectedProviderId).toBe('deepseek')
+    expect(settings.agent.selectedModelId).toBe('deepseek-chat')
+    expect(settings.agent.providers[0]).not.toHaveProperty('apiKeyRef')
+    expect(JSON.stringify(settings)).not.toMatch(/(?:apiKey|apiKeyRef|secret-ref:|keychain:\/\/|Bearer\s+)/i)
+  })
+
+  it('preserves an existing DeepSeek apiKeyRef when saving preset metadata without a new API key', async () => {
+    const secretStore = {
+      saveSecret: vi.fn(async () => ({ ref: 'secret-ref:unexpected-new-key', security: { kind: 'native-keychain' as const } })),
+      deleteSecret: vi.fn(async () => ({ deleted: true })),
+      securityStatus: vi.fn(async () => ({ kind: 'native-keychain' as const })),
+    }
+    useSettingsStore.getState().replaceSettings({
+      agent: {
+        providers: [
+          {
+            id: 'deepseek',
+            name: 'Legacy DeepSeek',
+            kind: 'deepseek',
+            baseUrl: 'https://legacy.deepseek.invalid/v1',
+            models: ['legacy-deepseek-model'],
+            defaultModel: 'legacy-deepseek-model',
+            apiKeyRef: 'secret-ref:existing-deepseek',
+          },
+        ],
+        selectedProviderId: 'deepseek',
+        selectedModelId: 'legacy-deepseek-model',
+      },
+    }, null)
+
+    await act(async () => {
+      root.render(<ProviderModelSettings secretStore={secretStore} />)
+    })
+
+    await clickButton(container, 'Use DeepSeek preset')
+    expect(field(container, 'apiKey').value).toBe('')
+    await clickButton(container, 'Save provider metadata')
+    await act(async () => { await Promise.resolve() })
+
+    expect(secretStore.saveSecret).not.toHaveBeenCalled()
+    expect(useSettingsStore.getState().settings.agent.providers).toEqual([
+      { ...DEEPSEEK_PROVIDER_PRESET, apiKeyRef: 'secret-ref:existing-deepseek' },
+    ])
+    expect(useSettingsStore.getState().settings.agent.selectedModelId).toBe('deepseek-chat')
+  })
+
+  it('deletes an existing DeepSeek secret ref when the preset flow saves a replacement API key', async () => {
+    const replacementValue = `fixture-deepseek-replacement-${crypto.randomUUID()}`
+    const savedValues: string[] = []
+    const secretStore = {
+      saveSecret: vi.fn(async ({ providerId, value }: { providerId: string; value: string }) => {
+        expect(providerId).toBe('deepseek')
+        savedValues.push(value)
+        return { ref: 'secret-ref:new-deepseek', security: { kind: 'native-keychain' as const } }
+      }),
+      deleteSecret: vi.fn(async () => ({ deleted: true })),
+      securityStatus: vi.fn(async () => ({ kind: 'native-keychain' as const })),
+    }
+    useSettingsStore.getState().replaceSettings({
+      agent: {
+        providers: [
+          {
+            id: 'deepseek',
+            name: 'Legacy DeepSeek',
+            kind: 'deepseek',
+            baseUrl: 'https://legacy.deepseek.invalid/v1',
+            models: ['legacy-deepseek-model'],
+            defaultModel: 'legacy-deepseek-model',
+            apiKeyRef: 'secret-ref:old-deepseek',
+          },
+        ],
+        selectedProviderId: 'deepseek',
+        selectedModelId: 'legacy-deepseek-model',
+      },
+    }, null)
+
+    await act(async () => {
+      root.render(<ProviderModelSettings secretStore={secretStore} />)
+    })
+
+    await clickButton(container, 'Use DeepSeek preset')
+    await changeField(container, 'apiKey', replacementValue)
+    await clickButton(container, 'Save provider metadata')
+    await act(async () => { await Promise.resolve() })
+
+    expect(savedValues).toEqual([replacementValue])
+    expect(secretStore.saveSecret).toHaveBeenCalledTimes(1)
+    const settings = useSettingsStore.getState().settings
+    expect(settings.agent.providers).toEqual([
+      { ...DEEPSEEK_PROVIDER_PRESET, apiKeyRef: 'secret-ref:new-deepseek' },
+    ])
+    expect(JSON.stringify(settings)).not.toContain(replacementValue)
+    expect(secretStore.deleteSecret).toHaveBeenCalledTimes(1)
+    expect(secretStore.deleteSecret).toHaveBeenCalledWith('secret-ref:old-deepseek')
   })
 
   it('rolls back a newly saved API key when provider metadata is rejected', async () => {

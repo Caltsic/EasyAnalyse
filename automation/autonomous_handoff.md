@@ -40,9 +40,9 @@
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知任务提交：`7c46896`
-- 当前任务：`M3-T4 SecretStore/API key 存储策略`
-- 当前阻塞：无。M3-T3 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`；Spec Reviewer PASS，Quality Reviewer APPROVED，Final Integration Reviewer PASS/READY。
+- 最近已知任务提交：`d60e507`
+- 当前任务：`M4-T1 AgentResponse parser/schema`
+- 当前阻塞：无。M3-T4 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`、`cargo test --manifest-path src-tauri/Cargo.toml`；Spec Reviewer PASS，Quality Reviewer APPROVED，Final Integration Reviewer PASS/READY。
 
 ## 最近完成
 
@@ -123,19 +123,30 @@
   - 验证通过：`npm test -- --run`（19 files / 111 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
   - 任务提交：`7c46896`。
 
+
+- M3-T4 已完成：SecretStore/API key 存储策略。
+  - 新增 `secretStore.ts` abstraction 与测试；SecretStore 生成 opaque `secret-ref:`，UI 只显示 masked ref，AppSettings 只保存 `apiKeyRef`。
+  - `ProviderModelSettings` 支持 masked API key 输入、保存、Clear API key、Provider 删除时关联 secret 清理、弱安全 fallback 提示和错误/忙碌状态。
+  - `settingsStore` 协调 Provider metadata 与 SecretStore：持久化失败不删除 secret，secret 删除失败恢复普通设置，替换 key 成功后清理旧 ref。
+  - Tauri 注册 `secret_store_status/save/read/delete`；Linux 优先 `secret-tool`/Secret Service，macOS/Windows 使用 target-specific `keyring` crate，失败/不可用降级本机 app-data secret 文件并提示弱安全；Unix fallback 文件/目录 owner-only 权限。
+  - 覆盖回归：ref/mask/fallback warning/legacy ref delete、UI save/clear/delete/error、settings 清理/回滚、Rust fallback 权限/native 状态/stdin close/fallback read/无 process-arg secret。
+  - 验证通过：`npm test -- --run`（20 files / 123 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`、`cargo test --manifest-path src-tauri/Cargo.toml`（14 tests）。
+  - Review：Spec Reviewer PASS；Quality Reviewer 多轮修复后 APPROVED；Final Integration Reviewer PASS/READY。
+  - 任务提交：`d60e507`。
+
 ## 下一轮建议
 
-执行 `M3-T4`：SecretStore/API key 存储策略。
+执行 `M4-T1`：AgentResponse parser/schema。
 
 建议派子代理：
 
-1. Implementer：在 M3-T3 `apiKeyRef` 引用边界基础上实现 SecretStore/API key 存储策略；优先 OS keychain/credential manager，降级本机 app data secret 文件时给出弱安全提示；不得把明文写入 AppSettings、主文档、sidecar、导出设置、日志或测试快照。
-2. Spec Reviewer：检查是否只做 SecretStore/API key 存储策略，是否删除 provider 时能处理关联 secret，是否未调用真实 Provider。
-3. Quality Reviewer：重点审查 secret redaction、错误/不可用 keychain 降级、删除/更新一致性、无 secret 泄漏扫描、测试覆盖。
+1. Implementer：实现 AgentResponse v1 parser/schema，拒绝未知 schema/kind，解析 structured JSON；document validation issues 只能记录为候选蓝图问题，不得阻止候选存储。
+2. Spec Reviewer：检查是否只做协议 parser/schema，不接真实 Provider、不直接 mutate main document、不改变 semantic v4。
+3. Quality Reviewer：重点审查 schema/kind/capabilities 校验、错误消息可读性、invalid document 仍可作为 blueprint candidate 保存的边界、测试覆盖。
 
 建议验收测试：
 
-- API key masked 输入/保存/删除；删除 Provider 时关联 secret 处理；keychain unavailable fallback；扫描 AppSettings/main JSON/sidecar/log-like output 不含 plaintext。
+- AgentResponse v1 parser/schema：valid message/blueprints/error；unknown schema/kind rejection；capabilities normalize；invalid semantic document issues retained but candidate not dropped；no main document mutation。
 - 回归 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 
 ## 重要提醒

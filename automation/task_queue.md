@@ -66,7 +66,7 @@
 - [x] M3-T1：App settings 基础结构
 - [x] M3-T2：system/light/dark 主题迁移
 - [x] M3-T3：Provider/Model 配置骨架
-- [ ] M3-T4：SecretStore/API key 存储策略
+- [x] M3-T4：SecretStore/API key 存储策略
 
 ## Milestone 4：Agent Protocol + Mock Agent（M3 验收通过后自动执行）
 
@@ -251,3 +251,16 @@ M5 真实调用约束：用户已提供项目专用 DeepSeek API key；自动化
 - Review：Spec Reviewer 修复后 PASS；Quality Reviewer 两轮修复后 APPROVED；Final Integration Reviewer PASS/READY。
 - 验证通过：`npm test -- --run`（19 files / 111 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 - 任务提交：`7c46896 feat: add provider model settings skeleton`。
+
+
+### M3-T4 完成记录
+
+- 完成时间：2026-04-28 07:38 +0800
+- 新增：`easyanalyse-desktop/src/lib/secretStore.ts` 与 `secretStore.test.ts`，提供 SecretStore abstraction、`secret-ref:` opaque refs、masked display、Tauri backend 与测试 backend。
+- 修改：`ProviderModelSettings`，支持 masked API key 输入、保存、Clear API key、删除 Provider 时清理关联 secret、后端安全状态/弱安全 fallback 提示与错误/忙碌状态。
+- 修改：`settingsStore`，Provider 删除/清除 API key 会协调 `apiKeyRef` 与 SecretStore；settings 持久化失败不删除 secret，secret 删除失败会恢复普通设置，替换 key 成功后清理旧 ref。
+- 修改：Tauri commands，注册 `secret_store_status/save/read/delete`；Linux 优先 `secret-tool`/Secret Service（secret 经 stdin 传入并关闭 stdin 防挂起），macOS/Windows 使用 target-specific Rust `keyring` crate，失败/不可用时降级本机 app-data secret 文件并提示弱安全；Unix fallback 文件/目录使用 owner-only 权限。
+- 覆盖：SecretStore ref/mask/fallback warning/legacy ref delete；Provider UI save/clear/delete/error；settings store 清理/回滚；Rust fallback 权限、native/fallback 状态、stdin close、fallback read、无 macOS process-arg secret path。
+- Review：Spec Reviewer PASS；Quality Reviewer 多轮修复后 APPROVED；Final Integration Reviewer PASS/READY。
+- 验证通过：`npm test -- --run`（20 files / 123 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`、`cargo test --manifest-path src-tauri/Cargo.toml`（14 tests）。
+- 任务提交：`d60e507 feat: add secret store api key management`。

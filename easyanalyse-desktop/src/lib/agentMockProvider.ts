@@ -1,4 +1,4 @@
-import { parseAgentResponse } from './agentResponse'
+import { AGENT_RESPONSE_SEMANTIC_VERSION, parseAgentResponse } from './agentResponse'
 import type { AgentResponse, AgentResponseParseResult } from '../types/agent'
 import type { DocumentFile } from '../types/document'
 
@@ -11,8 +11,6 @@ export interface MockAgentRequest {
   requestId?: string
 }
 
-const MOCK_SEMANTIC_VERSION = '1.0.0-mock'
-
 export async function runMockAgentProvider(request: MockAgentRequest): Promise<AgentResponseParseResult> {
   const response = createMockAgentResponse(request)
   return parseAgentResponse(response, { mainDocument: request.currentDocument ?? null })
@@ -22,7 +20,7 @@ export function createMockAgentResponse(request: MockAgentRequest): AgentRespons
   const scenario = request.scenario ?? inferScenario(request.prompt)
   const base = {
     schemaVersion: 'agent-response-v1' as const,
-    semanticVersion: MOCK_SEMANTIC_VERSION,
+    semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
     requestId: request.requestId,
     capabilities: {
       message: true,

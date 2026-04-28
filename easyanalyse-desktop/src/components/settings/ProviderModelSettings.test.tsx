@@ -164,6 +164,7 @@ describe('ProviderModelSettings', () => {
     expect(useSettingsStore.getState().settings.agent.providers).toHaveLength(0)
     expect(deletedRefs).toEqual(['secret-ref:orphan-candidate'])
     expect(container.textContent).toContain('Provider metadata was rejected')
+    expect(field(container, 'apiKey').value).toBe('')
   })
 
   it('deletes the old secret ref after a replacement API key is persisted', async () => {
@@ -196,6 +197,88 @@ describe('ProviderModelSettings', () => {
 
     expect(useSettingsStore.getState().settings.agent.providers[0].apiKeyRef).toBe('secret-ref:new-key')
     expect(deletedRefs).toEqual(['secret-ref:old-key'])
+  })
+
+
+  it('keeps provider id read-only while editing an existing provider', async () => {
+    useSettingsStore.getState().replaceSettings({
+      agent: {
+        providers: [
+          { id: 'readonly-provider', name: 'Readonly Provider', kind: 'deepseek', baseUrl: 'https://example.invalid/readonly', models: ['readonly-model'] },
+        ],
+        selectedProviderId: 'readonly-provider',
+        selectedModelId: 'readonly-model',
+      },
+    }, null)
+
+    await act(async () => {
+      root.render(<ProviderModelSettings />)
+    })
+    await clickButton(container, 'Edit')
+
+    const idInput = field(container, 'id') as HTMLInputElement
+    expect(idInput.readOnly).toBe(true)
+    await changeField(container, 'id', 'renamed-provider')
+    expect(field(container, 'id').value).toBe('readonly-provider')
+  })
+
+  it('keeps a new replacement API key when old secret cleanup fails and clears plaintext input', async () => {
+    const deletedRefs: string[] = []
+    const secretStore = {
+      saveSecret: async () => ({ ref: 'secret-ref:new-key', security: { kind: 'native-keychain' as const } }),
+      deleteSecret: async (ref: string) => {
+        deletedRefs.push(ref)
+        if (ref === 'secret-ref:old-key') throw new Error('old secret cleanup failed')
+        return { deleted: true }
+      },
+      securityStatus: async () => ({ kind: 'native-keychain' as const }),
+    }
+    useSettingsStore.getState().replaceSettings({
+      agent: {
+        providers: [
+          { id: 'cleanup-provider', name: 'Cleanup Provider', kind: 'anthropic', baseUrl: 'https://example.invalid/cleanup', models: ['cleanup-model'], apiKeyRef: 'secret-ref:old-key' },
+        ],
+        selectedProviderId: 'cleanup-provider',
+        selectedModelId: 'cleanup-model',
+      },
+    }, null)
+
+    await act(async () => {
+      root.render(<ProviderModelSettings secretStore={secretStore} />)
+    })
+    await clickButton(container, 'Edit')
+    await changeField(container, 'apiKey', `fixture-replacement-secret-${crypto.randomUUID()}`)
+    await clickButton(container, 'Save provider metadata')
+    await act(async () => { await Promise.resolve() })
+
+    expect(useSettingsStore.getState().settings.agent.providers[0].apiKeyRef).toBe('secret-ref:new-key')
+    expect(deletedRefs).toEqual(['secret-ref:old-key'])
+    expect(deletedRefs).not.toContain('secret-ref:new-key')
+    expect(container.textContent).toContain('Provider saved, but unable to delete old API key')
+    expect(field(container, 'apiKey').value).toBe('')
+  })
+
+  it('clears plaintext API key input when SecretStore save fails', async () => {
+    const secretStore = {
+      saveSecret: async () => { throw new Error('save failed') },
+      deleteSecret: async () => ({ deleted: true }),
+      securityStatus: async () => ({ kind: 'native-keychain' as const }),
+    }
+
+    await act(async () => {
+      root.render(<ProviderModelSettings secretStore={secretStore} />)
+    })
+    await changeField(container, 'id', 'save-fails')
+    await changeField(container, 'name', 'Save Fails')
+    await changeField(container, 'baseUrl', 'https://example.invalid/save-fails')
+    await changeField(container, 'models', 'save-fails-model')
+    await changeField(container, 'apiKey', `fixture-secret-${crypto.randomUUID()}`)
+    await clickButton(container, 'Save provider metadata')
+    await act(async () => { await Promise.resolve() })
+
+    expect(container.textContent).toContain('save failed')
+    expect(field(container, 'apiKey').value).toBe('')
+    expect(useSettingsStore.getState().settings.agent.providers).toHaveLength(0)
   })
 
   it('shows a readable error when clearing a saved API key fails', async () => {

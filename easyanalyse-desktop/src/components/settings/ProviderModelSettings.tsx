@@ -14,6 +14,7 @@ interface ProviderDraft {
   defaultModel: string
   apiKeyRef: string
   apiKey: string
+  editingProviderId?: string
 }
 
 const EMPTY_DRAFT: ProviderDraft = {
@@ -37,6 +38,7 @@ function draftFromProvider(provider: AgentProviderPublicConfig): ProviderDraft {
     defaultModel: provider.defaultModel ?? '',
     apiKeyRef: provider.apiKeyRef ?? '',
     apiKey: '',
+    editingProviderId: provider.id,
   }
 }
 
@@ -102,6 +104,7 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
     setOperationError(null)
     setBusyAction('save')
     let newApiKeyRef: string | undefined
+    let metadataPersisted = false
     const oldApiKeyRef = draft.apiKeyRef || undefined
     try {
       let apiKeyRef = draft.apiKeyRef
@@ -116,23 +119,33 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
       const accepted = upsertProvider(providerFromDraft({ ...draft, apiKeyRef, apiKey: '' }))
       if (!accepted) {
         if (newApiKeyRef) {
-          await secretStore.deleteSecret(newApiKeyRef)
+          await secretStore.deleteSecret(newApiKeyRef).catch(() => undefined)
         }
+        setDraft((current) => ({ ...current, apiKey: '' }))
         setOperationError('Provider metadata was rejected; the newly saved API key was removed.')
+        setBusyAction(null)
         return
       }
-      if (newApiKeyRef && oldApiKeyRef && oldApiKeyRef !== newApiKeyRef) {
-        await secretStore.deleteSecret(oldApiKeyRef)
-      }
+      metadataPersisted = true
       setDraft(EMPTY_DRAFT)
     } catch (error) {
-      if (newApiKeyRef) {
+      if (!metadataPersisted && newApiKeyRef) {
         await secretStore.deleteSecret(newApiKeyRef).catch(() => undefined)
       }
+      setDraft((current) => ({ ...current, apiKey: '' }))
       setOperationError(`Unable to save provider metadata or API key. ${readableError(error)}`)
-    } finally {
       setBusyAction(null)
+      return
     }
+
+    if (newApiKeyRef && oldApiKeyRef && oldApiKeyRef !== newApiKeyRef) {
+      try {
+        await secretStore.deleteSecret(oldApiKeyRef)
+      } catch (error) {
+        setOperationError(`Provider saved, but unable to delete old API key. ${readableError(error)}`)
+      }
+    }
+    setBusyAction(null)
   }
 
   const clearApiKey = async (provider: AgentProviderPublicConfig) => {
@@ -234,7 +247,16 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
       <div className="settings-panel__form" aria-label="Provider metadata form">
         <label>
           Provider id
-          <input name="id" value={draft.id} onChange={(event) => updateDraft('id', event.target.value)} placeholder="deepseek-main" />
+          <input
+            name="id"
+            value={draft.id}
+            readOnly={Boolean(draft.editingProviderId)}
+            aria-readonly={Boolean(draft.editingProviderId)}
+            onChange={(event) => {
+              if (!draft.editingProviderId) updateDraft('id', event.target.value)
+            }}
+            placeholder="deepseek-main"
+          />
         </label>
         <label>
           Display name

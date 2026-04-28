@@ -1,13 +1,14 @@
 import type { DocumentFile, ValidationIssue } from './document'
 
 export type AgentResponseSchemaVersion = 'agent-response-v1'
+export type AgentResponseSemanticVersion = 'easyanalyse-semantic-v4'
 export type AgentResponseKind = 'message' | 'blueprints' | 'patch' | 'question' | 'error'
 export type AgentCapabilityState = boolean | 'deferred' | 'unsupported'
 export type AgentCapabilities = Partial<Record<AgentResponseKind, AgentCapabilityState>>
 
 export interface AgentResponseBase {
   schemaVersion: AgentResponseSchemaVersion
-  semanticVersion?: string
+  semanticVersion: AgentResponseSemanticVersion
   capabilities?: AgentCapabilities
   kind: AgentResponseKind
   requestId?: string

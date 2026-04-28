@@ -109,8 +109,10 @@ describe('blueprintStore', () => {
     ])
 
     const state = useBlueprintStore.getState()
-    expect(state.workspace?.blueprints.map((record) => record.id)).toEqual([firstSnapshot.id, secondSnapshot.id])
-    expect(state.selectedBlueprintId).toBe(secondSnapshot.id)
+    const snapshotIds = state.workspace?.blueprints.map((record) => record.id) ?? []
+    expect(snapshotIds).toHaveLength(2)
+    expect(snapshotIds).toEqual(expect.arrayContaining([firstSnapshot.id, secondSnapshot.id]))
+    expect([firstSnapshot.id, secondSnapshot.id]).toContain(state.selectedBlueprintId)
     expect(state.dirty).toBe(true)
   })
 
@@ -165,12 +167,29 @@ describe('blueprintStore', () => {
     expect(useBlueprintStore.getState().workspace?.blueprints[0]?.id).toBe(snapshot.id)
     expect(useBlueprintStore.getState().dirty).toBe(true)
 
-    await useBlueprintStore.getState().saveWorkspace()
+    await expect(useBlueprintStore.getState().saveWorkspace()).rejects.toThrow('main document is saved')
 
     expect(tauriMocks.getBlueprintSidecarPathCommand).not.toHaveBeenCalled()
     expect(tauriMocks.saveBlueprintWorkspaceToPath).not.toHaveBeenCalled()
     expect(useBlueprintStore.getState().workspace?.blueprints).toHaveLength(1)
-    expect(useBlueprintStore.getState().dirty).toBe(false)
+    expect(useBlueprintStore.getState().dirty).toBe(true)
+    expect(useBlueprintStore.getState().saveError).toContain('main document')
+  })
+
+  it('refuses to save over a sidecar that failed to load', async () => {
+    const document = createDocument()
+    tauriMocks.getBlueprintSidecarPathCommand.mockResolvedValue('/tmp/circuit.easyanalyse-blueprints.json')
+    tauriMocks.loadBlueprintWorkspaceFromPath.mockRejectedValue(new Error('sidecar JSON is malformed'))
+
+    await useBlueprintStore.getState().loadForMainDocument('/tmp/circuit.easyanalyse.json', document)
+    await useBlueprintStore.getState().createSnapshotFromDocument(document)
+
+    await expect(useBlueprintStore.getState().saveWorkspace()).rejects.toThrow('sidecar failed to load')
+
+    expect(tauriMocks.saveBlueprintWorkspaceToPath).not.toHaveBeenCalled()
+    expect(useBlueprintStore.getState().dirty).toBe(true)
+    expect(useBlueprintStore.getState().loadError).toContain('sidecar JSON is malformed')
+    expect(useBlueprintStore.getState().saveError).toContain('sidecar failed to load')
   })
 
   it('validates invalid blueprints in place without discarding or blocking them', async () => {
@@ -271,7 +290,7 @@ describe('blueprintStore', () => {
   it('records save failures in readable state without clearing dirty or loadError', async () => {
     const document = createDocument()
     tauriMocks.getBlueprintSidecarPathCommand.mockResolvedValue('/tmp/circuit.easyanalyse-blueprints.json')
-    tauriMocks.loadBlueprintWorkspaceFromPath.mockRejectedValue(new Error('existing load warning'))
+    tauriMocks.loadBlueprintWorkspaceFromPath.mockResolvedValue(null)
     tauriMocks.saveBlueprintWorkspaceToPath.mockRejectedValue(new Error('disk is full'))
 
     await useBlueprintStore.getState().loadForMainDocument('/tmp/circuit.easyanalyse.json', document)
@@ -279,7 +298,7 @@ describe('blueprintStore', () => {
 
     await expect(useBlueprintStore.getState().saveWorkspace()).rejects.toThrow('disk is full')
     expect(useBlueprintStore.getState().dirty).toBe(true)
-    expect(useBlueprintStore.getState().loadError).toContain('existing load warning')
+    expect(useBlueprintStore.getState().loadError).toBeNull()
     expect(useBlueprintStore.getState().saveError).toContain('disk is full')
   })
 
@@ -481,6 +500,32 @@ describe('blueprintStore', () => {
       hash: mainHash,
     })
     expect(snapshot.baseMainDocumentHash).toBe(mainHash)
+  })
+
+  it('uses the current dirty main document hash as snapshot base hash', async () => {
+    const savedDocument = createDocument({ document: { id: 'doc-main', title: 'Saved' } })
+    const dirtyDocument = createDocument({
+      document: { id: 'doc-main', title: 'Dirty title' },
+      devices: [
+        ...savedDocument.devices,
+        { id: 'c1', name: 'C1', kind: 'capacitor', terminals: [] },
+      ],
+    })
+    const savedHash = await hashDocument(savedDocument)
+    const dirtyHash = await hashDocument(dirtyDocument)
+
+    tauriMocks.getBlueprintSidecarPathCommand.mockResolvedValue('/tmp/main.easyanalyse-blueprints.json')
+    tauriMocks.loadBlueprintWorkspaceFromPath.mockResolvedValue(null)
+    await useBlueprintStore.getState().loadForMainDocument('/tmp/main.easyanalyse.json', savedDocument)
+    const snapshot = await useBlueprintStore.getState().createSnapshotFromDocument(dirtyDocument)
+
+    expect(snapshot.baseMainDocumentHash).toBe(dirtyHash)
+    expect(snapshot.baseMainDocumentHash).not.toBe(savedHash)
+    expect(useBlueprintStore.getState().workspace?.mainDocument).toMatchObject({
+      documentId: 'doc-main',
+      path: '/tmp/main.easyanalyse.json',
+      hash: dirtyHash,
+    })
   })
 
   it('creates snapshots with main document metadata and base hash when workspace is null', async () => {

@@ -36,6 +36,7 @@ export interface BlueprintState {
     context: { mainDocument: DocumentFile; filePath: string | null; issues?: AgentResponseParseIssue[] },
   ): Promise<BlueprintRecord[]>
   loadForMainDocument(filePath: string | null, mainDocument: DocumentFile): Promise<void>
+  rebindForSavedDocument(filePath: string, mainDocument: DocumentFile): Promise<void>
   saveWorkspace(): Promise<void>
   createSnapshotFromDocument(
     document: DocumentFile,
@@ -249,17 +250,49 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
     }
   },
 
+  rebindForSavedDocument: async (filePath, mainDocument) => {
+    const requestVersion = ++loadRequestVersion
+    ++candidateInsertionVersion
+    const mainHash = await hashDocument(mainDocument)
+    if (requestVersion !== loadRequestVersion) {
+      return
+    }
+
+    const sidecarPath = await getBlueprintSidecarPathCommand(filePath)
+    if (requestVersion !== loadRequestVersion) {
+      return
+    }
+
+    set((state) => {
+      const currentWorkspace = state.workspace ?? createWorkspaceForDocument(filePath, mainDocument, mainHash)
+      const nextWorkspace = withUpdatedMainDocumentRef(currentWorkspace, filePath, mainDocument, mainHash)
+      return {
+        workspace: nextWorkspace,
+        sidecarPath,
+        dirty: state.dirty || nextWorkspace.blueprints.length > 0,
+        loadError: null,
+        saveError: null,
+        selectedBlueprintId: state.selectedBlueprintId,
+      }
+    })
+  },
+
   saveWorkspace: async () => {
-    const { workspace, sidecarPath } = get()
+    const { workspace, sidecarPath, loadError } = get()
     if (workspace === null) {
       return
     }
 
     if (sidecarPath === null) {
-      set((state) =>
-        state.workspace === workspace && state.sidecarPath === sidecarPath ? { dirty: false, saveError: null } : { saveError: null },
-      )
-      return
+      const message = 'Cannot save blueprint workspace until the main document is saved.'
+      set({ saveError: message })
+      throw new Error(message)
+    }
+
+    if (loadError !== null) {
+      const message = `Cannot save blueprint workspace because the sidecar failed to load: ${loadError}`
+      set({ saveError: message })
+      throw new Error(message)
     }
 
     try {
@@ -275,20 +308,26 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
 
   createSnapshotFromDocument: async (document, options) => {
     const { workspace } = get()
-    const mainHash = workspace?.mainDocument?.hash ?? (await hashDocument(document))
+    const mainHash = await hashDocument(document)
     const currentWorkspace = workspace ?? createWorkspaceForDocument(null, document, mainHash)
     const blueprint = await createBlueprintFromDocument({
       document,
       title: options?.title,
       description: options?.description,
-      baseMainDocumentHash: currentWorkspace.mainDocument?.hash,
+      baseMainDocumentHash: mainHash,
     })
     set((state) => {
       const latestWorkspace = state.workspace ?? currentWorkspace
+      const reboundWorkspace = withUpdatedMainDocumentRef(
+        latestWorkspace,
+        latestWorkspace.mainDocument?.path ?? null,
+        document,
+        mainHash,
+      )
       const nextWorkspace: BlueprintWorkspaceFile = {
-        ...latestWorkspace,
+        ...reboundWorkspace,
         updatedAt: new Date().toISOString(),
-        blueprints: [...latestWorkspace.blueprints, blueprint],
+        blueprints: [...reboundWorkspace.blueprints, blueprint],
       }
 
       return {

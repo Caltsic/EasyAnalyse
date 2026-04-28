@@ -75,7 +75,11 @@
     "lockAtomic": "O_CREAT|O_EXCL",
     "preflightScript": "easyanalyse_autonomous_preflight.py",
     "preflightAcquiresLock": true,
-    "preflightScriptLocation": "~/.hermes/scripts/easyanalyse_autonomous_preflight.py"
+    "preflightScriptLocation": "~/.hermes/scripts/easyanalyse_autonomous_preflight.py",
+    "lockOwnerToken": "runId",
+    "lockReleaseRequiresRunId": true,
+    "preflightExportsRunId": true,
+    "staleReclaimMutex": "automation/.autonomous_run.lock.reclaim"
   },
   "lastTaskCommit": "2846916"
 }

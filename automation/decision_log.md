@@ -32,3 +32,11 @@
 - 2026-04-28：用户确认将自动施工从固定每 2 小时改为“每 30 分钟短周期轮询 + 仓库运行锁”模式。每轮开始检查 `automation/.autonomous_run.lock`，未过期则跳过，超过 6 小时按 stale lock 处理；目的是任务完成后更快进入下一轮且避免并发。
 
 - 2026-04-28：对 30 分钟轮询做防卡死 review 后，将运行锁从 LLM 手动 check-then-create 升级为 `automation/autonomous_lock.py` 原子锁（`O_CREAT|O_EXCL`）。锁必须在 Telegram 开始通知、git status/pull、子代理和任何仓库写入之前获取；锁未过期则直接跳过，结束/失败/暂停前必须 release。锁文件加入 `.gitignore`，避免误提交。
+
+
+## 2026-04-28 — 自动化锁 owner-safe 加固
+
+- 自动化锁从单纯 `O_CREAT|O_EXCL` 升级为 runId owner-safe acquire/release。
+- release 必须带匹配 `--run-id`；无 runId release 默认拒绝。
+- stale reclaim 增加 `.autonomous_run.lock.reclaim` 原子互斥，避免并发 reclaimer 删除新 owner 锁。
+- cron preflight 必须输出 `EASYANALYSE_PREFLIGHT_RUN_ID`；若 acquired 但没有 runId，模型必须 fail closed。

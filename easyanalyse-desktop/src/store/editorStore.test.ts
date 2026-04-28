@@ -14,6 +14,9 @@ const tauriMocks = vi.hoisted(() => ({
   openDocumentFromPath: vi.fn(),
   saveDocumentToPath: vi.fn(),
   validateDocumentCommand: vi.fn(),
+  getBlueprintSidecarPathCommand: vi.fn(),
+  loadBlueprintWorkspaceFromPath: vi.fn(),
+  saveBlueprintWorkspaceToPath: vi.fn(),
 }))
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({
@@ -27,6 +30,9 @@ vi.mock('../lib/tauri', async (importOriginal) => ({
   openDocumentFromPath: tauriMocks.openDocumentFromPath,
   saveDocumentToPath: tauriMocks.saveDocumentToPath,
   validateDocumentCommand: tauriMocks.validateDocumentCommand,
+  getBlueprintSidecarPathCommand: tauriMocks.getBlueprintSidecarPathCommand,
+  loadBlueprintWorkspaceFromPath: tauriMocks.loadBlueprintWorkspaceFromPath,
+  saveBlueprintWorkspaceToPath: tauriMocks.saveBlueprintWorkspaceToPath,
 }))
 
 function createDocument(overrides: Partial<DocumentFile> = {}): DocumentFile {
@@ -251,5 +257,55 @@ describe('editorStore.applyBlueprintDocument', () => {
     expect(useEditorStore.getState().document.document.id).toBe('doc-newer-blueprint')
     expect(useEditorStore.getState().validationReport).toEqual(validationReport(newerBlueprint))
     expect(tauriMocks.validateDocumentCommand).toHaveBeenCalledTimes(2)
+  })
+})
+
+
+describe('editorStore.saveDocumentAs blueprint rebind', () => {
+
+  it('rebinds blueprint sidecar metadata after saving an existing dirty document', async () => {
+    const original = createDocument()
+    const savedDocument = createDocument({
+      document: { ...original.document, title: 'Saved dirty title', updatedAt: '2026-04-27T02:00:00.000Z' },
+    })
+    const savedPath = '/tmp/main.easyanalyse.json'
+    tauriMocks.saveDocumentToPath.mockResolvedValue({ path: savedPath, report: validationReport(savedDocument) })
+    tauriMocks.getBlueprintSidecarPathCommand.mockResolvedValue('/tmp/main.easyanalyse-blueprints.json')
+
+    await useBlueprintStore.getState().loadForMainDocument(savedPath, original)
+    useBlueprintStore.setState({ dirty: false })
+    useEditorStore.setState({ document: savedDocument, filePath: savedPath, dirty: true })
+
+    await useEditorStore.getState().saveDocument()
+
+    const expectedHash = await hashDocument(savedDocument)
+    expect(useEditorStore.getState().dirty).toBe(false)
+    expect(useBlueprintStore.getState().sidecarPath).toBe('/tmp/main.easyanalyse-blueprints.json')
+    expect(useBlueprintStore.getState().workspace?.mainDocument).toMatchObject({
+      documentId: savedDocument.document.id,
+      path: savedPath,
+      hash: expectedHash,
+    })
+  })
+
+  it('rebinds blueprint sidecar to the new Save As path and preserves in-memory blueprints as dirty', async () => {
+    const document = createDocument()
+    const savedPath = '/tmp/new-main.easyanalyse.json'
+    dialogMocks.save.mockResolvedValue(savedPath)
+    tauriMocks.saveDocumentToPath.mockResolvedValue({ path: savedPath, report: validationReport(document) })
+    tauriMocks.getBlueprintSidecarPathCommand.mockResolvedValue('/tmp/new-main.easyanalyse-blueprints.json')
+
+    await useBlueprintStore.getState().loadForMainDocument(null, document)
+    const snapshot = await useBlueprintStore.getState().createSnapshotFromDocument(document)
+    useEditorStore.setState({ document, filePath: null, dirty: true })
+
+    await useEditorStore.getState().saveDocumentAs()
+
+    expect(tauriMocks.saveDocumentToPath).toHaveBeenCalledWith(savedPath, expect.any(Object))
+    expect(useEditorStore.getState().filePath).toBe(savedPath)
+    expect(useBlueprintStore.getState().sidecarPath).toBe('/tmp/new-main.easyanalyse-blueprints.json')
+    expect(useBlueprintStore.getState().workspace?.blueprints.map((record) => record.id)).toEqual([snapshot.id])
+    expect(useBlueprintStore.getState().workspace?.mainDocument?.path).toBe(savedPath)
+    expect(useBlueprintStore.getState().dirty).toBe(true)
   })
 })

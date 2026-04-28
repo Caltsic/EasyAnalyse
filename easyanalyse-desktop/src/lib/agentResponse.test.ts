@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentBlueprintCandidate } from '../types/agent'
 import type { DocumentFile } from '../types/document'
-import { parseAgentResponse } from './agentResponse'
+import { AGENT_RESPONSE_SEMANTIC_VERSION, parseAgentResponse } from './agentResponse'
 
 function createDocument(overrides: Partial<DocumentFile> = {}): DocumentFile {
   return {
@@ -38,7 +38,7 @@ describe('parseAgentResponse', () => {
     const parsed = parseAgentResponse(
       JSON.stringify({
         schemaVersion: 'agent-response-v1',
-        semanticVersion: '1.0.0',
+        semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
         kind: 'message',
         requestId: 'req-1',
         summary: 'Short answer',
@@ -51,7 +51,7 @@ describe('parseAgentResponse', () => {
     expect(parsed.ok).toBe(true)
     expect(parsed.response).toMatchObject({
       schemaVersion: 'agent-response-v1',
-      semanticVersion: '1.0.0',
+      semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
       kind: 'message',
       requestId: 'req-1',
       summary: 'Short answer',
@@ -66,6 +66,7 @@ describe('parseAgentResponse', () => {
     const sourceDocument = createDocument()
     const parsed = parseAgentResponse({
       schemaVersion: 'agent-response-v1',
+        semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
       kind: 'blueprints',
       summary: 'Two safer options',
       capabilities: { blueprints: true, patch: false },
@@ -96,6 +97,7 @@ describe('parseAgentResponse', () => {
     const sourceDocument = createDocument()
     const parsed = parseAgentResponse({
       schemaVersion: 'agent-response-v1',
+        semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
       kind: 'blueprints',
       summary: 'One option',
       blueprints: [
@@ -129,6 +131,7 @@ describe('parseAgentResponse', () => {
     expect(
       parseAgentResponse({
         schemaVersion: 'agent-response-v1',
+        semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
         kind: 'question',
         question: 'Which rail should be optimized?',
         options: ['VIN', 'VOUT'],
@@ -138,6 +141,7 @@ describe('parseAgentResponse', () => {
     expect(
       parseAgentResponse({
         schemaVersion: 'agent-response-v1',
+        semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
         kind: 'error',
         message: 'Unable to infer load current.',
         recoverable: true,
@@ -151,9 +155,29 @@ describe('parseAgentResponse', () => {
     ).toThrow(/schemaVersion.*agent-response-v1/i)
   })
 
+  it('rejects missing or unsupported semanticVersion before accepting payloads', () => {
+    expect(() =>
+      parseAgentResponse({ schemaVersion: 'agent-response-v1', kind: 'message', markdown: 'hello' }),
+    ).toThrow(/semanticVersion.*easyanalyse-semantic-v4/i)
+
+    expect(() =>
+      parseAgentResponse({
+        schemaVersion: 'agent-response-v1',
+        semanticVersion: 'easyanalyse-semantic-v3',
+        kind: 'message',
+        markdown: 'hello',
+      }),
+    ).toThrow(/semanticVersion.*easyanalyse-semantic-v4/i)
+  })
+
   it('rejects unknown kind with a readable error', () => {
     expect(() =>
-      parseAgentResponse({ schemaVersion: 'agent-response-v1', kind: 'telepathy', markdown: 'hello' }),
+      parseAgentResponse({
+        schemaVersion: 'agent-response-v1',
+        semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
+        kind: 'telepathy',
+        markdown: 'hello',
+      }),
     ).toThrow(/kind.*message.*blueprints.*question.*error.*patch/i)
   })
 
@@ -161,6 +185,7 @@ describe('parseAgentResponse', () => {
     expect(
       parseAgentResponse({
         schemaVersion: 'agent-response-v1',
+        semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
         kind: 'message',
         capabilities: ['message', 'question'],
         markdown: 'hello',
@@ -170,6 +195,7 @@ describe('parseAgentResponse', () => {
     expect(
       parseAgentResponse({
         schemaVersion: 'agent-response-v1',
+        semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
         kind: 'message',
         capabilities: { message: true, patch: 'deferred', unknown: true, error: 1 },
         markdown: 'hello',
@@ -195,6 +221,7 @@ describe('parseAgentResponse', () => {
 
     const parsed = parseAgentResponse({
       schemaVersion: 'agent-response-v1',
+        semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
       kind: 'blueprints',
       summary: 'Candidate with warnings',
       blueprints: [
@@ -221,9 +248,41 @@ describe('parseAgentResponse', () => {
     )
   })
 
+  it('retains candidate documents with non-px canvas units but flags them as issues', () => {
+    const document = createDocument({
+      view: {
+        canvas: { units: 'mm' as 'px', grid: { enabled: true, size: 16 } },
+        devices: {},
+      },
+    })
+
+    const parsed = parseAgentResponse({
+      schemaVersion: 'agent-response-v1',
+      semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
+      kind: 'blueprints',
+      summary: 'Bad units retained',
+      blueprints: [
+        {
+          title: 'Bad units',
+          summary: 'Needs repair',
+          rationale: 'Parser should retain repairable drafts',
+          tradeoffs: [],
+          document,
+        },
+      ],
+    })
+
+    expect(parsed.response.kind).toBe('blueprints')
+    if (parsed.response.kind !== 'blueprints') throw new Error('expected blueprints')
+    expect(parsed.response.blueprints[0].document).toEqual(document)
+    expect(parsed.response.blueprints[0].issues.map((issue) => issue.code)).toContain('invalid-view-canvas-units')
+    expect(parsed.issues.map((issue) => issue.path)).toContain('blueprints[0].document.view.canvas.units')
+  })
+
   it('rejects non-object blueprint candidate documents with a readable error', () => {
     const createPayload = (document: unknown) => ({
       schemaVersion: 'agent-response-v1',
+        semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
       kind: 'blueprints',
       summary: 'Invalid document shape',
       blueprints: [
@@ -269,6 +328,7 @@ describe('parseAgentResponse', () => {
 
     const parsed = parseAgentResponse({
       schemaVersion: 'agent-response-v1',
+        semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
       kind: 'blueprints',
       summary: 'Candidate with legacy fields',
       blueprints: [
@@ -327,6 +387,7 @@ describe('parseAgentResponse', () => {
 
     const parsed = parseAgentResponse({
       schemaVersion: 'agent-response-v1',
+        semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
       kind: 'blueprints',
       summary: 'Candidate with legacy fields and metadata',
       blueprints: [
@@ -363,6 +424,7 @@ describe('parseAgentResponse', () => {
     const candidateDocument = createDocument({ document: { id: 'candidate', title: 'Candidate' } })
     const payload = {
       schemaVersion: 'agent-response-v1',
+        semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
       kind: 'blueprints',
       summary: 'Candidate only',
       blueprints: [

@@ -20,3 +20,7 @@ easyanalyse-mobile-android/signing/
 
 # Autonomous builder runtime lock (local only)
 automation/.autonomous_run.lock
+automation/.autonomous_run.lock.reclaim
+
+# Tauri may generate this platform schema during Linux cargo checks.
+easyanalyse-desktop/src-tauri/gen/schemas/linux-schema.json

@@ -8,10 +8,12 @@ import type {
   AgentResponseParseIssue,
   AgentResponseParseOptions,
   AgentResponseParseResult,
+  AgentResponseSemanticVersion,
 } from '../types/agent'
 import type { DocumentFile, ValidationIssue } from '../types/document'
 
-const SCHEMA_VERSION = 'agent-response-v1'
+export const AGENT_RESPONSE_SCHEMA_VERSION = 'agent-response-v1'
+export const AGENT_RESPONSE_SEMANTIC_VERSION: AgentResponseSemanticVersion = 'easyanalyse-semantic-v4'
 const SUPPORTED_KINDS = ['message', 'blueprints', 'patch', 'question', 'error'] as const
 const CAPABILITY_KEYS = new Set<AgentResponseKind>(SUPPORTED_KINDS)
 const FORBIDDEN_OLD_TOPOLOGY_FIELDS = new Set([
@@ -38,8 +40,12 @@ export function parseAgentResponse(
   const value = typeof input === 'string' ? parseJsonObject(input) : input
   const root = asObject(value, 'AgentResponse')
 
-  if (root.schemaVersion !== SCHEMA_VERSION) {
-    throw new Error(`Unsupported AgentResponse schemaVersion: expected ${SCHEMA_VERSION}`)
+  if (root.schemaVersion !== AGENT_RESPONSE_SCHEMA_VERSION) {
+    throw new Error(`Unsupported AgentResponse schemaVersion: expected ${AGENT_RESPONSE_SCHEMA_VERSION}`)
+  }
+
+  if (root.semanticVersion !== AGENT_RESPONSE_SEMANTIC_VERSION) {
+    throw new Error(`Unsupported AgentResponse semanticVersion: expected ${AGENT_RESPONSE_SEMANTIC_VERSION}`)
   }
 
   if (typeof root.kind !== 'string' || !isAgentResponseKind(root.kind)) {
@@ -124,9 +130,9 @@ function parseJsonObject(input: string): JsonRecord {
 
 function parseBase(root: JsonRecord, kind: AgentResponseKind): AgentResponseBase {
   return {
-    schemaVersion: SCHEMA_VERSION,
+    schemaVersion: AGENT_RESPONSE_SCHEMA_VERSION,
+    semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
     kind,
-    ...(typeof root.semanticVersion === 'string' ? { semanticVersion: root.semanticVersion } : {}),
     ...(typeof root.requestId === 'string' ? { requestId: root.requestId } : {}),
     ...(typeof root.summary === 'string' ? { summary: root.summary } : {}),
     ...(root.warnings === undefined ? {} : { warnings: requireStringArray(root.warnings, 'warnings') }),
@@ -320,6 +326,13 @@ function collectSemanticDocumentIssues(document: JsonRecord, basePath: string, i
       code: 'missing-view-canvas',
       message: 'Blueprint candidate document must include view.canvas.',
       path: `${basePath}.view.canvas`,
+    })
+  } else if (document.view.canvas.units !== 'px') {
+    issues.push({
+      severity: 'error',
+      code: 'invalid-view-canvas-units',
+      message: 'Blueprint candidate document view.canvas.units must be px.',
+      path: `${basePath}.view.canvas.units`,
     })
   }
 

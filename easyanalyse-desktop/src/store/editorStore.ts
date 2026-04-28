@@ -564,13 +564,15 @@ export const useEditorStore = create<EditorState>((set, get) => {
         }
 
         const result = await saveDocumentToPath(state.filePath, report.normalizedDocument ?? document)
+        const savedDocument = result.report.normalizedDocument ?? document
         set({
           filePath: result.path,
           dirty: false,
           validationReport: result.report,
-          document: result.report.normalizedDocument ?? document,
+          document: savedDocument,
           statusMessage: getSaveStatusMessage(state.locale, result.path, result.report),
         })
+        await useBlueprintStore.getState().rebindForSavedDocument(result.path, savedDocument)
       } catch (error) {
         set({ statusMessage: getErrorMessage(error) })
       }
@@ -600,13 +602,15 @@ export const useEditorStore = create<EditorState>((set, get) => {
         })
 
         const result = await saveDocumentToPath(path, report.normalizedDocument ?? document)
+        const savedDocument = result.report.normalizedDocument ?? document
         set({
           filePath: result.path,
           dirty: false,
           validationReport: result.report,
-          document: result.report.normalizedDocument ?? document,
+          document: savedDocument,
           statusMessage: getSaveStatusMessage(state.locale, result.path, result.report),
         })
+        await useBlueprintStore.getState().rebindForSavedDocument(result.path, savedDocument)
       } catch (error) {
         set({ statusMessage: getErrorMessage(error) })
       }

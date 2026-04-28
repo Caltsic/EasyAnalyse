@@ -27,9 +27,10 @@ print(json.load(open('automation/autonomous_state.json')).get('currentTask','unk
 PY
 )"
    ```
-   - 如果输出 `AUTONOMOUS_LOCK=ACQUIRED` 且退出码为 0：继续本轮。
+   - 如果输出 `AUTONOMOUS_LOCK=ACQUIRED` 且退出码为 0：必须同时记录输出中的 `runId=...` 作为本轮 runId，然后继续本轮。
+   - 如果输出 `AUTONOMOUS_LOCK=ACQUIRED` 但没有 `runId=...`：fail closed，立即记录错误并结束；不得做 git 修改。
    - 如果输出 `AUTONOMOUS_LOCK=HELD` 且退出码为 75：说明上一轮仍在运行，本轮只发送 Telegram “检测到运行锁，跳过本轮”并立即结束；不得做 git 修改。
-   - 如果输出 `AUTONOMOUS_LOCK=STALE` 后成功 acquire：发送 Telegram stale lock 提示并继续。
+   - 如果输出 `AUTONOMOUS_LOCK=STALE` 后成功 acquire：必须记录新输出的 `runId=...`，发送 Telegram stale lock 提示并继续。
 3. 获取锁成功后，发送 Telegram 开始通知给 `telegram:8433803846`。
 4. 检查 `git status --short --branch`。
 5. 确认当前分支是 `agent`；否则切换到 `agent`。
@@ -37,7 +38,7 @@ PY
 7. 在安全时执行 `git pull --rebase origin agent`。
 8. 阅读本目录控制文件和最高优先规划。
 9. 从 `automation/task_queue.md` 选择下一个未完成、未阻塞、依赖已满足的小任务。
-10. 正常结束、失败退出、决定暂停问用户前，必须执行 `python3 automation/autonomous_lock.py release` 尽力释放本轮锁。
+10. 正常结束、失败退出、决定暂停问用户前，必须执行 `python3 automation/autonomous_lock.py release --run-id <本轮runId>` 尽力释放本轮锁。
 
 
 ## 运行锁与 30 分钟轮询
@@ -49,9 +50,9 @@ PY
 锁实现要求：
 
 1. 不允许用“先看文件是否存在、再写文件”的人工 check-then-create 方式；必须使用 `automation/autonomous_lock.py acquire`，该脚本用 `O_CREAT|O_EXCL` 原子创建锁。
-2. 当前 live cronjob 还配置了 preflight script：`~/.hermes/scripts/easyanalyse_autonomous_preflight.py`。如果 cron prompt 注入的 preflight context 显示 `EASYANALYSE_PREFLIGHT_LOCK=ACQUIRED`，说明锁已经在模型启动前取得，本轮不要再次 acquire，只需继续执行并在结束前 release。
+2. 当前 live cronjob 还配置了 preflight script：`~/.hermes/scripts/easyanalyse_autonomous_preflight.py`。如果 cron prompt 注入的 preflight context 显示 `EASYANALYSE_PREFLIGHT_LOCK=ACQUIRED`，必须同时读取并保存 `EASYANALYSE_PREFLIGHT_RUN_ID=...`；本轮不要再次 acquire，结束前用该 runId release。若 acquired 但缺少 `EASYANALYSE_PREFLIGHT_RUN_ID`，必须 fail closed，不得施工。
 3. 如果 preflight context 显示 `EASYANALYSE_PREFLIGHT_LOCK=HELD`，本轮只发送 skip 通知并结束；不得运行 `git pull`、不得派子代理、不得改仓库。
-4. 如果没有 preflight context（例如人工手动运行 supervisor），必须在任何 Telegram 开始通知、git status、git pull 或文件写入之前手动运行 `python3 automation/autonomous_lock.py acquire --task <currentTask>`。
+4. 如果没有 preflight context（例如人工手动运行 supervisor），必须在任何 Telegram 开始通知、git status、git pull 或文件写入之前手动运行 `python3 automation/autonomous_lock.py acquire --task <currentTask>`，从 stdout 提取并保存 `runId=...`；后续 release 必须使用同一 runId。
 5. 锁超过 6 小时才按 stale lock 处理。脚本会优先使用 lock `startedAt`，解析失败时用 lock 文件 mtime，避免 malformed lock 永久卡死。
 6. 每轮只释放自己本轮持有的锁；正常结束、失败退出、暂停问用户前都必须尽力 release。
 7. 如果发现 lock acquire/release 脚本异常，不要继续自动施工；记录 blocked 并询问用户。
@@ -63,8 +64,9 @@ PY
   "branch": "agent",
   "host": "...",
   "job": "EasyAnalyse Agent Branch Autonomous Builder",
-  "lockVersion": 1,
+  "lockVersion": 2,
   "pid": 12345,
+  "runId": "uuid-v4",
   "startedAt": "ISO-8601",
   "task": "M3-T1"
 }
@@ -167,3 +169,12 @@ PY
 5. `automation/autonomous_handoff.md` 更新高信号交接摘要。
 6. 有 git commit，并 push 到 `origin/agent`。
 7. Telegram 发送完成摘要。
+
+
+## Owner-safe lock update
+
+- `automation/autonomous_lock.py acquire` 必须输出 `runId=...`；cron preflight 必须把它注入为 `EASYANALYSE_PREFLIGHT_RUN_ID=...`。
+- 如果 preflight 显示 `EASYANALYSE_PREFLIGHT_LOCK=ACQUIRED` 但没有 `EASYANALYSE_PREFLIGHT_RUN_ID`，本轮必须 fail closed：不得 git pull、不得改文件、不得派子代理。
+- 正常结束、失败退出或暂停前，必须使用同一个 runId 释放：`python3 automation/autonomous_lock.py release --run-id <runId>`。
+- 禁止正常自动化路径使用无 `--run-id` 的 release；`--force` 只允许人工抢救 stale lock。
+- stale reclaim 使用 `.autonomous_run.lock.reclaim` 原子互斥，避免多个 reclaimer 同时删除新锁。

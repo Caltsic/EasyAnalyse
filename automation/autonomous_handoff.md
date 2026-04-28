@@ -40,12 +40,21 @@
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知任务提交：`de11784`
+- 最近已知任务提交：`4039270`
 - 最近修复提交：`9857e69 fix: repair blueprint agent settings automation regressions`
-- 当前任务：`M5-T3 Anthropic adapter`
-- 当前阻塞：无。M5-T2 DeepSeek preset 已完成并通过验证；自动化可继续推进 M5-T3。
+- 当前任务：`M5-T4 timeout/cancel/retry/context budget`
+- 当前阻塞：无。M5-T3 Anthropic adapter 已完成并通过验证；自动化可继续推进 M5-T4。
 
 ## 最近完成
+
+- M5-T3 已完成：Anthropic adapter。
+  - 新增 `easyanalyse-desktop/src/lib/anthropicProvider.ts` 与 `anthropicProvider.test.ts`，实现 Anthropic Messages provider adapter：`POST /v1/messages`、`x-api-key` / `anthropic-version` headers、system/user payload、text content block 拼接后解析 AgentResponse v1。
+  - 纯 provider 边界：只使用 injected fetch；不调用 global fetch、真实网络、Tauri、SecretStore、settings/editor/blueprint store；不读取本机 API key。API key 只进入 outbound `x-api-key` header，body/metadata/error 回归覆盖不泄漏。
+  - 修改 `openAiCompatibleProvider` 中共享 provider metadata 类型，允许 `anthropic` adapterId、`anthropic-messages` requestFormat、`messages` endpoint 与 `stopReason`；OpenAI-compatible/DeepSeek runtime 行为未改变。
+  - 质量修复：非 JSON HTTP error bodies 现在保留给 HTTP mapper（401/403 auth、429 rate、5xx server），不再误判 parse error；Anthropic text blocks 按顺序完整拼接，包括中间空白块。
+  - Review：Spec Reviewer 修复后 PASS；Quality Reviewer APPROVED；Final Integration Reviewer PASS/READY。
+  - 验证通过：`npm test -- --run`（26 files / 187 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`、`git diff --check`。
+  - 任务提交：`4039270`。
 
 - M5-T2 已完成：DeepSeek preset。
   - 新增 `easyanalyse-desktop/src/lib/providerPresets.ts` 与 `providerPresets.test.ts`，导出 frozen/readonly `DEEPSEEK_PROVIDER_PRESET`：`id=deepseek`、`kind=deepseek`、`baseUrl=https://api.deepseek.com/v1`、models `deepseek-chat`/`deepseek-reasoner`、default `deepseek-chat`，无 `apiKeyRef`/secret 字段。
@@ -192,17 +201,17 @@
 
 ## 下一轮建议
 
-执行 `M5-T3`：Anthropic adapter。
+执行 `M5-T4`：timeout/cancel/retry/context budget。
 
 建议派子代理：
 
-1. Implementer：新增 Anthropic Messages adapter（建议文件 `easyanalyse-desktop/src/lib/anthropicProvider.ts`），沿用 M5-T1 adapter 的纯函数/注入 fetch 风格；实现 `/messages` endpoint 拼接、`x-api-key`/`anthropic-version` headers、system/user payload、最终文本内容解析为 AgentResponse v1；默认不调用真实网络、不读取任何 API key。
-2. Spec Reviewer：检查 Anthropic 作为独立 provider kind/request format，AgentResponse parse 仍保留 invalid object-shaped blueprints，不直接写 editor/blueprint/settings/SecretStore，不影响 DeepSeek/OpenAI-compatible preset。
-3. Quality Reviewer：重点审查 API key 仅进入 outbound header、错误映射（401/403、429、5xx/network、protocol/schema）、baseUrl `/v1/messages` 拼接、content block 解析、无 global fetch fallback、无 secret 泄漏。
+1. Implementer：在现有 provider adapter / AgentPanel 边界上补齐可取消、超时、重试和上下文预算能力；优先做小而可验证的 provider-run helper 或 request-control utility，不要直接默认调用真实付费模型。
+2. Spec Reviewer：检查 retry 只作用于网络/超时/429/5xx 等可重试错误，缺 API key/401/403/model unavailable/schema/semantic/user cancel 不自动重试；取消后不写半截响应或污染蓝图列表。
+3. Quality Reviewer：重点审查 AbortSignal 传播、超时清理、重试退避/抖动可测试、stale/cancel race、防止真实网络 fallback、防止 API key 进入日志/error metadata。
 
 建议验收测试：
 
-- 覆盖 Anthropic payload/header/url、message/blueprints parse、auth/rate/server/network/protocol/schema 错误映射、API key 不进入 body/metadata/error、仅 injected fetch；回归 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。真实 provider smoke test 留到明确低成本策略/连接测试任务。
+- 覆盖 AbortSignal 取消、timeout 映射、retryable/non-retryable 错误分类、重试次数与退避、context/token budget 截断或拒绝策略、取消/超时后不提交蓝图；回归 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。真实 provider smoke test 仍须等明确低成本策略/连接测试任务。
 
 ## 重要提醒
 
@@ -246,3 +255,4 @@
 - M4-T3 任务提交：`2846916`
 - M5-T1 任务提交：`122abd2`
 - M5-T2 任务提交：`de11784`
+- M5-T3 任务提交：`4039270`

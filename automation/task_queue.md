@@ -78,7 +78,7 @@
 
 - [x] M5-T1：OpenAI-compatible adapter
 - [x] M5-T2：DeepSeek preset
-- [ ] M5-T3：Anthropic adapter
+- [x] M5-T3：Anthropic adapter
 - [ ] M5-T4：timeout/cancel/retry/context budget
 
 M5 真实调用约束：用户已提供项目专用 DeepSeek API key；自动化任务可从仓库外 `/home/ubuntu/.config/EasyAnalyse/secrets/deepseek_api_key` 读取。不得把 key 明文写入仓库、主文档、sidecar、普通设置、prompt 日志或 Telegram。真实 API smoke test 必须低成本、最小化；若出现高额费用风险或默认调用策略不确定，再暂停询问。
@@ -328,3 +328,16 @@ M5 真实调用约束：用户已提供项目专用 DeepSeek API key；自动化
 - Review：Spec Reviewer PASS；Quality Reviewer 首轮发现 secret orphan 与 mutable preset 风险，TDD 修复后 APPROVED；Final Integration Reviewer PASS/READY。
 - 验证通过：`npm test -- --run`（25 files / 169 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`、`git diff --check`。
 - 任务提交：`de11784 feat: add deepseek provider preset`。
+
+### M5-T3 完成记录
+
+- 完成时间：2026-04-28 22:18 +0800
+- 新增：`easyanalyse-desktop/src/lib/anthropicProvider.ts` 与 `easyanalyse-desktop/src/lib/anthropicProvider.test.ts`。
+- 修改：`openAiCompatibleProvider` 中共享 Provider adapter metadata 类型，允许 `anthropic` adapterId、`anthropic-messages` requestFormat、`messages` endpoint 与 `stopReason`；OpenAI-compatible/DeepSeek runtime 行为未改变。
+- 实现：Anthropic Messages adapter 采用纯函数 + injected fetch；构造 `/v1/messages` 请求，写入 `x-api-key` / `anthropic-version` / JSON body，解析 `content` text blocks 为 AgentResponse v1，并保留现有 invalid object-shaped blueprint 解析语义。
+- 安全边界：不调用真实网络、Tauri、SecretStore、settings/editor/blueprint store，不读取本机 API key；API key 只进入 outbound `x-api-key` header，body/metadata/error 回归覆盖不泄漏。
+- 质量修复：Spec Reviewer 首轮发现非 JSON HTTP error bodies 被过早映射为 parse error、空白 text block 被丢弃；已按 TDD 增加回归并修复为非 OK raw text 交给 HTTP mapper、所有 text blocks 按顺序拼接。
+- 覆盖：URL/header/body/defaults/no response_format、injected fetch/no global fetch、AbortSignal、message/blueprints parse、mainDocument 不变、text block 拼接、HTTP/network/protocol/parse/schema 错误映射、model unavailable 非过宽检测、supports model list。
+- Review：Spec Reviewer 修复后 PASS；Quality Reviewer APPROVED；Final Integration Reviewer PASS/READY。
+- 验证通过：`npm test -- --run`（26 files / 187 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`、`git diff --check`。
+- 任务提交：`4039270 feat: add anthropic provider adapter`。

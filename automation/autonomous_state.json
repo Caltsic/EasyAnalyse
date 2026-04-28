@@ -3,7 +3,7 @@
   "branch": "agent",
   "remote": "origin/agent",
   "currentMilestone": "M5",
-  "currentTask": "M5-T2",
+  "currentTask": "M5-T3",
   "completedTasks": [
     "M1-T1",
     "M1-T2",
@@ -23,12 +23,13 @@
     "M4-T1",
     "M4-T2",
     "M4-T3",
-    "M5-T1"
+    "M5-T1",
+    "M5-T2"
   ],
   "blockedTasks": [],
-  "lastCommit": "122abd2",
-  "lastRunAt": "2026-04-28T19:34:37+08:00",
-  "testStatus": "M5-T1 OpenAI-compatible adapter verified: npm test -- --run (24 files / 163 tests), npx tsc -b --pretty false, npm run lint, and npx vite build all passed. Spec Reviewer PASS; Quality Reviewer approved after TDD fix for model-unavailable error classification; Final Integration Reviewer PASS/READY. Task commit 122abd2 pushed/ready for origin/agent.",
+  "lastCommit": "de11784",
+  "lastRunAt": "2026-04-28T21:06:16+08:00",
+  "testStatus": "M5-T2 DeepSeek preset verified: npm test -- --run (25 files / 169 tests), npx tsc -b --pretty false, npm run lint, npx vite build, and git diff --check all passed. Spec Reviewer PASS; Quality Reviewer approved after TDD fixes for preset immutability and DeepSeek secret replacement cleanup; Final Integration Reviewer PASS/READY. Task commit de11784 pushed/ready for origin/agent.",
   "requiresUserDecision": false,
   "userDecisionPrompt": null,
   "autonomyScope": {
@@ -82,5 +83,5 @@
     "preflightExportsRunId": true,
     "staleReclaimMutex": "automation/.autonomous_run.lock.reclaim"
   },
-  "lastTaskCommit": "122abd2"
+  "lastTaskCommit": "de11784"
 }

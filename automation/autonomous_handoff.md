@@ -40,12 +40,21 @@
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知任务提交：`122abd2`
+- 最近已知任务提交：`de11784`
 - 最近修复提交：`9857e69 fix: repair blueprint agent settings automation regressions`
-- 当前任务：`M5-T2 DeepSeek preset`
-- 当前阻塞：无。M5-T1 OpenAI-compatible adapter 已完成并通过验证；自动化可继续推进 M5-T2。
+- 当前任务：`M5-T3 Anthropic adapter`
+- 当前阻塞：无。M5-T2 DeepSeek preset 已完成并通过验证；自动化可继续推进 M5-T3。
 
 ## 最近完成
+
+- M5-T2 已完成：DeepSeek preset。
+  - 新增 `easyanalyse-desktop/src/lib/providerPresets.ts` 与 `providerPresets.test.ts`，导出 frozen/readonly `DEEPSEEK_PROVIDER_PRESET`：`id=deepseek`、`kind=deepseek`、`baseUrl=https://api.deepseek.com/v1`、models `deepseek-chat`/`deepseek-reasoner`、default `deepseek-chat`，无 `apiKeyRef`/secret 字段。
+  - `ProviderModelSettings` 新增 “Use DeepSeek preset” 入口，预填公开 metadata；空 API key 保存不会调用 SecretStore；已有 `deepseek` provider 的 ref 会保留；通过 preset flow 替换新 key 后会删除旧 secret ref。
+  - OpenAI-compatible adapter 测试覆盖 DeepSeek preset injected-fetch 路径，构造 `https://api.deepseek.com/v1/chat/completions`，使用 `deepseek-chat`，不触发 global fetch/真实网络。
+  - 质量修复：preset 与 registry runtime frozen 并通过 `cloneProviderPreset()` 转成 editable config；修复 `BlueprintsPanel.test.tsx` async snapshot 测试竞态，避免满套件负载下在 `Creating snapshot` transient state 断言。
+  - Review：Spec Reviewer PASS；Quality Reviewer 首轮发现 secret orphan 与 mutable preset 风险，TDD 修复后 APPROVED；Final Integration Reviewer PASS/READY。
+  - 验证通过：`npm test -- --run`（25 files / 169 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`、`git diff --check`。
+  - 任务提交：`de11784`。
 
 - M5-T1 已完成：OpenAI-compatible adapter。
   - 新增 `easyanalyse-desktop/src/lib/openAiCompatibleProvider.ts` 与 `openAiCompatibleProvider.test.ts`。
@@ -183,17 +192,17 @@
 
 ## 下一轮建议
 
-执行 `M5-T2`：DeepSeek preset。
+执行 `M5-T3`：Anthropic adapter。
 
 建议派子代理：
 
-1. Implementer：在复用 M5-T1 OpenAI-compatible adapter 的前提下，添加 first-class DeepSeek provider preset/default metadata 与相关测试；默认仍不触发真实付费调用，不读取/打印真实 API key。
-2. Spec Reviewer：检查 DeepSeek 在 UI/设置中作为独立 provider 呈现但底层可复用 OpenAI-compatible request adapter；API key 仍只通过 SecretStore/opaque ref 边界处理，不写 AppSettings/文档/sidecar/log。
-3. Quality Reviewer：重点审查 preset 与用户自定义 provider 的区分、baseUrl/model 默认值、无真实网络默认调用、错误文案与 M5-T1 adapter 兼容。
+1. Implementer：新增 Anthropic Messages adapter（建议文件 `easyanalyse-desktop/src/lib/anthropicProvider.ts`），沿用 M5-T1 adapter 的纯函数/注入 fetch 风格；实现 `/messages` endpoint 拼接、`x-api-key`/`anthropic-version` headers、system/user payload、最终文本内容解析为 AgentResponse v1；默认不调用真实网络、不读取任何 API key。
+2. Spec Reviewer：检查 Anthropic 作为独立 provider kind/request format，AgentResponse parse 仍保留 invalid object-shaped blueprints，不直接写 editor/blueprint/settings/SecretStore，不影响 DeepSeek/OpenAI-compatible preset。
+3. Quality Reviewer：重点审查 API key 仅进入 outbound header、错误映射（401/403、429、5xx/network、protocol/schema）、baseUrl `/v1/messages` 拼接、content block 解析、无 global fetch fallback、无 secret 泄漏。
 
 建议验收测试：
 
-- 覆盖 DeepSeek preset 的 kind/baseUrl/default models、OpenAI-compatible adapter supports、settings/provider metadata 不含明文 key、无 real fetch；回归 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。真实 DeepSeek smoke test 仅在明确低成本策略与下一任务边界允许时执行。
+- 覆盖 Anthropic payload/header/url、message/blueprints parse、auth/rate/server/network/protocol/schema 错误映射、API key 不进入 body/metadata/error、仅 injected fetch；回归 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。真实 provider smoke test 留到明确低成本策略/连接测试任务。
 
 ## 重要提醒
 
@@ -236,3 +245,4 @@
 - M4-T2 任务提交：`78a1627`
 - M4-T3 任务提交：`2846916`
 - M5-T1 任务提交：`122abd2`
+- M5-T2 任务提交：`de11784`

@@ -77,7 +77,7 @@
 ## Milestone 5：真实 Provider（M4 验收通过后自动执行；真实调用优先 DeepSeek）
 
 - [x] M5-T1：OpenAI-compatible adapter
-- [ ] M5-T2：DeepSeek preset
+- [x] M5-T2：DeepSeek preset
 - [ ] M5-T3：Anthropic adapter
 - [ ] M5-T4：timeout/cancel/retry/context budget
 
@@ -316,3 +316,15 @@ M5 真实调用约束：用户已提供项目专用 DeepSeek API key；自动化
 - Review：Spec Reviewer PASS；Quality Reviewer 修复后 APPROVED；Final Integration Reviewer PASS/READY。
 - 验证通过：`npm test -- --run`（24 files / 163 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 - 任务提交：`122abd2 feat: add openai-compatible provider adapter`。
+
+### M5-T2 完成记录
+
+- 完成时间：2026-04-28 21:06 +0800
+- 新增：`easyanalyse-desktop/src/lib/providerPresets.ts` 与 `easyanalyse-desktop/src/lib/providerPresets.test.ts`。
+- 修改：`ProviderModelSettings` 接入 “Use DeepSeek preset” 预设入口；保存空 API key 时只持久化公开 metadata，已有 `deepseek` provider 的 `apiKeyRef` 会保留，替换新 key 后会清理旧 secret ref。
+- 修改：`openAiCompatibleProvider` 类型兼容 readonly preset models；测试确认 DeepSeek 通过 OpenAI-compatible injected fetch 路径构造 `https://api.deepseek.com/v1/chat/completions` 并使用 `deepseek-chat`。
+- 质量修复：Provider preset 导出与 registry runtime frozen，避免 importers 误改 preset metadata；修复 `BlueprintsPanel.test.tsx` 满套件负载下未等待 async snapshot 完成的测试竞态。
+- 覆盖：DeepSeek preset exact metadata/no secret fields、preset immutability、UI preset fill/save/no blank-key SecretStore 调用、现有 ref 保留、新 key 替换清理旧 ref、adapter injected fetch/no global fetch。
+- Review：Spec Reviewer PASS；Quality Reviewer 首轮发现 secret orphan 与 mutable preset 风险，TDD 修复后 APPROVED；Final Integration Reviewer PASS/READY。
+- 验证通过：`npm test -- --run`（25 files / 169 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`、`git diff --check`。
+- 任务提交：`de11784 feat: add deepseek provider preset`。

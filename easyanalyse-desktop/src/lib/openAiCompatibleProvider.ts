@@ -7,6 +7,8 @@ export const OPENAI_COMPATIBLE_ADAPTER_ID = 'openai-compatible'
 export const OPENAI_CHAT_COMPLETIONS_REQUEST_FORMAT = 'openai-chat-completions'
 
 export type ProviderRequestFormat = typeof OPENAI_CHAT_COMPLETIONS_REQUEST_FORMAT | 'anthropic-messages'
+export type ProviderAdapterId = typeof OPENAI_COMPATIBLE_ADAPTER_ID | 'anthropic'
+export type ProviderEndpoint = 'chat/completions' | 'messages'
 export type ProviderHttpMethod = 'POST'
 
 export interface AgentProviderConfig {
@@ -40,11 +42,11 @@ export interface ProviderBuildInput {
 }
 
 export interface ProviderRequestMetadata {
-  adapterId: typeof OPENAI_COMPATIBLE_ADAPTER_ID
-  requestFormat: typeof OPENAI_CHAT_COMPLETIONS_REQUEST_FORMAT
+  adapterId: ProviderAdapterId
+  requestFormat: ProviderRequestFormat
   providerId: string
   modelId: string
-  endpoint: 'chat/completions'
+  endpoint: ProviderEndpoint
 }
 
 export interface ProviderHttpRequest {
@@ -62,12 +64,13 @@ export interface ProviderUsageMetadata {
 }
 
 export interface ProviderResponseMetadata {
-  adapterId: typeof OPENAI_COMPATIBLE_ADAPTER_ID
-  requestFormat: typeof OPENAI_CHAT_COMPLETIONS_REQUEST_FORMAT
+  adapterId: ProviderAdapterId
+  requestFormat: ProviderRequestFormat
   providerId?: string
   modelId?: string
   responseId?: string
   finishReason?: string
+  stopReason?: string
   usage?: ProviderUsageMetadata
 }
 

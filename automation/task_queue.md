@@ -298,3 +298,10 @@ M5 真实调用约束：用户已提供项目专用 DeepSeek API key；自动化
 - Review：Spec Reviewer PASS；Quality Reviewer 修复后 APPROVED；Final Integration Reviewer PASS/READY。
 - 验证通过：`npm test -- --run`（23 files / 143 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 - 任务提交：`2846916 feat: add mock agent panel flow`。
+
+## Known Issues Repair Pass：2026-04-28
+
+- [x] 修复额外核查发现的已知问题：蓝图 sidecar/save workspace 数据安全、AgentResponse semanticVersion、Provider settings/secrets 异常路径、自动化 owner-safe lock。
+- 提交：`9857e69 fix: repair blueprint agent settings automation regressions`。
+- 验证：`npm test -- --run`（23 files / 152 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`、`cargo test`（14 tests）、`python3 automation/autonomous_lock_test.py`、preflight/lock py_compile 均通过。
+- 后续：继续 `M5-T1 OpenAI-compatible adapter`。

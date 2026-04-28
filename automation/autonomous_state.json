@@ -25,9 +25,9 @@
     "M4-T3"
   ],
   "blockedTasks": [],
-  "lastCommit": "2846916",
-  "lastRunAt": "2026-04-28T16:34:00+08:00",
-  "testStatus": "M4-T3 Agent panel verified: spec review PASS, quality review APPROVED after stale/cancel fixes, final integration PASS/READY; npm test -- --run (23 files / 143 tests), npx tsc -b --pretty false, npm run lint, npx vite build.",
+  "lastCommit": "9857e69",
+  "lastRunAt": "2026-04-28T18:10:00+08:00",
+  "testStatus": "Known-issues repair verified: npm test -- --run (23 files / 152 tests), npx tsc -b --pretty false, npm run lint, npx vite build, cargo test (14 tests), autonomous_lock_test.py, and py_compile for lock/preflight scripts all passed. Repair commit 9857e69 pushed to origin/agent.",
   "requiresUserDecision": false,
   "userDecisionPrompt": null,
   "autonomyScope": {

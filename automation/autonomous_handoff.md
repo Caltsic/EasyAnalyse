@@ -41,8 +41,9 @@
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
 - 最近已知任务提交：`2846916`
+- 最近修复提交：`9857e69 fix: repair blueprint agent settings automation regressions`
 - 当前任务：`M5-T1 OpenAI-compatible adapter`
-- 当前阻塞：无。M4-T3 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`；Spec Reviewer PASS，Quality Reviewer 修复后 APPROVED，Final Integration Reviewer PASS/READY。
+- 当前阻塞：无。已知问题修复已完成并通过完整验证；自动化可继续推进 M5-T1。
 
 ## 最近完成
 
@@ -165,6 +166,11 @@
   - Review：Spec Reviewer PASS；Quality Reviewer 修复后 APPROVED；Final Integration Reviewer PASS/READY。
   - 任务提交：`2846916`。
 
+
+- 已知问题修复已完成并推送：`9857e69 fix: repair blueprint agent settings automation regressions`。修复范围包括 Save As/普通 Save 后蓝图 sidecar rebind、损坏 sidecar 禁止静默覆盖、未保存主文档 Save workspace 拒绝假保存、dirty 文档 snapshot base hash、AgentResponse `semanticVersion='easyanalyse-semantic-v4'` 强制、mock provider semanticVersion、`view.canvas.units` 浅检查、Provider id 编辑只读、API key 替换异常路径、明文 key input 清理，以及 owner-safe runId/reclaim-mutex 自动化锁。
+  - 完整验证通过：`npm test -- --run`（23 files / 152 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`、`cargo test`（14 tests）、`python3 automation/autonomous_lock_test.py`、`python3 -m py_compile automation/autonomous_lock.py ~/.hermes/scripts/easyanalyse_autonomous_preflight.py ~/.hermes/profiles/gpt-yolo/scripts/easyanalyse_autonomous_preflight.py`。
+  - 注意：仓库中仍保留两个 M4-T3 相关 stash，当前 HEAD 已包含 M4-T3 正式提交；后续自动化无需应用这些 stash，除非人工确认其内容仍有价值。
+
 ## 下一轮建议
 
 执行 `M5-T1`：OpenAI-compatible adapter。
@@ -185,7 +191,7 @@
 - 保存到磁盘仍走现有严格校验。
 - M2-T6 完成后不要停在蓝图闭环；继续自动进入 M3 Settings + Secrets。
 - M3 完成后进入 M4 Mock Agent；M4 完成后进入 M5 真实 Provider。
-- M5 可以实现 provider adapter 与配置测试；用户已提供项目专用 DeepSeek API key，真实模型调用优先使用 DeepSeek。key 只允许从仓库外本机 secret 文件读取：`/home/ubuntu/.config/EasyAnalyse/secrets/deepseek_api_key`。不要把明文写入 git、主文档、sidecar、普通设置、prompt 日志或 Telegram。若出现高额费用风险、频繁失败、额度/速率限制、或需要改变默认调用策略，再暂停询问。
+- M5 可以实现 provider adapter 与配置测试；用户已提供项目专用 DeepSeek API key，真实模型调用优先使用 DeepSeek。自动化任务模型已请求使用 `openai-codex/gpt-5.5`；如果平台支持 xhigh reasoning，应使用 xhigh。key 只允许从仓库外本机 secret 文件读取：`/home/ubuntu/.config/EasyAnalyse/secrets/deepseek_api_key`。不要把明文写入 git、主文档、sidecar、普通设置、prompt 日志或 Telegram。若出现高额费用风险、频繁失败、额度/速率限制、或需要改变默认调用策略，再暂停询问。
 - 不要把蓝图写进主 document。
 - 不要使用旧的 `status='applied'` 模型。
 - Canvas 预览优先使用纯渲染层 `CircuitCanvasRenderer`，不要只靠 readOnly guard 掩盖写路径。

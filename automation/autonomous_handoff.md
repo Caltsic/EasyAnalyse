@@ -40,9 +40,9 @@
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知任务提交：`78a1627`
-- 当前任务：`M4-T3 Agent 面板基础流`
-- 当前阻塞：无。M4-T2 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`；Spec Reviewer PASS，Quality Reviewer APPROVED，Final Integration Reviewer PASS/READY。
+- 最近已知任务提交：`2846916`
+- 当前任务：`M5-T1 OpenAI-compatible adapter`
+- 当前阻塞：无。M4-T3 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`；Spec Reviewer PASS，Quality Reviewer 修复后 APPROVED，Final Integration Reviewer PASS/READY。
 
 ## 最近完成
 
@@ -154,19 +154,30 @@
   - 验证通过：`npm test -- --run`（22 files / 139 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
   - 任务提交：`78a1627`。
 
+
+- M4-T3 已完成：Agent 面板基础流。
+  - 新增 `AgentPanel`，接入本地 `runMockAgentProvider`，支持 prompt 输入、发送/取消、message/question/error/blueprints 结果卡。
+  - `RightSidebar` 在既有右侧栏内增加 Agent tab，不新增第三布局列。
+  - `blueprintStore.addAgentBlueprintCandidates` 将 Agent valid/invalid candidates 写入 blueprint workspace；invalid candidate 保留 parser issues/risk，`validationState='invalid'`，仍走既有预览/应用流程。
+  - 质量修复：取消中、candidate 创建中、editor document 切换、blueprint workspace/load 切换时的 stale 结果不会入库；Agent 不直接修改 main document，不调用真实 Provider/network/Tauri invoke/SecretStore/API key，不自动保存主文档或 sidecar。
+  - 覆盖测试：结果卡、valid/invalid 入库、主文档 hash 不变、取消/竞态 guard、RightSidebar tab。
+  - 验证通过：`npm test -- --run`（23 files / 143 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+  - Review：Spec Reviewer PASS；Quality Reviewer 修复后 APPROVED；Final Integration Reviewer PASS/READY。
+  - 任务提交：`2846916`。
+
 ## 下一轮建议
 
-执行 `M4-T3`：Agent 面板基础流。
+执行 `M5-T1`：OpenAI-compatible adapter。
 
 建议派子代理：
 
-1. Implementer：基于 M4-T1 `parseAgentResponse` 与 M4-T2 `runMockAgentProvider` 实现桌面内 Agent 面板基础流；允许用户输入 prompt，调用 mock provider，展示 message/question/error 与 blueprint candidates，并将候选保存为 blueprintStore 中的蓝图记录。
-2. Spec Reviewer：检查 Agent 只能通过蓝图候选进入 workspace，不得直接 mutate 主文档；invalid candidate 必须保留并展示风险，不得阻止后续 apply；不得调用真实 Provider、SecretStore 或 API key。
-3. Quality Reviewer：重点审查 async busy/error 状态、重复提交/竞态、面板键盘/弹窗安全、候选写入 sidecar/workspace 的 dirty 隔离、测试覆盖。
+1. Implementer：在不读取/打印真实 API key 的前提下，实现 OpenAI-compatible provider adapter 的请求/响应转换、错误映射与测试替身；优先覆盖 DeepSeek 后续可复用的 OpenAI-compatible 基础。
+2. Spec Reviewer：检查 adapter 不绕过 SecretStore、不把 API key 写入 AppSettings/文档/sidecar/log，不默认触发真实付费调用；协议错误不得破坏主文档或 sidecar。
+3. Quality Reviewer：重点审查 timeout/cancel 预留、错误可读性、fetch 注入可测试性、secret 边界、prompt/document context 不泄密。
 
 建议验收测试：
 
-- Agent 面板使用 mock provider 返回 message/question/error；blueprints 响应会创建/显示候选蓝图；invalid candidate 保留 issues；不直接修改 main document；不调用真实网络/secret；回归 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- 使用 mock fetch 覆盖成功 message/blueprints/error 映射、HTTP/JSON/protocol 错误、无明文 secret 序列化；回归 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。真实 API smoke test 留到 DeepSeek preset/明确低成本阶段。
 
 ## 重要提醒
 
@@ -207,3 +218,4 @@
 - M3-T4 任务提交：`d60e507`
 - M4-T1 任务提交：`5d7953b`
 - M4-T2 任务提交：`78a1627`
+- M4-T3 任务提交：`2846916`

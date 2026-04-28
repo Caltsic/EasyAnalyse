@@ -72,7 +72,7 @@
 
 - [x] M4-T1：AgentResponse parser/schema
 - [x] M4-T2：mock provider
-- [ ] M4-T3：Agent 面板基础流
+- [x] M4-T3：Agent 面板基础流
 
 ## Milestone 5：真实 Provider（M4 验收通过后自动执行；真实调用优先 DeepSeek）
 
@@ -287,3 +287,14 @@ M5 真实调用约束：用户已提供项目专用 DeepSeek API key；自动化
 - 验证通过：`npm test -- --run`（22 files / 139 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 - 任务提交：`78a1627 feat: add mock agent provider`。
 
+
+### M4-T3 完成记录
+
+- 完成时间：2026-04-28 16:34 +0800
+- 新增：`easyanalyse-desktop/src/components/agent/AgentPanel.tsx` 与 `AgentPanel.test.tsx`。
+- 修改：`RightSidebar` 增加现有右侧栏内 Agent tab；`blueprintStore` 增加 `addAgentBlueprintCandidates`；`App.css` 增加 Agent 面板样式。
+- 实现：M4 本地 mock Agent 面板基础流；支持 prompt 输入、发送/取消、message/question/error/blueprints 结果卡；蓝图候选只进入 blueprint workspace，不直接修改主文档。
+- 覆盖：valid/invalid candidate 入库、invalid issues/risk 保留、主文档不变、取消/编辑器切换/workspace 切换 stale guard、RightSidebar Agent tab。
+- Review：Spec Reviewer PASS；Quality Reviewer 修复后 APPROVED；Final Integration Reviewer PASS/READY。
+- 验证通过：`npm test -- --run`（23 files / 143 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- 任务提交：`2846916 feat: add mock agent panel flow`。

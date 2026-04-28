@@ -121,6 +121,9 @@ export type AgentProviderErrorCode =
   | 'AGENT_PROVIDER_MODEL_UNAVAILABLE'
   | 'AGENT_RATE_LIMITED'
   | 'AGENT_PROVIDER_NETWORK_ERROR'
+  | 'AGENT_PROVIDER_TIMEOUT'
+  | 'AGENT_PROVIDER_CANCELLED'
+  | 'AGENT_PROVIDER_CONTEXT_TOO_LARGE'
   | 'AGENT_PROVIDER_SERVER_ERROR'
   | 'AGENT_PROVIDER_PARSE_ERROR'
   | 'AGENT_PROVIDER_PROTOCOL_ERROR'
@@ -492,6 +495,17 @@ function mapHttpError(status: number, body: unknown, context: ErrorContext): Age
 }
 
 function mapNetworkError(error: unknown, context: ErrorContext): AgentProviderError {
+  if (isAbortError(error)) {
+    return createError({
+      code: 'AGENT_PROVIDER_CANCELLED',
+      message: 'OpenAI-compatible provider request was cancelled before completion.',
+      retryable: false,
+      provider: context.provider,
+      model: context.model,
+      apiKey: context.apiKey,
+    })
+  }
+
   const detail = sanitizeMessage(errorMessage(error), [context.apiKey])
   const suffix = detail ? ` Details: ${detail}` : ' Check connectivity and retry.'
   return createError({
@@ -583,6 +597,12 @@ function safeStringify(value: unknown): string | undefined {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function isAbortError(error: unknown): boolean {
+  if (error instanceof DOMException) return error.name === 'AbortError'
+  if (!isRecord(error)) return false
+  return error.name === 'AbortError'
 }
 
 function optionalString(value: unknown): string | undefined {

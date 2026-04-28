@@ -463,6 +463,18 @@ describe('anthropicProvider', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled()
   })
 
+  it('maps fetch AbortError to non-retryable cancellation instead of retryable network failure', async () => {
+    const fetchMock = vi.fn<AnthropicFetch>(async () => {
+      throw new DOMException('user cancelled', 'AbortError')
+    })
+
+    await expect(runAnthropicProvider({ ...baseBuildInput(), fetch: fetchMock })).rejects.toMatchObject({
+      code: 'AGENT_PROVIDER_CANCELLED',
+      retryable: false,
+    })
+    expect(globalThis.fetch).not.toHaveBeenCalled()
+  })
+
   it('maps invalid HTTP JSON, protocol issues, and AgentResponse parse/schema failures to provider errors', async () => {
     const invalidJsonFetch = vi.fn<AnthropicFetch>(
       async () => new Response(`{ "error": "not-json", "apiKey": "${apiKey}"`, { status: 200 }),

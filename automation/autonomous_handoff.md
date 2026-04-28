@@ -40,9 +40,9 @@
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知任务提交：`5d7953b`
-- 当前任务：`M4-T2 mock provider`
-- 当前阻塞：无。M4-T1 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`；Spec Reviewer PASS，Quality Reviewer APPROVED，Final Integration Reviewer PASS/READY。
+- 最近已知任务提交：`78a1627`
+- 当前任务：`M4-T3 Agent 面板基础流`
+- 当前阻塞：无。M4-T2 已通过 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`；Spec Reviewer PASS，Quality Reviewer APPROVED，Final Integration Reviewer PASS/READY。
 
 ## 最近完成
 
@@ -144,19 +144,29 @@
   - 验证通过：`npm test -- --run`（21 files / 135 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
   - 任务提交：`5d7953b`。
 
+
+- M4-T2 已完成：mock provider。
+  - 新增 `easyanalyse-desktop/src/lib/agentMockProvider.ts` 与测试。
+  - 实现本地 deterministic mock Agent provider，`runMockAgentProvider` 会生成 AgentResponse v1 并通过 `parseAgentResponse` 解析；不调用真实网络、Tauri invoke、SecretStore 或 API key。
+  - 支持 `message`、`question`、`error`、`blueprints`、`blueprints-invalid` 场景；蓝图场景包含 valid candidate 与 intentionally invalid object-shaped candidate，invalid candidate 保留 parser issues 供 UI/验证流展示。
+  - 覆盖测试：parseable AgentResponse v1、valid/invalid candidate、error/question、无 fetch/invoke/secret、主文档不 mutation。
+  - Review：Spec Reviewer PASS；Quality Reviewer APPROVED；Final Integration Reviewer PASS/READY。
+  - 验证通过：`npm test -- --run`（22 files / 139 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+  - 任务提交：`78a1627`。
+
 ## 下一轮建议
 
-执行 `M4-T2`：mock provider。
+执行 `M4-T3`：Agent 面板基础流。
 
 建议派子代理：
 
-1. Implementer：在 M4-T1 `parseAgentResponse` 基础上实现本地 mock provider/adapter，返回结构化 AgentResponse v1，不调用真实网络或 API key；mock provider 应能产生 message/error/question 与 valid/invalid blueprint candidates，供后续 Agent 面板基础流使用。
-2. Spec Reviewer：检查是否只做 mock provider，不接真实 Provider、不读 secret、不直接 mutate main document、不改 semantic v4/保存门禁；确认输出经过 AgentResponse parser。
-3. Quality Reviewer：重点审查 deterministic mock 输出、invalid candidate 保留、错误消息可读性、无网络/secret 泄漏、测试覆盖。
+1. Implementer：基于 M4-T1 `parseAgentResponse` 与 M4-T2 `runMockAgentProvider` 实现桌面内 Agent 面板基础流；允许用户输入 prompt，调用 mock provider，展示 message/question/error 与 blueprint candidates，并将候选保存为 blueprintStore 中的蓝图记录。
+2. Spec Reviewer：检查 Agent 只能通过蓝图候选进入 workspace，不得直接 mutate 主文档；invalid candidate 必须保留并展示风险，不得阻止后续 apply；不得调用真实 Provider、SecretStore 或 API key。
+3. Quality Reviewer：重点审查 async busy/error 状态、重复提交/竞态、面板键盘/弹窗安全、候选写入 sidecar/workspace 的 dirty 隔离、测试覆盖。
 
 建议验收测试：
 
-- mock provider 成功返回 parseable AgentResponse v1；支持 valid/invalid candidate；error/question 场景；不调用 fetch/invoke secret store；不写主文档；回归 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- Agent 面板使用 mock provider 返回 message/question/error；blueprints 响应会创建/显示候选蓝图；invalid candidate 保留 issues；不直接修改 main document；不调用真实网络/secret；回归 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 
 ## 重要提醒
 
@@ -194,3 +204,6 @@
 - M3-T1 任务提交：`89577eb`
 - M3-T2 任务提交：`c056c01`
 - M3-T3 任务提交：`7c46896`
+- M3-T4 任务提交：`d60e507`
+- M4-T1 任务提交：`5d7953b`
+- M4-T2 任务提交：`78a1627`

@@ -71,7 +71,7 @@
 ## Milestone 4：Agent Protocol + Mock Agent（M3 验收通过后自动执行）
 
 - [x] M4-T1：AgentResponse parser/schema
-- [ ] M4-T2：mock provider
+- [x] M4-T2：mock provider
 - [ ] M4-T3：Agent 面板基础流
 
 ## Milestone 5：真实 Provider（M4 验收通过后自动执行；真实调用优先 DeepSeek）
@@ -276,3 +276,14 @@ M5 真实调用约束：用户已提供项目专用 DeepSeek API key；自动化
 - Review：Spec Reviewer 修复后 PASS；Quality Reviewer 修复后 APPROVED；Final Integration Reviewer PASS/READY。
 - 验证通过：`npm test -- --run`（21 files / 135 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
 - 任务提交：`5d7953b feat: add agent response parser schema`。
+
+### M4-T2 完成记录
+
+- 完成时间：2026-04-28 14:29 +0800
+- 新增：`easyanalyse-desktop/src/lib/agentMockProvider.ts`，实现本地 deterministic mock Agent provider，提供 `runMockAgentProvider` 与 `createMockAgentResponse`，输出 AgentResponse v1 并通过 `parseAgentResponse` 解析。
+- 新增：`easyanalyse-desktop/src/lib/agentMockProvider.test.ts`，覆盖 message、question、error、valid+invalid blueprints、invalid-only candidate、parser issue 保留、无 fetch/Tauri invoke/SecretStore 使用、主文档不 mutation。
+- 支持场景：`message`、`question`、`error`、`blueprints`、`blueprints-invalid`；蓝图场景保留 object-shaped invalid semantic v4 candidate，不调用真实 Provider、网络、SecretStore 或 API key。
+- Review：Spec Reviewer PASS；Quality Reviewer APPROVED；Final Integration Reviewer PASS/READY。
+- 验证通过：`npm test -- --run`（22 files / 139 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- 任务提交：`78a1627 feat: add mock agent provider`。
+

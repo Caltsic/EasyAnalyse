@@ -40,12 +40,22 @@
 
 - 当前分支：`agent`
 - 当前远端：`origin/agent`
-- 最近已知任务提交：`2846916`
+- 最近已知任务提交：`122abd2`
 - 最近修复提交：`9857e69 fix: repair blueprint agent settings automation regressions`
-- 当前任务：`M5-T1 OpenAI-compatible adapter`
-- 当前阻塞：无。已知问题修复已完成并通过完整验证；自动化可继续推进 M5-T1。
+- 当前任务：`M5-T2 DeepSeek preset`
+- 当前阻塞：无。M5-T1 OpenAI-compatible adapter 已完成并通过验证；自动化可继续推进 M5-T2。
 
 ## 最近完成
+
+- M5-T1 已完成：OpenAI-compatible adapter。
+  - 新增 `easyanalyse-desktop/src/lib/openAiCompatibleProvider.ts` 与 `openAiCompatibleProvider.test.ts`。
+  - 实现 OpenAI chat completions payload 构建、AgentResponse v1 response 解析、injected fetch 运行入口、Provider adapter interface 与稳定错误码/重试标记。
+  - 安全边界：不读本机 secret 文件、不调用真实 Provider、不使用 global fetch fallback、不写 AppSettings/SecretStore/UI/main document/sidecar；API key 只作为 outbound Authorization header 参数，body/metadata/error 均有回归覆盖防泄漏。
+  - 覆盖：message/blueprints 成功解析、main document 不 mutation、HTTP 401/403/404/model-not-found/429/5xx、network、invalid JSON、protocol/schema 错误、`openai-compatible`/`deepseek` supports、`anthropic` reject。
+  - Quality 修复：收紧 model-unavailable 检测，避免 `max_tokens is too large for this model` 误判为 model unavailable；TDD 回归已覆盖。
+  - Review：Spec Reviewer PASS；Quality Reviewer 修复后 APPROVED；Final Integration Reviewer PASS/READY。
+  - 验证通过：`npm test -- --run`（24 files / 163 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+  - 任务提交：`122abd2 feat: add openai-compatible provider adapter`。
 
 - 30 分钟轮询防卡死 review 已完成：新增 `automation/autonomous_lock.py` 原子锁，live cronjob 已配置 `~/.hermes/scripts/easyanalyse_autonomous_preflight.py` 作为 preflight，在模型启动前获取锁；锁未过期时本轮跳过，不运行 git/subagent/写文件；结束前 release。任务提交：`c3ea9cd`。
 
@@ -173,17 +183,17 @@
 
 ## 下一轮建议
 
-执行 `M5-T1`：OpenAI-compatible adapter。
+执行 `M5-T2`：DeepSeek preset。
 
 建议派子代理：
 
-1. Implementer：在不读取/打印真实 API key 的前提下，实现 OpenAI-compatible provider adapter 的请求/响应转换、错误映射与测试替身；优先覆盖 DeepSeek 后续可复用的 OpenAI-compatible 基础。
-2. Spec Reviewer：检查 adapter 不绕过 SecretStore、不把 API key 写入 AppSettings/文档/sidecar/log，不默认触发真实付费调用；协议错误不得破坏主文档或 sidecar。
-3. Quality Reviewer：重点审查 timeout/cancel 预留、错误可读性、fetch 注入可测试性、secret 边界、prompt/document context 不泄密。
+1. Implementer：在复用 M5-T1 OpenAI-compatible adapter 的前提下，添加 first-class DeepSeek provider preset/default metadata 与相关测试；默认仍不触发真实付费调用，不读取/打印真实 API key。
+2. Spec Reviewer：检查 DeepSeek 在 UI/设置中作为独立 provider 呈现但底层可复用 OpenAI-compatible request adapter；API key 仍只通过 SecretStore/opaque ref 边界处理，不写 AppSettings/文档/sidecar/log。
+3. Quality Reviewer：重点审查 preset 与用户自定义 provider 的区分、baseUrl/model 默认值、无真实网络默认调用、错误文案与 M5-T1 adapter 兼容。
 
 建议验收测试：
 
-- 使用 mock fetch 覆盖成功 message/blueprints/error 映射、HTTP/JSON/protocol 错误、无明文 secret 序列化；回归 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。真实 API smoke test 留到 DeepSeek preset/明确低成本阶段。
+- 覆盖 DeepSeek preset 的 kind/baseUrl/default models、OpenAI-compatible adapter supports、settings/provider metadata 不含明文 key、无 real fetch；回归 `npm test -- --run`、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。真实 DeepSeek smoke test 仅在明确低成本策略与下一任务边界允许时执行。
 
 ## 重要提醒
 
@@ -225,3 +235,4 @@
 - M4-T1 任务提交：`5d7953b`
 - M4-T2 任务提交：`78a1627`
 - M4-T3 任务提交：`2846916`
+- M5-T1 任务提交：`122abd2`

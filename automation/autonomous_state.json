@@ -3,7 +3,7 @@
   "branch": "agent",
   "remote": "origin/agent",
   "currentMilestone": "M5",
-  "currentTask": "M5-T1",
+  "currentTask": "M5-T2",
   "completedTasks": [
     "M1-T1",
     "M1-T2",
@@ -22,12 +22,13 @@
     "M3-T4",
     "M4-T1",
     "M4-T2",
-    "M4-T3"
+    "M4-T3",
+    "M5-T1"
   ],
   "blockedTasks": [],
-  "lastCommit": "9857e69",
-  "lastRunAt": "2026-04-28T18:10:00+08:00",
-  "testStatus": "Known-issues repair verified: npm test -- --run (23 files / 152 tests), npx tsc -b --pretty false, npm run lint, npx vite build, cargo test (14 tests), autonomous_lock_test.py, and py_compile for lock/preflight scripts all passed. Repair commit 9857e69 pushed to origin/agent.",
+  "lastCommit": "122abd2",
+  "lastRunAt": "2026-04-28T19:34:37+08:00",
+  "testStatus": "M5-T1 OpenAI-compatible adapter verified: npm test -- --run (24 files / 163 tests), npx tsc -b --pretty false, npm run lint, and npx vite build all passed. Spec Reviewer PASS; Quality Reviewer approved after TDD fix for model-unavailable error classification; Final Integration Reviewer PASS/READY. Task commit 122abd2 pushed/ready for origin/agent.",
   "requiresUserDecision": false,
   "userDecisionPrompt": null,
   "autonomyScope": {
@@ -81,5 +82,5 @@
     "preflightExportsRunId": true,
     "staleReclaimMutex": "automation/.autonomous_run.lock.reclaim"
   },
-  "lastTaskCommit": "2846916"
+  "lastTaskCommit": "122abd2"
 }

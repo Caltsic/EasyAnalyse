@@ -76,7 +76,7 @@
 
 ## Milestone 5：真实 Provider（M4 验收通过后自动执行；真实调用优先 DeepSeek）
 
-- [ ] M5-T1：OpenAI-compatible adapter
+- [x] M5-T1：OpenAI-compatible adapter
 - [ ] M5-T2：DeepSeek preset
 - [ ] M5-T3：Anthropic adapter
 - [ ] M5-T4：timeout/cancel/retry/context budget
@@ -304,4 +304,15 @@ M5 真实调用约束：用户已提供项目专用 DeepSeek API key；自动化
 - [x] 修复额外核查发现的已知问题：蓝图 sidecar/save workspace 数据安全、AgentResponse semanticVersion、Provider settings/secrets 异常路径、自动化 owner-safe lock。
 - 提交：`9857e69 fix: repair blueprint agent settings automation regressions`。
 - 验证：`npm test -- --run`（23 files / 152 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`、`cargo test`（14 tests）、`python3 automation/autonomous_lock_test.py`、preflight/lock py_compile 均通过。
-- 后续：继续 `M5-T1 OpenAI-compatible adapter`。
+- 后续：M5-T1 已完成，继续 `M5-T2 DeepSeek preset`。
+
+### M5-T1 完成记录
+
+- 完成时间：2026-04-28 19:34 +0800
+- 新增：`easyanalyse-desktop/src/lib/openAiCompatibleProvider.ts` 与 `easyanalyse-desktop/src/lib/openAiCompatibleProvider.test.ts`。
+- 实现：OpenAI-compatible provider adapter foundation，包含 provider adapter interface、payload 构建、response 解析、injected fetch 运行入口、错误码/重试标记与安全错误对象。
+- 覆盖：baseUrl `/chat/completions` 拼接、OpenAI chat completions body/header、`response_format: { type: 'json_object' }`、message/blueprints AgentResponse v1 解析、main document 不 mutation、HTTP 401/403/404/429/5xx、network、invalid JSON、protocol/schema 错误映射、API key 不进入 body/metadata/error、仅支持 `openai-compatible`/`deepseek`。
+- 质量修复：Quality Reviewer 发现 model-unavailable 检测过宽，已按 TDD 增加 `max_tokens is too large for this model` 回归并收紧为必须同时命中 model reference 与 not-found/unavailable 信号。
+- Review：Spec Reviewer PASS；Quality Reviewer 修复后 APPROVED；Final Integration Reviewer PASS/READY。
+- 验证通过：`npm test -- --run`（24 files / 163 tests）、`npx tsc -b --pretty false`、`npm run lint`、`npx vite build`。
+- 任务提交：`122abd2 feat: add openai-compatible provider adapter`。

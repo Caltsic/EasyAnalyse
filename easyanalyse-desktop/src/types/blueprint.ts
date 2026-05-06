@@ -1,4 +1,5 @@
-import type { DocumentFile, ValidationReport } from './document'
+import type { DocumentFile, ValidationIssue, ValidationReport } from './document'
+import type { AgentSelfCheckReport } from './agentTools'
 
 export type BlueprintWorkspaceVersion = '1.0.0'
 export type BlueprintLifecycleStatus = 'active' | 'archived' | 'deleted'
@@ -42,7 +43,17 @@ export interface BlueprintRecord {
   updatedAt: string
   tags?: string[]
   notes?: string
-  extensions?: Record<string, unknown>
+  extensions?: BlueprintRecordExtensions
+}
+
+export interface BlueprintRecordExtensions extends Record<string, unknown> {
+  agentCandidate?: {
+    highlightedLabels?: string[]
+    issues?: ValidationIssue[]
+    parseIssues?: ValidationIssue[]
+    selfCheck?: AgentSelfCheckReport
+    toolIssues?: ValidationIssue[]
+  }
 }
 
 export interface BlueprintAppliedInfo {

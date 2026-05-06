@@ -228,6 +228,50 @@ describe('openAiCompatibleProvider', () => {
     expectNoApiKey(result.metadata)
   })
 
+  it('runs OpenAI-compatible tool calling loop before accepting final AgentResponse content', async () => {
+    const toolCallBody = {
+      id: 'chatcmpl-tool',
+      choices: [
+        {
+          index: 0,
+          finish_reason: 'tool_calls',
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'call-1',
+                type: 'function',
+                function: { name: 'check_blueprint_candidate', arguments: JSON.stringify({ candidate: agentBlueprints(createDocument()).blueprints[0] }) },
+              },
+            ],
+          },
+        },
+      ],
+    }
+    const finalBody = openAiChatBody(agentBlueprints(createDocument({ view: { canvas: { units: 'px' }, devices: {}, networkLines: {} } })))
+    let callCount = 0
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => jsonResponse(callCount++ === 0 ? toolCallBody : finalBody))
+
+    const result = await runOpenAiCompatibleProvider({
+      ...baseBuildInput(),
+      fetch: fetchMock,
+      currentDocument: createDocument(),
+      validateDocument: () => ({ detectedFormat: 'semantic-v4', schemaValid: true, semanticValid: true, issueCount: 0, issues: [] }),
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const firstBody = JSON.parse(fetchMock.mock.calls[0]![1].body)
+    expect(firstBody.tools[0].function.name).toBe('check_blueprint_candidate')
+    expect(firstBody.tool_choice).toBe('auto')
+    expect(firstBody.response_format).toBeUndefined()
+    const secondBody = JSON.parse(fetchMock.mock.calls[1]![1].body)
+    expect(secondBody.messages.at(-1)).toMatchObject({ role: 'tool', tool_call_id: 'call-1' })
+    expect(result.response.kind).toBe('blueprints')
+    expect(result.toolTrace).toEqual([expect.objectContaining({ toolName: 'check_blueprint_candidate' })])
+    expectNoApiKey(result.toolTrace)
+  })
+
   it('supports the DeepSeek preset through the OpenAI-compatible injected fetch path', async () => {
     const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => jsonResponse(openAiChatBody(agentMessage('DeepSeek preset response'))))
 
@@ -276,6 +320,15 @@ describe('openAiCompatibleProvider', () => {
     expect(result.response.blueprints[0].document).not.toBe(candidateDocument)
     expect(mainDocument).toEqual(beforeMainDocument)
     expectNoApiKey(result.metadata)
+  })
+
+  it('accepts prose before a single trailing AgentResponse JSON object but rejects text after it', () => {
+    const response = agentMessage('Trailing JSON accepted')
+    const prefixed = openAiChatBody(`Here is the final JSON:\n${JSON.stringify(response)}`)
+    expect(parseOpenAiCompatibleResponse({ responseBody: prefixed }).response).toMatchObject({ kind: 'message', markdown: 'Trailing JSON accepted' })
+
+    const suffixed = openAiChatBody(`${JSON.stringify(response)}\nThis extra explanation should keep the response invalid.`)
+    expect(() => parseOpenAiCompatibleResponse({ responseBody: suffixed })).toThrow(/invalid AgentResponse/i)
   })
 
   it('reports missing or empty choices/content as readable protocol errors without mutating the main document', () => {

@@ -157,6 +157,8 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
               highlightedLabels: candidate.highlightedLabels ?? [],
               issues: candidate.issues,
               parseIssues: (context.issues ?? []).filter((issue) => issue.candidateIndex === index),
+              selfCheck: candidate.selfCheck,
+              toolIssues: candidate.toolIssues ?? [],
             },
           },
         }),

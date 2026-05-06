@@ -7,12 +7,15 @@ import { useBlueprintStore } from '../../store/blueprintStore'
 import { useEditorStore } from '../../store/editorStore'
 import { useSettingsStore } from '../../store/settingsStore'
 import type { AgentResponse, AgentResponseParseIssue, AgentResponseParseResult } from '../../types/agent'
+import type { AgentRepairTraceEntry, AgentToolTraceEntry } from '../../types/agentTools'
 import type { AgentProviderPublicConfig } from '../../types/settings'
 
 interface AgentRunState {
   status: 'idle' | 'running' | 'complete' | 'cancelled' | 'error'
   response: AgentResponse | null
   issues: AgentResponseParseIssue[]
+  toolTrace: AgentToolTraceEntry[]
+  repairTrace: AgentRepairTraceEntry[]
   insertedCount: number
   error: string | null
 }
@@ -49,6 +52,8 @@ export function AgentPanel({
     status: 'idle',
     response: null,
     issues: [],
+    toolTrace: [],
+    repairTrace: [],
     insertedCount: 0,
     error: null,
   })
@@ -74,7 +79,7 @@ export function AgentPanel({
     const filePathAtStart = filePath
     const requestId = `agent-panel-${runId}`
 
-    setRunState({ status: 'running', response: null, issues: [], insertedCount: 0, error: null })
+    setRunState({ status: 'running', response: null, issues: [], toolTrace: [], repairTrace: [], insertedCount: 0, error: null })
 
     try {
       const result = await runSelectedProvider({
@@ -95,6 +100,8 @@ export function AgentPanel({
           status: 'cancelled',
           response: result.response,
           issues: result.issues,
+          toolTrace: (result as { toolTrace?: AgentToolTraceEntry[] }).toolTrace ?? [],
+          repairTrace: (result as { repairTrace?: AgentRepairTraceEntry[] }).repairTrace ?? [],
           insertedCount: 0,
           error: 'Agent result ignored because the editor document or workspace changed.',
         })
@@ -112,10 +119,18 @@ export function AgentPanel({
         insertedCount = inserted.length
       }
 
-      setRunState({ status: 'complete', response: result.response, issues: result.issues, insertedCount, error: null })
+      setRunState({
+        status: 'complete',
+        response: result.response,
+        issues: result.issues,
+        toolTrace: (result as { toolTrace?: AgentToolTraceEntry[] }).toolTrace ?? [],
+        repairTrace: (result as { repairTrace?: AgentRepairTraceEntry[] }).repairTrace ?? [],
+        insertedCount,
+        error: null,
+      })
     } catch (error) {
       if (activeRunRef.current !== runId) return
-      setRunState({ status: 'error', response: null, issues: [], insertedCount: 0, error: getErrorMessage(error) })
+      setRunState({ status: 'error', response: null, issues: [], toolTrace: [], repairTrace: [], insertedCount: 0, error: getErrorMessage(error) })
     } finally {
       if (activeRunRef.current === runId) {
         abortControllerRef.current = null
@@ -181,6 +196,7 @@ export function AgentPanel({
       <div className="agent-panel__results" aria-live="polite">
         {runState.error ? <p className="agent-panel__notice">{runState.error}</p> : null}
         {runState.response ? <AgentResponseCard response={runState.response} insertedCount={runState.insertedCount} /> : null}
+        {runState.toolTrace.length > 0 ? <ToolTraceCard toolTrace={runState.toolTrace} repairTrace={runState.repairTrace} /> : null}
         {runState.issues.length > 0 ? (
           <section className="agent-card agent-card--issues" aria-label="Agent parse issues">
             <h3>Parse issues retained</h3>
@@ -194,6 +210,31 @@ export function AgentPanel({
           </section>
         ) : null}
       </div>
+    </section>
+  )
+}
+
+function ToolTraceCard({ toolTrace, repairTrace }: { toolTrace: AgentToolTraceEntry[]; repairTrace: AgentRepairTraceEntry[] }) {
+  return (
+    <section className="agent-card agent-card--tools" aria-label="Agent tool checks">
+      <h3>工具检查</h3>
+      <ul>
+        {toolTrace.map((entry, index) => (
+          <li key={`${entry.toolName}-${index}`}>
+            <strong>{entry.toolName}</strong>: {entry.summary} ({entry.issueCount} issue{entry.issueCount === 1 ? '' : 's'})
+          </li>
+        ))}
+      </ul>
+      {repairTrace.length > 0 ? (
+        <>
+          <h3>自动修复</h3>
+          <ul>
+            {repairTrace.map((entry) => (
+              <li key={entry.attempt}>attempt {entry.attempt}: {entry.summary}</li>
+            ))}
+          </ul>
+        </>
+      ) : null}
     </section>
   )
 }

@@ -1,5 +1,7 @@
 import { parseAgentResponse } from './agentResponse'
+import { getAgentToolSchemas, runAgentTool } from './agentTools'
 import type { AgentResponseParseResult } from '../types/agent'
+import type { AgentToolContext, AgentToolTraceEntry } from '../types/agentTools'
 import type { DocumentFile } from '../types/document'
 import type { AgentProviderKind } from '../types/settings'
 
@@ -84,6 +86,8 @@ export interface ProviderParseInput {
 
 export interface ProviderParseResult extends AgentResponseParseResult {
   metadata: ProviderResponseMetadata
+  toolTrace?: AgentToolTraceEntry[]
+  repairTrace?: import('../types/agentTools').AgentRepairTraceEntry[]
 }
 
 export interface ProviderStreamEvent {
@@ -110,10 +114,12 @@ export interface OpenAiCompatibleFetchInit {
 
 export type OpenAiCompatibleFetch = (url: string, init: OpenAiCompatibleFetchInit) => Promise<Response>
 
-export interface OpenAiCompatibleRunInput extends ProviderBuildInput {
+export interface OpenAiCompatibleRunInput extends ProviderBuildInput, AgentToolContext {
   fetch: OpenAiCompatibleFetch
   currentDocument?: DocumentFile | null
   signal?: AbortSignal
+  maxToolIterations?: number
+  enableToolCalling?: boolean
 }
 
 export type AgentProviderErrorCode =
@@ -247,6 +253,8 @@ export function parseOpenAiCompatibleResponse(input: ProviderParseInput): Provid
     const parsed = parseAgentResponse(content, { mainDocument: input.mainDocument ?? null })
     return { ...parsed, metadata }
   } catch (error) {
+    const embedded = parseTrailingAgentResponse(content, input)
+    if (embedded) return { ...embedded, metadata }
     const message = errorMessage(error)
     const code: AgentProviderErrorCode = /json/i.test(message)
       ? 'AGENT_PROVIDER_PARSE_ERROR'
@@ -273,7 +281,100 @@ export async function runOpenAiCompatibleProvider(input: OpenAiCompatibleRunInpu
     })
   }
 
-  const request = buildOpenAiCompatiblePayload(input)
+  if (input.enableToolCalling === false) {
+    const body = await performOpenAiRequest(input, buildOpenAiCompatiblePayload(input))
+    return parseOpenAiCompatibleResponse({
+      responseBody: body.body,
+      mainDocument: input.currentDocument ?? null,
+      provider: input.provider,
+      model: input.model,
+      status: body.status,
+    })
+  }
+
+  const providerId = requireNonEmptyString(input.provider.id, 'provider.id')
+  const modelId = requireNonEmptyString(input.model.id, 'model.id')
+  const apiKey = requireNonEmptyString(input.apiKey, 'apiKey')
+  const messages: Array<Record<string, unknown>> = [
+    { role: 'system', content: input.systemPrompt },
+    { role: 'user', content: input.userPrompt },
+  ]
+  const toolTrace: AgentToolTraceEntry[] = []
+  const maxToolIterations = input.maxToolIterations ?? 3
+
+  for (let step = 0; step <= maxToolIterations; step += 1) {
+    const body: Record<string, unknown> = {
+      model: modelId,
+      messages,
+      temperature: input.generation?.temperature ?? DEFAULT_TEMPERATURE,
+      top_p: input.generation?.topP ?? DEFAULT_TOP_P,
+      max_tokens: input.generation?.maxTokens ?? DEFAULT_MAX_TOKENS,
+      stream: false,
+    }
+    if (step < maxToolIterations) {
+      body.tools = getAgentToolSchemas()
+      body.tool_choice = 'auto'
+    } else {
+      body.response_format = JSON_OBJECT_RESPONSE_FORMAT
+    }
+    const request: ProviderHttpRequest = {
+      url: buildChatCompletionsUrl(input.provider.baseUrl, input.provider, input.model),
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      metadata: { adapterId: OPENAI_COMPATIBLE_ADAPTER_ID, requestFormat: OPENAI_CHAT_COMPLETIONS_REQUEST_FORMAT, providerId, modelId, endpoint: 'chat/completions' },
+    }
+    const response = await performOpenAiRequest(input, request)
+    const root = parseOpenAiRoot(response.body, { responseBody: response.body, provider: input.provider, model: input.model, status: response.status })
+    const choice = getFirstChoice(root, { responseBody: response.body, provider: input.provider, model: input.model, status: response.status })
+    const assistantMessage = isRecord(choice.message) ? choice.message : null
+    const toolCalls = Array.isArray(assistantMessage?.tool_calls) ? assistantMessage.tool_calls : []
+    if (toolCalls.length > 0 && step < maxToolIterations) {
+      messages.push({ role: 'assistant', content: assistantMessage?.content ?? null, tool_calls: toolCalls })
+      for (const call of toolCalls) {
+        const normalized = normalizeToolCall(call)
+        const parsedArgs = parseToolArguments(normalized.arguments)
+        const toolResult = parsedArgs.ok
+          ? await runAgentTool(normalized.name, parsedArgs.value, { validateDocument: input.validateDocument })
+          : await runAgentTool(normalized.name, {}, { validateDocument: input.validateDocument })
+        toolTrace.push({ toolName: normalized.name, ok: toolResult.ok, summary: toolResult.summary, issueCount: toolResult.issueCount })
+        messages.push({ role: 'tool', tool_call_id: normalized.id, name: normalized.name, content: JSON.stringify(toolResult) })
+      }
+      continue
+    }
+    try {
+      const parsed = parseOpenAiCompatibleResponse({ responseBody: response.body, mainDocument: input.currentDocument ?? null, provider: input.provider, model: input.model, status: response.status })
+      return { ...parsed, toolTrace }
+    } catch (error) {
+      if (step < maxToolIterations) {
+        messages.push({ role: 'assistant', content: isRecord(assistantMessage) && typeof assistantMessage.content === 'string' ? assistantMessage.content : '' })
+        messages.push({
+          role: 'user',
+          content: [
+            'Your previous response was not a valid single AgentResponse JSON object.',
+            'Return exactly one JSON object now: schemaVersion="agent-response-v1", semanticVersion="easyanalyse-semantic-v4".',
+            'Do not include markdown, prose, multiple JSON objects, or text before/after JSON.',
+          ].join('\n'),
+        })
+        continue
+      }
+      throw error
+    }
+  }
+
+  throw createError({
+    code: 'AGENT_PROVIDER_PROTOCOL_ERROR',
+    message: 'OpenAI-compatible provider did not return final AgentResponse content after tool calling iterations.',
+    retryable: false,
+    provider: input.provider,
+    model: input.model,
+  })
+}
+
+async function performOpenAiRequest(
+  input: OpenAiCompatibleRunInput,
+  request: ProviderHttpRequest,
+): Promise<{ body: unknown; status: number }> {
   let response: Response
   try {
     response = await input.fetch(request.url, {
@@ -285,20 +386,75 @@ export async function runOpenAiCompatibleProvider(input: OpenAiCompatibleRunInpu
   } catch (error) {
     throw mapNetworkError(error, input)
   }
-
   const body = await readResponseBody(response, input)
+  if (!response.ok) throw mapHttpError(response.status, body, input)
+  return { body, status: response.status }
+}
 
-  if (!response.ok) {
-    throw mapHttpError(response.status, body, input)
+function normalizeToolCall(call: unknown): { id: string; name: string; arguments: string } {
+  if (!isRecord(call)) return { id: 'tool-call', name: 'unknown_tool', arguments: '{}' }
+  const fn = isRecord(call.function) ? call.function : {}
+  return {
+    id: typeof call.id === 'string' ? call.id : 'tool-call',
+    name: typeof fn.name === 'string' ? fn.name : 'unknown_tool',
+    arguments: typeof fn.arguments === 'string' ? fn.arguments : '{}',
   }
+}
 
-  return parseOpenAiCompatibleResponse({
-    responseBody: body,
-    mainDocument: input.currentDocument ?? null,
-    provider: input.provider,
-    model: input.model,
-    status: response.status,
-  })
+function parseToolArguments(value: string): { ok: true; value: unknown } | { ok: false } {
+  try {
+    return { ok: true, value: JSON.parse(value) }
+  } catch {
+    return { ok: false }
+  }
+}
+
+function parseTrailingAgentResponse(text: string, input: ProviderParseInput): AgentResponseParseResult | null {
+  const trimmedEnd = text.trimEnd().length
+  for (let start = text.lastIndexOf('{'); start >= 0;) {
+    const candidate = extractJsonObjectStringAt(text, start)
+    if (candidate) {
+      const end = start + candidate.length
+      if (end === trimmedEnd) {
+        try {
+          return parseAgentResponse(candidate, { mainDocument: input.mainDocument ?? null })
+        } catch {
+          return null
+        }
+      }
+    }
+    if (start === 0) break
+    start = text.lastIndexOf('{', start - 1)
+  }
+  return null
+}
+
+function extractJsonObjectStringAt(text: string, start: number): string | null {
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (char === '\\') {
+      escaped = true
+      continue
+    }
+    if (char === '"') {
+      inString = !inString
+      continue
+    }
+    if (inString) continue
+    if (char === '{') depth += 1
+    if (char === '}') {
+      depth -= 1
+      if (depth === 0) return text.slice(start, index + 1)
+    }
+  }
+  return null
 }
 
 export function supportsOpenAiCompatibleProvider(config: AgentProviderConfig, model: AgentModelConfig): boolean {

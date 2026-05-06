@@ -1,3 +1,5 @@
+import { selfCheckBlueprintCandidates } from './agentTools'
+import { selectAgentReferenceExamples, formatAgentReferenceExamplesForPrompt } from './agentExampleLibrary'
 import { runAnthropicProvider, type AnthropicFetch } from './anthropicProvider'
 import { checkAgentContextBudget, runProviderWithControls, type ProviderRetryOptions } from './agentProviderRuntime'
 import {
@@ -25,6 +27,13 @@ export interface RunConfiguredAgentProviderInput {
   retry?: ProviderRetryOptions
   generation?: ProviderGenerationOptions
   fetchImpl?: OpenAiCompatibleFetch | AnthropicFetch
+  maxToolIterations?: number
+  validateDocument?: import('../types/agentTools').AgentToolContext['validateDocument']
+  selfCheck?: {
+    enabled: boolean
+    repairOnIssues: boolean
+    maxRepairAttempts: number
+  }
 }
 
 export const DEFAULT_AGENT_PROVIDER_TIMEOUT_MS = 60_000
@@ -63,6 +72,10 @@ export function buildAgentUserPrompt(input: {
     '',
     `Request id: ${input.requestId ?? 'agent-panel'}`,
   ]
+  const examples = selectAgentReferenceExamples(input.prompt, input.currentDocument ?? null)
+  if (examples.length > 0) {
+    parts.push('', formatAgentReferenceExamplesForPrompt(examples))
+  }
   if (input.includeDocumentContext && input.currentDocument) {
     parts.push('', 'Current EasyAnalyse semantic v4 document JSON:', JSON.stringify(input.currentDocument))
   } else {
@@ -111,33 +124,106 @@ export async function runConfiguredAgentProvider(input: RunConfiguredAgentProvid
     redactions: [apiKey],
     providerId: provider.id,
     modelId: model.id,
-    operation: ({ signal }) => {
-      if (provider.kind === 'anthropic') {
-        return runAnthropicProvider({
+    operation: async ({ signal }) => {
+      const selfCheckOptions = input.selfCheck ?? { enabled: true, repairOnIssues: true, maxRepairAttempts: 1 }
+      const runOnce = async (nextUserPrompt: string): Promise<ProviderParseResult> => provider.kind === 'anthropic'
+        ? runAnthropicProvider({
           provider,
           model,
           apiKey,
           systemPrompt,
-          userPrompt,
+          userPrompt: nextUserPrompt,
           currentDocument: input.currentDocument ?? null,
           generation: input.generation,
           fetch: fetchImpl as AnthropicFetch,
           signal,
         })
+        : runOpenAiCompatibleProvider({
+          provider,
+          model,
+          apiKey,
+          systemPrompt,
+          userPrompt: nextUserPrompt,
+          currentDocument: input.currentDocument ?? null,
+          generation: input.generation,
+          fetch: fetchImpl as OpenAiCompatibleFetch,
+          signal,
+          maxToolIterations: input.maxToolIterations,
+          validateDocument: input.validateDocument,
+        })
+
+      let checked = await applyPostProviderSelfCheck(await runOnce(userPrompt), selfCheckOptions, input.validateDocument)
+      if (!selfCheckOptions.enabled || !selfCheckOptions.repairOnIssues || checked.response.kind !== 'blueprints') return checked
+
+      const repairTrace = [...(checked.repairTrace ?? [])]
+      for (let attempt = 1; attempt <= Math.max(0, selfCheckOptions.maxRepairAttempts); attempt += 1) {
+        if (!blueprintResponseHasSelfCheckIssues(checked)) break
+        const repairPrompt = buildSelfCheckRepairPrompt(input.prompt, checked)
+        const repaired = await applyPostProviderSelfCheck(await runOnce(repairPrompt), { ...selfCheckOptions, repairOnIssues: false }, input.validateDocument)
+        const repairedOk = repaired.response.kind === 'blueprints' && !blueprintResponseHasSelfCheckIssues(repaired)
+        repairTrace.push({
+          attempt,
+          ok: repairedOk,
+          summary: repairedOk ? 'Self-check repair attempt returned candidates without tool issues.' : 'Self-check repair attempt returned candidates that still need attention.',
+        })
+        checked = { ...repaired, repairTrace: [...(repaired.repairTrace ?? []), ...repairTrace] }
+        if (repairedOk) break
       }
-      return runOpenAiCompatibleProvider({
-        provider,
-        model,
-        apiKey,
-        systemPrompt,
-        userPrompt,
-        currentDocument: input.currentDocument ?? null,
-        generation: input.generation,
-        fetch: fetchImpl as OpenAiCompatibleFetch,
-        signal,
-      })
+      return checked
     },
   })
+}
+
+async function applyPostProviderSelfCheck(
+  result: ProviderParseResult,
+  options: { enabled: boolean; repairOnIssues: boolean; maxRepairAttempts: number },
+  validateDocument?: import('../types/agentTools').AgentToolContext['validateDocument'],
+): Promise<ProviderParseResult> {
+  if (!options.enabled || result.response.kind !== 'blueprints') return result
+  const reports = await selfCheckBlueprintCandidates(result.response.blueprints, { validateDocument })
+  result.response.blueprints.forEach((candidate, index) => {
+    const selfCheck = reports[index]
+    if (!selfCheck) return
+    candidate.selfCheck = selfCheck
+    candidate.toolIssues = selfCheck.candidates.flatMap((item) => [...item.validation.issues, ...item.layout.issues])
+    candidate.issues = [...candidate.issues, ...candidate.toolIssues]
+  })
+  const trace = reports.map((report) => ({
+    toolName: 'check_blueprint_candidate',
+    ok: report.ok,
+    summary: report.summary,
+    issueCount: report.candidates.reduce((total, candidate) => total + candidate.issueCount, 0),
+  }))
+  return { ...result, toolTrace: [...(result.toolTrace ?? []), ...trace] }
+}
+
+function blueprintResponseHasSelfCheckIssues(result: ProviderParseResult): boolean {
+  if (result.response.kind !== 'blueprints') return false
+  return result.response.blueprints.some((candidate) =>
+    candidate.selfCheck?.ok === false || (candidate.toolIssues?.length ?? 0) > 0,
+  )
+}
+
+function buildSelfCheckRepairPrompt(originalPrompt: string, checked: ProviderParseResult): string {
+  const reports = checked.response.kind === 'blueprints'
+    ? checked.response.blueprints.map((candidate, index) => ({
+      index,
+      title: candidate.title,
+      selfCheck: candidate.selfCheck,
+      toolIssues: candidate.toolIssues,
+    }))
+    : []
+  return [
+    'The previous EasyAnalyse AgentResponse candidate did not fully pass local self-check.',
+    'Return a complete corrected AgentResponse v1 JSON object only. Do not explain outside JSON.',
+    'Keep semantic v4 connectivity expressed only by terminal labels. Do not add wires/nodes/junctions/signalId.',
+    'Fix validation errors and move devices to remove layout overlap warnings when possible. Warnings do not block application, but you should improve the candidate.',
+    '',
+    `Original user request:\n${originalPrompt.trim()}`,
+    '',
+    'Machine-readable self-check reports:',
+    JSON.stringify(reports),
+  ].join('\n')
 }
 
 function normalizeProviderConfig(provider: AgentProviderPublicConfig): AgentProviderConfig {

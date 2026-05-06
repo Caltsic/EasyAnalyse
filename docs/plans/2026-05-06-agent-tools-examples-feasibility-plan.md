@@ -3,6 +3,8 @@
 > 日期：2026-05-06
 > 分支：agent
 > 背景：DeepSeek 首次真实 smoke 曾返回不合规 AgentResponse（`blueprints` 非数组）。这说明仅靠 prompt 约束不够，后续应让模型能借助本地检查工具自检，并提供更高质量参考案例。
+>
+> 2026-05-06 更新：本文件为可行性规划；文件级实施规划、接口契约、自检格式和验收门禁以 `docs/plans/2026-05-06-agent-tool-self-check-implementation-plan.md` 为准。
 
 ## 1. 总体判断
 

@@ -1,5 +1,7 @@
 # EasyAnalyse M1-M5 全面验收报告
 
+> **M6 修订说明（2026-05-06）：** 本报告原结论中的 M5 真实 Provider 未接 AgentPanel、RightSidebar 状态丢失、editorStore 保存竞态等阻塞项，已由 M6 修复并通过补充验收。发布/合并判断请同时阅读 `docs/plans/2026-05-06-m6-acceptance-addendum.md`；本文件以下内容保留为 2026-04-30 验收时的历史问题记录。
+
 > 分支：`agent`  
 > 验收日期：2026-05-06  
 > 验收方式：按 `docs/plans/2026-04-30-full-acceptance-plan.md` 拆分 A-H 八条检查线，分派子代理并行审查；主控汇总。  

@@ -47,36 +47,36 @@ export function RightSidebar() {
       </div>
 
       <div className="right-sidebar__panel">
-        {activeTab === 'inspector' ? (
-          <div
-            id="right-sidebar-inspector"
-            role="tabpanel"
-            aria-labelledby="right-sidebar-inspector-tab"
-            className="right-sidebar__tabpanel"
-          >
-            <Inspector />
-          </div>
-        ) : null}
-        {activeTab === 'blueprints' ? (
-          <div
-            id="right-sidebar-blueprints"
-            role="tabpanel"
-            aria-labelledby="right-sidebar-blueprints-tab"
-            className="right-sidebar__tabpanel"
-          >
-            <BlueprintsPanel />
-          </div>
-        ) : null}
-        {activeTab === 'agent' ? (
-          <div
-            id="right-sidebar-agent"
-            role="tabpanel"
-            aria-labelledby="right-sidebar-agent-tab"
-            className="right-sidebar__tabpanel"
-          >
-            <AgentPanel />
-          </div>
-        ) : null}
+        <div
+          id="right-sidebar-inspector"
+          role="tabpanel"
+          aria-labelledby="right-sidebar-inspector-tab"
+          className="right-sidebar__tabpanel"
+          hidden={activeTab !== 'inspector'}
+          aria-hidden={activeTab !== 'inspector'}
+        >
+          <Inspector />
+        </div>
+        <div
+          id="right-sidebar-blueprints"
+          role="tabpanel"
+          aria-labelledby="right-sidebar-blueprints-tab"
+          className="right-sidebar__tabpanel"
+          hidden={activeTab !== 'blueprints'}
+          aria-hidden={activeTab !== 'blueprints'}
+        >
+          <BlueprintsPanel />
+        </div>
+        <div
+          id="right-sidebar-agent"
+          role="tabpanel"
+          aria-labelledby="right-sidebar-agent-tab"
+          className="right-sidebar__tabpanel"
+          hidden={activeTab !== 'agent'}
+          aria-hidden={activeTab !== 'agent'}
+        >
+          <AgentPanel />
+        </div>
       </div>
     </aside>
   )

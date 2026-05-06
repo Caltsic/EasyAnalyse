@@ -308,4 +308,78 @@ describe('editorStore.saveDocumentAs blueprint rebind', () => {
     expect(useBlueprintStore.getState().workspace?.mainDocument?.path).toBe(savedPath)
     expect(useBlueprintStore.getState().dirty).toBe(true)
   })
+
+  it('does not let a stale saveDocument result overwrite edits made while saving', async () => {
+    tauriMocks.isTauriRuntime.mockReturnValue(true)
+    const original = createDocument({ document: { id: 'doc-save-race', title: 'Before save' } })
+    const savedPath = '/tmp/race.easyanalyse.json'
+    const saveDeferred = deferred<{ path: string; report: ValidationReport }>()
+    tauriMocks.validateDocumentCommand.mockImplementation(async (document: DocumentFile) => validationReport(document))
+    tauriMocks.saveDocumentToPath.mockReturnValue(saveDeferred.promise)
+    tauriMocks.getBlueprintSidecarPathCommand.mockResolvedValue('/tmp/race.easyanalyse-blueprints.json')
+    useEditorStore.setState({ document: original, filePath: savedPath, dirty: true })
+
+    const savePromise = useEditorStore.getState().saveDocument()
+    await vi.waitFor(() => expect(tauriMocks.saveDocumentToPath).toHaveBeenCalled())
+    useEditorStore.getState().updateDocumentMeta({ title: 'Edited while saving' })
+    saveDeferred.resolve({ path: savedPath, report: validationReport(original) })
+    await savePromise
+
+    expect(useEditorStore.getState().document.document.title).toBe('Edited while saving')
+    expect(useEditorStore.getState().dirty).toBe(true)
+    expect(useBlueprintStore.getState().sidecarPath).toBeNull()
+  })
+
+  it('does not let a stale saveDocumentAs result assign a path or clear dirty after later edits', async () => {
+    tauriMocks.isTauriRuntime.mockReturnValue(true)
+    const original = createDocument({ document: { id: 'doc-save-as-race', title: 'Before save as' } })
+    const savedPath = '/tmp/new-race.easyanalyse.json'
+    const saveDeferred = deferred<{ path: string; report: ValidationReport }>()
+    dialogMocks.save.mockResolvedValue(savedPath)
+    tauriMocks.validateDocumentCommand.mockImplementation(async (document: DocumentFile) => validationReport(document))
+    tauriMocks.saveDocumentToPath.mockReturnValue(saveDeferred.promise)
+    tauriMocks.getBlueprintSidecarPathCommand.mockResolvedValue('/tmp/new-race.easyanalyse-blueprints.json')
+    useEditorStore.setState({ document: original, filePath: null, dirty: true })
+
+    const savePromise = useEditorStore.getState().saveDocumentAs()
+    await vi.waitFor(() => expect(tauriMocks.saveDocumentToPath).toHaveBeenCalled())
+    useEditorStore.getState().updateDocumentMeta({ title: 'Edited after save as started' })
+    saveDeferred.resolve({ path: savedPath, report: validationReport(original) })
+    await savePromise
+
+    expect(useEditorStore.getState().document.document.title).toBe('Edited after save as started')
+    expect(useEditorStore.getState().dirty).toBe(true)
+    expect(useEditorStore.getState().filePath).toBeNull()
+    expect(useBlueprintStore.getState().sidecarPath).toBeNull()
+  })
+
+  it('does not let an older overlapping Save As result replace a newer save path', async () => {
+    tauriMocks.isTauriRuntime.mockReturnValue(true)
+    const document = createDocument({ document: { id: 'doc-overlap-save-as', title: 'Concurrent save as' } })
+    const firstSave = deferred<{ path: string; report: ValidationReport }>()
+    const secondSave = deferred<{ path: string; report: ValidationReport }>()
+    dialogMocks.save.mockResolvedValueOnce('/tmp/first.easyanalyse.json').mockResolvedValueOnce('/tmp/second.easyanalyse.json')
+    tauriMocks.validateDocumentCommand.mockImplementation(async (value: DocumentFile) => validationReport(value))
+    tauriMocks.saveDocumentToPath
+      .mockReturnValueOnce(firstSave.promise)
+      .mockReturnValueOnce(secondSave.promise)
+    tauriMocks.getBlueprintSidecarPathCommand.mockResolvedValue('/tmp/second.easyanalyse-blueprints.json')
+    useEditorStore.setState({ document, filePath: null, dirty: true })
+
+    const firstPromise = useEditorStore.getState().saveDocumentAs()
+    await vi.waitFor(() => expect(tauriMocks.saveDocumentToPath).toHaveBeenCalledTimes(1))
+    const secondPromise = useEditorStore.getState().saveDocumentAs()
+    await vi.waitFor(() => expect(tauriMocks.saveDocumentToPath).toHaveBeenCalledTimes(2))
+
+    secondSave.resolve({ path: '/tmp/second.easyanalyse.json', report: validationReport(document) })
+    await secondPromise
+    expect(useEditorStore.getState().filePath).toBe('/tmp/second.easyanalyse.json')
+    expect(useEditorStore.getState().dirty).toBe(false)
+
+    firstSave.resolve({ path: '/tmp/first.easyanalyse.json', report: validationReport(document) })
+    await firstPromise
+
+    expect(useEditorStore.getState().filePath).toBe('/tmp/second.easyanalyse.json')
+    expect(useEditorStore.getState().dirty).toBe(false)
+  })
 })

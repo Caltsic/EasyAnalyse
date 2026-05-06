@@ -7,21 +7,30 @@ import { parseAgentResponse } from '../../lib/agentResponse'
 import { createMockAgentResponse } from '../../lib/agentMockProvider'
 import type { MockAgentRequest } from '../../lib/agentMockProvider'
 import { createEmptyBlueprintWorkspace } from '../../lib/blueprintWorkspace'
+import { createMemorySecretBackend, createSecretStore, type SecretStore } from '../../lib/secretStore'
 import { hashDocument } from '../../lib/documentHash'
 import { useBlueprintStore } from '../../store/blueprintStore'
 import { useEditorStore } from '../../store/editorStore'
+import { useSettingsStore } from '../../store/settingsStore'
 import type { AgentResponseParseResult } from '../../types/agent'
 import type { DocumentFile } from '../../types/document'
+import type { AgentProviderPublicConfig } from '../../types/settings'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const providerMock = vi.hoisted(() => ({
   runMockAgentProvider: vi.fn<(request: MockAgentRequest) => Promise<AgentResponseParseResult>>(),
+  runConfiguredAgentProvider: vi.fn(),
 }))
 
 vi.mock('../../lib/agentMockProvider', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/agentMockProvider')>()),
   runMockAgentProvider: providerMock.runMockAgentProvider,
+}))
+
+vi.mock('../../lib/agentProviderClient', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/agentProviderClient')>()),
+  runConfiguredAgentProvider: providerMock.runConfiguredAgentProvider,
 }))
 
 let root: Root | null = null
@@ -49,13 +58,13 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-async function renderPanel() {
+async function renderPanel(props: { secretStore?: Pick<SecretStore, 'readSecret'> } = {}) {
   const { AgentPanel } = await import('./AgentPanel')
   container = window.document.createElement('div')
   window.document.body.appendChild(container)
   root = createRoot(container)
   await act(async () => {
-    root?.render(<AgentPanel />)
+    root?.render(<AgentPanel {...props} />)
   })
   return container
 }
@@ -75,6 +84,19 @@ async function enterPromptAndSubmit(host: HTMLElement, prompt: string) {
   })
 }
 
+function deepseekProvider(overrides: Partial<AgentProviderPublicConfig> = {}): AgentProviderPublicConfig {
+  return {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    kind: 'deepseek',
+    baseUrl: 'https://api.deepseek.com/v1',
+    models: ['deepseek-chat'],
+    defaultModel: 'deepseek-chat',
+    apiKeyRef: 'secret-ref:deepseek-test',
+    ...overrides,
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   useBlueprintStore.setState({
@@ -90,6 +112,11 @@ beforeEach(() => {
     document: createDocument(),
     filePath: '/tmp/agent.easyanalyse.json',
     dirty: false,
+  })
+  useSettingsStore.setState({
+    settings: { basic: { locale: 'system' }, appearance: { theme: 'system' }, agent: { providers: [] } },
+    loaded: true,
+    warnings: [],
   })
 })
 
@@ -192,5 +219,125 @@ describe('AgentPanel', () => {
     expect(inserted).toEqual([])
     expect(useBlueprintStore.getState().workspace?.mainDocument?.documentId).toBe('doc-workspace-switch')
     expect(useBlueprintStore.getState().workspace?.blueprints).toEqual([])
+  })
+
+  it('uses the configured DeepSeek provider and saved secret when settings select a real provider', async () => {
+    const provider = deepseekProvider()
+    const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })
+    await secretStore.saveSecret({ providerId: provider.id, value: 'test-deepseek-key' })
+    const parsed = parseAgentResponse(createMockAgentResponse({ prompt: 'deepseek blueprint', scenario: 'blueprints' }))
+    const pending = deferred<AgentResponseParseResult>()
+    providerMock.runConfiguredAgentProvider.mockReturnValue(pending.promise)
+    useSettingsStore.setState({
+      settings: {
+        basic: { locale: 'system' },
+        appearance: { theme: 'system' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+      },
+      loaded: true,
+      warnings: [],
+    })
+    const host = await renderPanel({ secretStore })
+
+    await act(async () => {
+      host.querySelector<HTMLInputElement>('#agent-panel-include-document')!.click()
+    })
+    await enterPromptAndSubmit(host, 'deepseek blueprint')
+
+    await act(async () => {
+      await vi.waitFor(() => expect(providerMock.runConfiguredAgentProvider).toHaveBeenCalledTimes(1))
+    })
+    expect(providerMock.runMockAgentProvider).not.toHaveBeenCalled()
+    expect(providerMock.runConfiguredAgentProvider).toHaveBeenCalledWith(expect.objectContaining({
+      provider,
+      modelId: 'deepseek-chat',
+      apiKey: expect.any(String),
+      prompt: 'deepseek blueprint',
+      includeDocumentContext: true,
+      currentDocument: useEditorStore.getState().document,
+      signal: expect.any(AbortSignal),
+    }))
+    await act(async () => {
+      pending.resolve(parsed)
+      await pending.promise
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(useBlueprintStore.getState().workspace?.blueprints).toHaveLength(2))
+    })
+    expect(host.textContent).toContain('2 blueprint candidates stored')
+  })
+
+  it('does not call a configured provider when its API key is missing', async () => {
+    const provider = deepseekProvider({ apiKeyRef: undefined })
+    useSettingsStore.setState({
+      settings: {
+        basic: { locale: 'system' },
+        appearance: { theme: 'system' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+      },
+      loaded: true,
+      warnings: [],
+    })
+    const host = await renderPanel()
+
+    await enterPromptAndSubmit(host, 'should fail before request')
+
+    expect(providerMock.runConfiguredAgentProvider).not.toHaveBeenCalled()
+    expect(host.textContent).toContain('has no saved API key')
+  })
+
+  it('asks users to re-save unsupported legacy keychain API key references', async () => {
+    const provider = deepseekProvider({ apiKeyRef: 'keychain://deepseek/legacy' })
+    useSettingsStore.setState({
+      settings: {
+        basic: { locale: 'system' },
+        appearance: { theme: 'system' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+      },
+      loaded: true,
+      warnings: [],
+    })
+    const host = await renderPanel()
+
+    await enterPromptAndSubmit(host, 'should fail before request')
+
+    expect(providerMock.runConfiguredAgentProvider).not.toHaveBeenCalled()
+    expect(host.textContent).toContain('unsupported legacy API key reference')
+  })
+
+  it('aborts a configured provider run when cancelled', async () => {
+    const provider = deepseekProvider()
+    const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })
+    await secretStore.saveSecret({ providerId: provider.id, value: 'test-deepseek-key' })
+    let capturedSignal: AbortSignal | undefined
+    const pending = deferred<AgentResponseParseResult>()
+    providerMock.runConfiguredAgentProvider.mockImplementation((input) => {
+      capturedSignal = input.signal
+      return pending.promise
+    })
+    useSettingsStore.setState({
+      settings: {
+        basic: { locale: 'system' },
+        appearance: { theme: 'system' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+      },
+      loaded: true,
+      warnings: [],
+    })
+    const host = await renderPanel({ secretStore })
+    await enterPromptAndSubmit(host, 'slow real provider')
+    await vi.waitFor(() => expect(capturedSignal).toBeInstanceOf(AbortSignal))
+    const signal = capturedSignal as AbortSignal
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('button[type="button"]')?.click()
+    })
+    expect(signal.aborted).toBe(true)
+    pending.resolve(parseAgentResponse(createMockAgentResponse({ prompt: 'slow real provider', scenario: 'blueprints' })))
+    await act(async () => {
+      await pending.promise
+    })
+
+    expect(useBlueprintStore.getState().workspace?.blueprints ?? []).toEqual([])
+    expect(host.textContent).toContain('Agent run cancelled')
   })
 })

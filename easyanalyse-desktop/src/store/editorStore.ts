@@ -354,6 +354,20 @@ function nextNetworkLineView(document: DocumentFile, label: string): NetworkLine
 export const useEditorStore = create<EditorState>((set, get) => {
   let validationToken = 0
   let documentOperationToken = 0
+  let documentContentVersion = 0
+  let saveOperationToken = 0
+
+  const beginSaveOperation = () => {
+    saveOperationToken += 1
+    return saveOperationToken
+  }
+
+  const isCurrentSaveOperation = (token: number) => token === saveOperationToken
+
+  const bumpDocumentContentVersion = () => {
+    documentContentVersion += 1
+    return documentContentVersion
+  }
 
   const requestValidation = async (document: DocumentFile) => {
     const token = ++validationToken
@@ -394,6 +408,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     },
   ): DocumentFile => {
     const normalized = normalizeDocumentLocal(document)
+    bumpDocumentContentVersion()
     const hasFilePathOption = Object.prototype.hasOwnProperty.call(options ?? {}, 'filePath')
     set((state) => ({
       document: normalized,
@@ -424,6 +439,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     const draft = structuredClone(currentState.document)
     mutator(draft)
     const normalized = normalizeDocumentLocal(draft)
+    bumpDocumentContentVersion()
 
     set((state) => ({
       document: normalized,
@@ -548,22 +564,32 @@ export const useEditorStore = create<EditorState>((set, get) => {
     saveDocument: async () => {
       try {
         const state = get()
+        if (!state.filePath) {
+          await get().saveDocumentAs()
+          return
+        }
+        const saveVersion = documentContentVersion
+        const saveToken = beginSaveOperation()
         const document = normalizeDocumentLocal(state.document)
         const report = isTauriRuntime()
           ? await validateDocumentCommand(document)
           : fallbackValidation(document)
+
+        if (saveVersion !== documentContentVersion || !isCurrentSaveOperation(saveToken)) {
+          set({ statusMessage: 'Save finished, but a newer save or edit is still pending.' })
+          return
+        }
 
         set({
           document: report.normalizedDocument ?? document,
           validationReport: report,
         })
 
-        if (!state.filePath) {
-          await get().saveDocumentAs()
+        const result = await saveDocumentToPath(state.filePath, report.normalizedDocument ?? document)
+        if (saveVersion !== documentContentVersion || !isCurrentSaveOperation(saveToken)) {
+          set({ statusMessage: 'Save finished, but a newer save or edit is still pending.' })
           return
         }
-
-        const result = await saveDocumentToPath(state.filePath, report.normalizedDocument ?? document)
         const savedDocument = result.report.normalizedDocument ?? document
         set({
           filePath: result.path,
@@ -579,22 +605,30 @@ export const useEditorStore = create<EditorState>((set, get) => {
     },
     saveDocumentAs: async () => {
       try {
-        const state = get()
+        const dialogState = get()
         const path = normalizeDialogPath(
           await save({
             filters: FILE_FILTERS,
-            defaultPath: state.filePath ?? `${state.document.document.title || 'easyanalyse'}.json`,
+            defaultPath: dialogState.filePath ?? `${dialogState.document.document.title || 'easyanalyse'}.json`,
           }),
         )
         if (!path) {
-          set({ statusMessage: withLocale(state.locale, 'statusSaveCancelled') })
+          set({ statusMessage: withLocale(dialogState.locale, 'statusSaveCancelled') })
           return
         }
 
+        const state = get()
+        const saveVersion = documentContentVersion
+        const saveToken = beginSaveOperation()
         const document = normalizeDocumentLocal(state.document)
         const report = isTauriRuntime()
           ? await validateDocumentCommand(document)
           : fallbackValidation(document)
+
+        if (saveVersion !== documentContentVersion || !isCurrentSaveOperation(saveToken)) {
+          set({ statusMessage: 'Save As finished, but a newer save or edit is still pending.' })
+          return
+        }
 
         set({
           document: report.normalizedDocument ?? document,
@@ -602,6 +636,10 @@ export const useEditorStore = create<EditorState>((set, get) => {
         })
 
         const result = await saveDocumentToPath(path, report.normalizedDocument ?? document)
+        if (saveVersion !== documentContentVersion || !isCurrentSaveOperation(saveToken)) {
+          set({ statusMessage: 'Save As finished, but a newer save or edit is still pending.' })
+          return
+        }
         const savedDocument = result.report.normalizedDocument ?? document
         set({
           filePath: result.path,
@@ -623,6 +661,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     applyBlueprintDocument: (document) => {
       ++documentOperationToken
       const normalized = normalizeDocumentLocal(document)
+      bumpDocumentContentVersion()
       set((state) => ({
         document: normalized,
         dirty: true,
@@ -1029,6 +1068,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       }
 
       const previous = state.history[state.history.length - 1]!
+      bumpDocumentContentVersion()
       set({
         document: previous,
         history: state.history.slice(0, -1),
@@ -1051,6 +1091,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       }
 
       const next = state.future[0]!
+      bumpDocumentContentVersion()
       set({
         document: next,
         history: [...state.history, state.document],

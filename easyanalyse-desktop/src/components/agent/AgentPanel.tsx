@@ -1,9 +1,13 @@
 import { useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { runMockAgentProvider } from '../../lib/agentMockProvider'
+import { runConfiguredAgentProvider } from '../../lib/agentProviderClient'
+import { defaultSecretStore, isManagedSecretRef, type SecretStore } from '../../lib/secretStore'
 import { useBlueprintStore } from '../../store/blueprintStore'
 import { useEditorStore } from '../../store/editorStore'
-import type { AgentResponse, AgentResponseParseIssue } from '../../types/agent'
+import { useSettingsStore } from '../../store/settingsStore'
+import type { AgentResponse, AgentResponseParseIssue, AgentResponseParseResult } from '../../types/agent'
+import type { AgentProviderPublicConfig } from '../../types/settings'
 
 interface AgentRunState {
   status: 'idle' | 'running' | 'complete' | 'cancelled' | 'error'
@@ -13,15 +17,34 @@ interface AgentRunState {
   error: string | null
 }
 
+export interface AgentPanelProps {
+  secretStore?: Pick<SecretStore, 'readSecret'>
+  runProvider?: typeof runConfiguredAgentProvider
+  runMockProvider?: typeof runMockAgentProvider
+}
+
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-export function AgentPanel() {
+function selectedProviderFromSettings(): { provider: AgentProviderPublicConfig | null; modelId: string | null } {
+  const settings = useSettingsStore.getState().settings
+  const provider = settings.agent.providers.find((item) => item.id === settings.agent.selectedProviderId) ?? null
+  const modelId = settings.agent.selectedModelId ?? provider?.defaultModel ?? provider?.models[0] ?? null
+  return { provider, modelId }
+}
+
+export function AgentPanel({
+  secretStore = defaultSecretStore,
+  runProvider = runConfiguredAgentProvider,
+  runMockProvider = runMockAgentProvider,
+}: AgentPanelProps = {}) {
   const document = useEditorStore((state) => state.document)
   const filePath = useEditorStore((state) => state.filePath)
+  const settings = useSettingsStore((state) => state.settings)
   const addAgentBlueprintCandidates = useBlueprintStore((state) => state.addAgentBlueprintCandidates)
   const [prompt, setPrompt] = useState('')
+  const [includeDocumentContext, setIncludeDocumentContext] = useState(false)
   const [runState, setRunState] = useState<AgentRunState>({
     status: 'idle',
     response: null,
@@ -30,8 +53,12 @@ export function AgentPanel() {
     error: null,
   })
   const activeRunRef = useRef(0)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   const running = runState.status === 'running'
+  const provider = settings.agent.providers.find((item) => item.id === settings.agent.selectedProviderId) ?? null
+  const modelId = settings.agent.selectedModelId ?? provider?.defaultModel ?? provider?.models[0] ?? null
+  const providerLabel = provider ? `${provider.name} / ${modelId ?? 'No model selected'}` : 'Mock provider'
 
   async function submitPrompt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -40,6 +67,9 @@ export function AgentPanel() {
 
     const runId = activeRunRef.current + 1
     activeRunRef.current = runId
+    abortControllerRef.current?.abort()
+    const abortController = new AbortController()
+    abortControllerRef.current = abortController
     const documentAtStart = document
     const filePathAtStart = filePath
     const requestId = `agent-panel-${runId}`
@@ -47,10 +77,15 @@ export function AgentPanel() {
     setRunState({ status: 'running', response: null, issues: [], insertedCount: 0, error: null })
 
     try {
-      const result = await runMockAgentProvider({
+      const result = await runSelectedProvider({
         prompt: trimmedPrompt,
         currentDocument: documentAtStart,
         requestId,
+        includeDocumentContext,
+        signal: abortController.signal,
+        secretStore,
+        runProvider,
+        runMockProvider,
       })
       if (activeRunRef.current !== runId) return
 
@@ -81,11 +116,16 @@ export function AgentPanel() {
     } catch (error) {
       if (activeRunRef.current !== runId) return
       setRunState({ status: 'error', response: null, issues: [], insertedCount: 0, error: getErrorMessage(error) })
+    } finally {
+      if (activeRunRef.current === runId) {
+        abortControllerRef.current = null
+      }
     }
   }
 
   function cancelRun() {
     if (!running) return
+    abortControllerRef.current?.abort()
     activeRunRef.current += 1
     setRunState((state) => ({ ...state, status: 'cancelled', error: 'Agent run cancelled.' }))
   }
@@ -95,7 +135,12 @@ export function AgentPanel() {
       <header className="agent-panel__header">
         <div>
           <h2>Agent</h2>
-          <p>Local mock flow only. Candidates are stored as blueprints without changing the main document.</p>
+          <p>
+            {provider
+              ? 'Configured provider flow. Candidates are stored as blueprints without changing the main document.'
+              : 'Local mock flow. Configure a provider in Settings to call a real model.'}
+          </p>
+          <p className="agent-panel__provider">Provider: {providerLabel}</p>
         </div>
         <span className={`agent-panel__status agent-panel__status--${runState.status}`}>{runState.status}</span>
       </header>
@@ -106,10 +151,23 @@ export function AgentPanel() {
           id="agent-panel-prompt"
           value={prompt}
           onChange={(event) => setPrompt(event.currentTarget.value)}
-          placeholder="Ask the mock agent for a message, question, error, or blueprint candidates…"
+          placeholder="Ask the agent for circuit explanations, blueprint candidates, or modifications…"
           rows={4}
           disabled={running}
         />
+        <label className="agent-panel__checkbox" htmlFor="agent-panel-include-document">
+          <input
+            id="agent-panel-include-document"
+            type="checkbox"
+            checked={includeDocumentContext}
+            disabled={running}
+            onChange={(event) => setIncludeDocumentContext(event.currentTarget.checked)}
+          />
+          Include current document context in provider request
+        </label>
+        <p className="agent-panel__hint">
+          When checked, the current semantic v4 document is sent to the selected provider so it can propose modification blueprints.
+        </p>
         <div className="agent-panel__actions">
           <button type="submit" disabled={running || prompt.trim().length === 0}>
             {running ? 'Sending…' : 'Send'}
@@ -138,6 +196,49 @@ export function AgentPanel() {
       </div>
     </section>
   )
+}
+
+async function runSelectedProvider(input: {
+  prompt: string
+  currentDocument: import('../../types/document').DocumentFile
+  requestId: string
+  includeDocumentContext: boolean
+  signal: AbortSignal
+  secretStore: Pick<SecretStore, 'readSecret'>
+  runProvider: typeof runConfiguredAgentProvider
+  runMockProvider: typeof runMockAgentProvider
+}): Promise<AgentResponseParseResult> {
+  const { provider, modelId } = selectedProviderFromSettings()
+  if (!provider) {
+    return input.runMockProvider({
+      prompt: input.prompt,
+      currentDocument: input.currentDocument,
+      requestId: input.requestId,
+    })
+  }
+  if (!modelId) {
+    throw new Error(`Provider ${provider.name} has no selected model.`)
+  }
+  if (!provider.apiKeyRef) {
+    throw new Error(`Provider ${provider.name} has no saved API key.`)
+  }
+  if (!isManagedSecretRef(provider.apiKeyRef)) {
+    throw new Error(`Provider ${provider.name} uses an unsupported legacy API key reference. Please re-save the API key in Settings.`)
+  }
+  const apiKey = await input.secretStore.readSecret(provider.apiKeyRef)
+  if (!apiKey?.trim()) {
+    throw new Error(`Saved API key for provider ${provider.name} was not found.`)
+  }
+  return input.runProvider({
+    provider,
+    modelId,
+    apiKey,
+    prompt: input.prompt,
+    currentDocument: input.currentDocument,
+    includeDocumentContext: input.includeDocumentContext,
+    requestId: input.requestId,
+    signal: input.signal,
+  })
 }
 
 function AgentResponseCard({ response, insertedCount }: { response: AgentResponse; insertedCount: number }) {

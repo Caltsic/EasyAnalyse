@@ -7,9 +7,9 @@ describe('provider presets', () => {
       id: 'deepseek',
       name: 'DeepSeek',
       kind: 'deepseek',
-      baseUrl: 'https://api.deepseek.com/v1',
-      models: ['deepseek-chat', 'deepseek-reasoner'],
-      defaultModel: 'deepseek-chat',
+      baseUrl: 'https://api.deepseek.com',
+      models: ['deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-chat', 'deepseek-reasoner'],
+      defaultModel: 'deepseek-v4-flash',
     })
 
     expect(DEEPSEEK_PROVIDER_PRESET).not.toHaveProperty('apiKeyRef')

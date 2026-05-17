@@ -99,12 +99,12 @@ export function normalizeDocumentLocal(document: DocumentFile): DocumentFile {
 
   next.view.devices = Object.fromEntries(
     Object.entries(next.view.devices ?? {})
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => compareText(left, right))
       .map(([deviceId, view]) => [deviceId, normalizeDeviceView(view)]),
   )
   next.view.networkLines = Object.fromEntries(
     Object.entries(next.view.networkLines ?? {})
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => compareText(left, right))
       .map(([networkLineId, view]) => [networkLineId, normalizeNetworkLineView(view)]),
   )
 
@@ -206,18 +206,25 @@ function cleanOptionalString(value: string | undefined) {
   return trimmed || undefined
 }
 
+function safeText(value: unknown, fallback = '') {
+  const trimmed = typeof value === 'string' ? value.trim() : ''
+  return trimmed || fallback
+}
+
+function compareText(left: unknown, right: unknown) {
+  return safeText(left).localeCompare(safeText(right))
+}
+
 function uniqueNonEmptyStrings(values: string[] | undefined) {
   if (!values?.length) {
     return []
   }
 
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort((a, b) =>
-    a.localeCompare(b),
-  )
+  return [...new Set(values.map((value) => safeText(value)).filter(Boolean))].sort(compareText)
 }
 
 function byId<T extends { id: string }>(left: T, right: T) {
-  return left.id.localeCompare(right.id)
+  return compareText(left.id, right.id)
 }
 
 function compareTerminals(left: TerminalDefinition, right: TerminalDefinition) {
@@ -226,8 +233,8 @@ function compareTerminals(left: TerminalDefinition, right: TerminalDefinition) {
   return (
     leftOrder - rightOrder ||
     inferSideRank(left.side) - inferSideRank(right.side) ||
-    left.name.localeCompare(right.name) ||
-    left.id.localeCompare(right.id)
+    compareText(left.name, right.name) ||
+    compareText(left.id, right.id)
   )
 }
 
@@ -352,7 +359,7 @@ function getTerminalPinSummary(terminal: TerminalDefinition) {
 }
 
 export function getTerminalDisplayLabel(terminal: TerminalDefinition) {
-  const base = terminal.label?.trim() || terminal.name
+  const base = safeText(terminal.label) || safeText(terminal.name, safeText(terminal.id, 'terminal'))
   const pinSummary = getTerminalPinSummary(terminal)
   return pinSummary ? `${base} [${pinSummary}]` : base
 }
@@ -363,7 +370,8 @@ export function getDeviceReference(device: DeviceDefinition, document: DocumentF
     return explicit
   }
 
-  return buildDeviceReferenceMap(document).get(device.id) ?? device.id
+  const deviceId = safeText(device.id, safeText(device.name, 'device'))
+  return buildDeviceReferenceMap(document).get(deviceId) ?? deviceId
 }
 
 export function buildDeviceReferenceMap(document: DocumentFile) {
@@ -371,10 +379,11 @@ export function buildDeviceReferenceMap(document: DocumentFile) {
   const usedNumbersByPrefix = new Map<string, Set<number>>()
   const pendingByPrefix = new Map<string, DeviceDefinition[]>()
 
-  for (const device of document.devices) {
+  for (const [index, device] of document.devices.entries()) {
+    const deviceId = safeText(device.id, safeText(device.name, `device-${index + 1}`))
     const explicit = cleanOptionalString(device.reference)
     if (explicit) {
-      references.set(device.id, explicit)
+      references.set(deviceId, explicit)
       const match = explicit.match(DESIGNATOR_PATTERN)
       if (match) {
         const [, prefix, indexText] = match
@@ -387,18 +396,18 @@ export function buildDeviceReferenceMap(document: DocumentFile) {
 
     const prefix = inferReferencePrefix(device)
     const bucket = pendingByPrefix.get(prefix) ?? []
-    bucket.push(device)
+    bucket.push({ ...device, id: deviceId, name: safeText(device.name, deviceId), kind: safeText(device.kind, 'module') })
     pendingByPrefix.set(prefix, bucket)
   }
 
   for (const [prefix, devices] of [...pendingByPrefix.entries()].sort((left, right) =>
-    left[0].localeCompare(right[0]),
+    compareText(left[0], right[0]),
   )) {
     const used = usedNumbersByPrefix.get(prefix) ?? new Set<number>()
     let nextIndex = 1
 
     for (const device of [...devices].sort((left, right) =>
-      left.name.localeCompare(right.name) || left.id.localeCompare(right.id),
+      compareText(left.name, right.name) || compareText(left.id, right.id),
     )) {
       while (used.has(nextIndex)) {
         nextIndex += 1
@@ -484,7 +493,7 @@ export function collectTerminalLabels(
           .filter((label): label is string => Boolean(label)),
       ),
     ),
-  ].sort((left, right) => left.localeCompare(right))
+  ].sort(compareText)
 }
 
 export function countDistinctTerminalLabels(document: DocumentFile) {

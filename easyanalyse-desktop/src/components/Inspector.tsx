@@ -202,9 +202,7 @@ export function Inspector() {
   const activeTerminal = selectedTerminal
   const title =
     selection?.entityType === 'deviceGroup'
-      ? locale === 'zh-CN'
-        ? `已选择 ${selectedDeviceGroup.length} 个器件`
-        : `${selectedDeviceGroup.length} devices selected`
+      ? t('selectedDevices', { count: selectedDeviceGroup.length })
       : getEntityTitle(
           document,
           selection?.entityType ?? 'document',
@@ -439,11 +437,7 @@ export function Inspector() {
             <div className="inspector-section__header">
               <span className="eyebrow">{t('members')}</span>
             </div>
-            <p className="inspector-hint">
-              {locale === 'zh-CN'
-                ? '多选状态下可一起拖动和按空格旋转，且不会触发聚焦。'
-                : 'Multiple devices move together and rotate with Space. Focus is disabled for grouped selection.'}
-            </p>
+            <p className="inspector-hint">{t('multiSelectHint')}</p>
             <div className="entity-list">
               {selectedDeviceGroup.map((device) => (
                 <button

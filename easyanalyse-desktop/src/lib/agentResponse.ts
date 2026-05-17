@@ -288,6 +288,22 @@ function collectSemanticDocumentIssues(document: JsonRecord, basePath: string, i
   const usedLabels = new Set<string>()
   devices.forEach((device, deviceIndex) => {
     if (!isRecord(device)) return
+    if (typeof device.id !== 'string' || device.id.length === 0) {
+      issues.push({
+        severity: 'error',
+        code: 'missing-device-id',
+        message: 'Device must include a non-empty id string.',
+        path: `${basePath}.devices[${deviceIndex}].id`,
+      })
+    }
+    if (typeof device.name !== 'string' || device.name.length === 0) {
+      issues.push({
+        severity: 'error',
+        code: 'missing-device-name',
+        message: 'Device must include a non-empty name string.',
+        path: `${basePath}.devices[${deviceIndex}].name`,
+      })
+    }
     const terminals = Array.isArray(device.terminals) ? device.terminals : []
     if (!Array.isArray(device.terminals)) {
       issues.push({
@@ -299,6 +315,22 @@ function collectSemanticDocumentIssues(document: JsonRecord, basePath: string, i
     }
     terminals.forEach((terminal, terminalIndex) => {
       if (!isRecord(terminal)) return
+      if (typeof terminal.id !== 'string' || terminal.id.length === 0) {
+        issues.push({
+          severity: 'error',
+          code: 'missing-terminal-id',
+          message: 'Terminal must include a non-empty id string.',
+          path: `${basePath}.devices[${deviceIndex}].terminals[${terminalIndex}].id`,
+        })
+      }
+      if (typeof terminal.name !== 'string' || terminal.name.length === 0) {
+        issues.push({
+          severity: 'error',
+          code: 'missing-terminal-name',
+          message: 'Terminal must include a non-empty name string.',
+          path: `${basePath}.devices[${deviceIndex}].terminals[${terminalIndex}].name`,
+        })
+      }
       if (terminal.label && typeof terminal.label === 'string') usedLabels.add(terminal.label)
       if (terminal.direction !== 'input' && terminal.direction !== 'output') {
         issues.push({

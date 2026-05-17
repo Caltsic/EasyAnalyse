@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_APP_SETTINGS } from '../../lib/appSettings'
 import { DEEPSEEK_PROVIDER_PRESET } from '../../lib/providerPresets'
+import { useEditorStore } from '../../store/editorStore'
 import { useSettingsStore } from '../../store/settingsStore'
 import { ProviderModelSettings } from './ProviderModelSettings'
 
@@ -42,6 +43,7 @@ describe('ProviderModelSettings', () => {
   let root: Root
 
   beforeEach(() => {
+    useEditorStore.setState({ locale: 'en-US' })
     useSettingsStore.setState({ settings: DEFAULT_APP_SETTINGS, loaded: true, warnings: [] })
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -157,9 +159,9 @@ describe('ProviderModelSettings', () => {
     expect(field(container, 'id').value).toBe('deepseek')
     expect(field(container, 'name').value).toBe('DeepSeek')
     expect(field(container, 'kind').value).toBe('deepseek')
-    expect(field(container, 'baseUrl').value).toBe('https://api.deepseek.com/v1')
-    expect(field(container, 'models').value).toBe('deepseek-chat\ndeepseek-reasoner')
-    expect(field(container, 'defaultModel').value).toBe('deepseek-chat')
+    expect(field(container, 'baseUrl').value).toBe('https://api.deepseek.com')
+    expect(field(container, 'models').value).toBe('deepseek-v4-flash\ndeepseek-v4-pro\ndeepseek-chat\ndeepseek-reasoner')
+    expect(field(container, 'defaultModel').value).toBe('deepseek-v4-flash')
     expect(field(container, 'apiKey').value).toBe('')
 
     await clickButton(container, 'Save provider metadata')
@@ -169,7 +171,7 @@ describe('ProviderModelSettings', () => {
     const settings = useSettingsStore.getState().settings
     expect(settings.agent.providers).toEqual([DEEPSEEK_PROVIDER_PRESET])
     expect(settings.agent.selectedProviderId).toBe('deepseek')
-    expect(settings.agent.selectedModelId).toBe('deepseek-chat')
+    expect(settings.agent.selectedModelId).toBe('deepseek-v4-flash')
     expect(settings.agent.providers[0]).not.toHaveProperty('apiKeyRef')
     expect(JSON.stringify(settings)).not.toMatch(/(?:apiKey|apiKeyRef|secret-ref:|keychain:\/\/|Bearer\s+)/i)
   })
@@ -211,7 +213,7 @@ describe('ProviderModelSettings', () => {
     expect(useSettingsStore.getState().settings.agent.providers).toEqual([
       { ...DEEPSEEK_PROVIDER_PRESET, apiKeyRef: 'secret-ref:existing-deepseek' },
     ])
-    expect(useSettingsStore.getState().settings.agent.selectedModelId).toBe('deepseek-chat')
+    expect(useSettingsStore.getState().settings.agent.selectedModelId).toBe('deepseek-v4-flash')
   })
 
   it('deletes an existing DeepSeek secret ref when the preset flow saves a replacement API key', async () => {

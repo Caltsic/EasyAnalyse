@@ -32,6 +32,8 @@ import type {
 import type { ThemeMode } from '../../lib/theme'
 
 const INITIAL_OFFSET = 96
+const MIN_VIEWPORT_WIDTH = 1
+const MIN_VIEWPORT_HEIGHT = 1
 const MIN_ZOOM = 0.32
 const MAX_ZOOM = 2.4
 const FOCUS_MIN_ZOOM = 0.42
@@ -124,7 +126,7 @@ function buildTerminalSideBuckets(
     bucket.sort((left, right) => {
       const leftOrder = left.order ?? Number.MAX_SAFE_INTEGER
       const rightOrder = right.order ?? Number.MAX_SAFE_INTEGER
-      return leftOrder - rightOrder || left.name.localeCompare(right.name) || left.id.localeCompare(right.id)
+      return leftOrder - rightOrder || compareText(left.name, right.name) || compareText(left.id, right.id)
     })
     buckets.set(side, bucket.map((terminal) => terminal.id))
   }
@@ -451,9 +453,9 @@ function layoutTerminalLabels(
       const rightPrevious = previousPlacements.get(right.id)
       return (
         right.priority - left.priority ||
-        left.side.localeCompare(right.side) ||
+        compareText(left.side, right.side) ||
         buildLabelSortKey(left, leftPrevious) - buildLabelSortKey(right, rightPrevious) ||
-        left.id.localeCompare(right.id)
+        compareText(left.id, right.id)
       )
     })
     .map((label) => {
@@ -514,6 +516,20 @@ function layoutTerminalLabels(
 
       return placement
     })
+}
+
+function safeText(value: unknown) {
+  if (typeof value === 'string') {
+    return value
+  }
+  if (value === null || value === undefined) {
+    return ''
+  }
+  return String(value)
+}
+
+function compareText(left: unknown, right: unknown) {
+  return safeText(left).localeCompare(safeText(right))
 }
 
 function getTerminalInsertIndex(
@@ -823,6 +839,13 @@ export function CircuitCanvasRenderer({
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0]
       if (!entry) {
+        return
+      }
+
+      if (
+        entry.contentRect.width < MIN_VIEWPORT_WIDTH ||
+        entry.contentRect.height < MIN_VIEWPORT_HEIGHT
+      ) {
         return
       }
 

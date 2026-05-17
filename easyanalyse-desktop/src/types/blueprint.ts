@@ -1,5 +1,6 @@
 import type { DocumentFile, ValidationIssue, ValidationReport } from './document'
 import type { AgentSelfCheckReport } from './agentTools'
+import type { AgentThreadWorkspace } from './agentThread'
 
 export type BlueprintWorkspaceVersion = '1.0.0'
 export type BlueprintLifecycleStatus = 'active' | 'archived' | 'deleted'
@@ -15,7 +16,11 @@ export interface BlueprintWorkspaceFile {
   updatedAt: string
   appVersion?: string
   blueprints: BlueprintRecord[]
-  extensions?: Record<string, unknown>
+  extensions?: BlueprintWorkspaceExtensions
+}
+
+export interface BlueprintWorkspaceExtensions extends Record<string, unknown> {
+  agentThreads?: AgentThreadWorkspace
 }
 
 export interface BlueprintMainDocumentRef {

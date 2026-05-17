@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { defaultSecretStore, maskSecretRef, type SecretStore, type SecretStoreSecurityStatus } from '../../lib/secretStore'
+import { translate } from '../../lib/i18n'
 import { cloneProviderPreset, DEEPSEEK_PROVIDER_PRESET, type ProviderPreset } from '../../lib/providerPresets'
+import { defaultSecretStore, maskSecretRef, type SecretStore, type SecretStoreSecurityStatus } from '../../lib/secretStore'
+import { useEditorStore } from '../../store/editorStore'
 import { useSettingsStore } from '../../store/settingsStore'
 import type { AgentProviderKind, AgentProviderPublicConfig } from '../../types/settings'
 
@@ -75,6 +77,7 @@ export interface ProviderModelSettingsProps {
 }
 
 export function ProviderModelSettings({ secretStore = defaultSecretStore }: ProviderModelSettingsProps = {}) {
+  const locale = useEditorStore((state) => state.locale)
   const settings = useSettingsStore((state) => state.settings)
   const warnings = useSettingsStore((state) => state.warnings)
   const upsertProvider = useSettingsStore((state) => state.upsertProvider)
@@ -87,6 +90,8 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
   const [secretWarning, setSecretWarning] = useState<string | null>(null)
   const [operationError, setOperationError] = useState<string | null>(null)
   const [busyAction, setBusyAction] = useState<string | null>(null)
+  const t = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) =>
+    translate(locale, key, params)
 
   const selectedProvider = useMemo(
     () => settings.agent.providers.find((provider) => provider.id === settings.agent.selectedProviderId),
@@ -144,7 +149,7 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
           await secretStore.deleteSecret(newApiKeyRef).catch(() => undefined)
         }
         setDraft((current) => ({ ...current, apiKey: '' }))
-        setOperationError('Provider metadata was rejected; the newly saved API key was removed.')
+        setOperationError(t('providerMetadataRejected'))
         setBusyAction(null)
         return
       }
@@ -155,7 +160,7 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
         await secretStore.deleteSecret(newApiKeyRef).catch(() => undefined)
       }
       setDraft((current) => ({ ...current, apiKey: '' }))
-      setOperationError(`Unable to save provider metadata or API key. ${readableError(error)}`)
+      setOperationError(t('unableToSaveProvider', { message: readableError(error) }))
       setBusyAction(null)
       return
     }
@@ -164,7 +169,7 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
       try {
         await secretStore.deleteSecret(oldApiKeyRef)
       } catch (error) {
-        setOperationError(`Provider saved, but unable to delete old API key. ${readableError(error)}`)
+        setOperationError(t('providerSavedUnableToDeleteOldKey', { message: readableError(error) }))
       }
     }
     setBusyAction(null)
@@ -177,7 +182,7 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
       await clearProviderApiKey(provider.id, undefined, secretStore)
       setDraft((current) => current.id === provider.id ? { ...current, apiKeyRef: '', apiKey: '' } : current)
     } catch (error) {
-      setOperationError(`Unable to clear API key. ${readableError(error)}`)
+      setOperationError(t('unableToClearApiKey', { message: readableError(error) }))
     } finally {
       setBusyAction(null)
     }
@@ -189,22 +194,22 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
     try {
       await deleteProvider(provider.id, undefined, secretStore)
     } catch (error) {
-      setOperationError(`Unable to delete provider. ${readableError(error)}`)
+      setOperationError(t('unableToDeleteProvider', { message: readableError(error) }))
     } finally {
       setBusyAction(null)
     }
   }
 
   return (
-    <section className="settings-panel" aria-label="Provider and model settings">
+    <section className="settings-panel" aria-label={t('providerModelSettingsLabel')}>
       <div className="settings-panel__header">
         <div>
-          <p className="eyebrow">Settings</p>
-          <h2>Provider / Model</h2>
+          <p className="eyebrow">{t('settings')}</p>
+          <h2>{t('providerModelSettings')}</h2>
         </div>
         <p className="settings-panel__note">
-          Public provider metadata only. API keys are saved to the SecretStore and ordinary settings persist only opaque apiKeyRef values.
-          {secretStatus?.kind && ` Secret backend: ${secretStatus.kind}.`}
+          {t('settingsNote')}
+          {secretStatus?.kind && ` ${t('secretBackend', { kind: secretStatus.kind })}`}
         </p>
       </div>
 
@@ -219,13 +224,13 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
 
       <div className="settings-panel__section">
         <label>
-          Active provider
+          {t('activeProvider')}
           <select
             name="selectedProviderId"
             value={settings.agent.selectedProviderId ?? ''}
             onChange={(event) => selectProvider(event.target.value || undefined)}
           >
-            {settings.agent.providers.length === 0 && <option value="">No providers configured</option>}
+            {settings.agent.providers.length === 0 && <option value="">{t('noProvidersConfigured')}</option>}
             {settings.agent.providers.map((provider) => (
               <option key={provider.id} value={provider.id}>{provider.name}</option>
             ))}
@@ -233,14 +238,14 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
         </label>
 
         <label>
-          Active model
+          {t('activeModel')}
           <select
             name="selectedModelId"
             value={settings.agent.selectedModelId ?? ''}
             onChange={(event) => selectModel(event.target.value || undefined)}
             disabled={!selectedProvider}
           >
-            {!selectedProvider && <option value="">No models configured</option>}
+            {!selectedProvider && <option value="">{t('noModelsConfigured')}</option>}
             {selectedProvider?.models.map((model) => (
               <option key={model} value={model}>{model}</option>
             ))}
@@ -248,35 +253,41 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
         </label>
       </div>
 
-      <div className="settings-panel__provider-list" aria-label="Configured providers">
+      <div className="settings-panel__provider-list" aria-label={t('configuredProviders')}>
         {settings.agent.providers.map((provider) => (
           <article className="settings-panel__provider-card" key={provider.id}>
             <div>
               <h3>{provider.name}</h3>
-              <p>{provider.kind} · {provider.baseUrl}</p>
+              <p>{provider.kind} / {provider.baseUrl}</p>
               <p>{provider.models.join(', ')}</p>
-              {provider.apiKeyRef && <p>Secret reference: {maskSecretRef(provider.apiKeyRef)}</p>}
+              {provider.apiKeyRef && <p>{t('secretReference', { ref: maskSecretRef(provider.apiKeyRef) })}</p>}
             </div>
             <div className="settings-panel__actions">
-              <button className="ghost-button" type="button" onClick={() => setDraft(draftFromProvider(provider))}>Edit</button>
-              {provider.apiKeyRef && <button className="ghost-button" type="button" disabled={busyAction !== null} onClick={() => void clearApiKey(provider)}>{busyAction === `clear:${provider.id}` ? 'Clearing API key…' : 'Clear API key'}</button>}
-              <button className="ghost-button" type="button" disabled={busyAction !== null} onClick={() => void deleteProviderWithSecrets(provider)}>{busyAction === `delete:${provider.id}` ? 'Deleting…' : 'Delete'}</button>
+              <button className="ghost-button" type="button" onClick={() => setDraft(draftFromProvider(provider))}>{t('edit')}</button>
+              {provider.apiKeyRef && (
+                <button className="ghost-button" type="button" disabled={busyAction !== null} onClick={() => void clearApiKey(provider)}>
+                  {busyAction === `clear:${provider.id}` ? t('clearingApiKey') : t('clearApiKey')}
+                </button>
+              )}
+              <button className="ghost-button" type="button" disabled={busyAction !== null} onClick={() => void deleteProviderWithSecrets(provider)}>
+                {busyAction === `delete:${provider.id}` ? t('deleting') : t('delete')}
+              </button>
             </div>
           </article>
         ))}
       </div>
 
-      <div className="settings-panel__section" aria-label="Provider presets">
+      <div className="settings-panel__section" aria-label={t('providerPresets')}>
         <div>
-          <p className="eyebrow">Provider presets</p>
-          <p className="settings-panel__note">Start from public provider metadata, then optionally add an API key before saving.</p>
+          <p className="eyebrow">{t('providerPresets')}</p>
+          <p className="settings-panel__note">{t('providerPresetsNote')}</p>
         </div>
-        <button className="ghost-button" type="button" disabled={busyAction !== null} onClick={applyDeepSeekPreset}>Use DeepSeek preset</button>
+        <button className="ghost-button" type="button" disabled={busyAction !== null} onClick={applyDeepSeekPreset}>{t('useDeepSeekPreset')}</button>
       </div>
 
-      <div className="settings-panel__form" aria-label="Provider metadata form">
+      <div className="settings-panel__form" aria-label={t('providerMetadataForm')}>
         <label>
-          Provider id
+          {t('providerId')}
           <input
             name="id"
             value={draft.id}
@@ -289,34 +300,43 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
           />
         </label>
         <label>
-          Display name
+          {t('displayName')}
           <input name="name" value={draft.name} onChange={(event) => updateDraft('name', event.target.value)} placeholder="DeepSeek Main" />
         </label>
         <label>
-          Kind
+          {t('kind')}
           <select name="kind" value={draft.kind} onChange={(event) => updateDraft('kind', event.target.value as AgentProviderKind)}>
             {PROVIDER_KINDS.map((kind) => <option key={kind} value={kind}>{kind}</option>)}
           </select>
         </label>
         <label>
-          Base URL
+          {t('baseUrl')}
           <input name="baseUrl" value={draft.baseUrl} onChange={(event) => updateDraft('baseUrl', event.target.value)} placeholder="https://api.example.com/v1" />
         </label>
         <label>
-          Models (comma or one per line)
+          {t('models')}
           <textarea name="models" value={draft.modelsText} onChange={(event) => updateDraft('modelsText', event.target.value)} placeholder="model-a&#10;model-b" />
         </label>
         <label>
-          Default model
+          {t('defaultModel')}
           <input name="defaultModel" value={draft.defaultModel} onChange={(event) => updateDraft('defaultModel', event.target.value)} placeholder="optional" />
         </label>
         <label>
-          API key
-          <input name="apiKey" type="password" autoComplete="off" value={draft.apiKey} onChange={(event) => updateDraft('apiKey', event.target.value)} placeholder={draft.apiKeyRef ? 'Saved; enter a new key to replace' : 'Enter key to save in SecretStore'} />
+          {t('apiKey')}
+          <input
+            name="apiKey"
+            type="password"
+            autoComplete="off"
+            value={draft.apiKey}
+            onChange={(event) => updateDraft('apiKey', event.target.value)}
+            placeholder={draft.apiKeyRef ? t('savedKeyPlaceholder') : t('enterKeyPlaceholder')}
+          />
         </label>
         <div className="settings-panel__actions">
-          <button type="button" disabled={busyAction !== null} onClick={() => void saveDraft()}>{busyAction === 'save' ? 'Saving…' : 'Save provider metadata'}</button>
-          <button className="ghost-button" type="button" disabled={busyAction !== null} onClick={() => setDraft(EMPTY_DRAFT)}>Clear</button>
+          <button type="button" disabled={busyAction !== null} onClick={() => void saveDraft()}>
+            {busyAction === 'save' ? t('saving') : t('saveProviderMetadata')}
+          </button>
+          <button className="ghost-button" type="button" disabled={busyAction !== null} onClick={() => setDraft(EMPTY_DRAFT)}>{t('clear')}</button>
         </div>
       </div>
     </section>

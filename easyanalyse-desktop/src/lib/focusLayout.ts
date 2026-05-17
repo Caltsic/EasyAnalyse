@@ -99,7 +99,7 @@ function deriveDeviceFocusLayout(insights: CircuitInsights, focusDeviceId: strin
           (insights.networkLinesByLabel[terminal.connectionLabel]?.length ?? 0) > 0,
       )
       .map((terminal) => terminal.connectionLabel as string),
-  )].sort((left, right) => left.localeCompare(right))
+  )].sort(compareText)
   const suppressedSet = new Set(suppressedLabelKeys)
   const relationByDevice = buildDeviceFocusRelations(insights, anchor, suppressedSet)
 
@@ -730,7 +730,21 @@ function shortestAngleDelta(from: number, to: number) {
 }
 
 function sortDevices(left: DerivedDevice, right: DerivedDevice) {
-  return left.title.localeCompare(right.title) || left.id.localeCompare(right.id)
+  return compareText(left.title, right.title) || compareText(left.id, right.id)
+}
+
+function safeText(value: unknown) {
+  if (typeof value === 'string') {
+    return value
+  }
+  if (value === null || value === undefined) {
+    return ''
+  }
+  return String(value)
+}
+
+function compareText(left: unknown, right: unknown) {
+  return safeText(left).localeCompare(safeText(right))
 }
 
 function buildSyntheticRail(label: string, centroid: Point, deviceBounds: Bounds): FocusRail {

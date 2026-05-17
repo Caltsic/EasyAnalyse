@@ -24,11 +24,22 @@ function validReport(document = documentAt()): ValidationReport {
 }
 
 describe('agentTools', () => {
-  it('exposes only read-only OpenAI-compatible tool schema for check_blueprint_candidate', () => {
+  it('exposes hard-format, creation, context, and advisory OpenAI-compatible tool schemas', () => {
     const schemas = getAgentToolSchemas()
-    expect(schemas).toHaveLength(1)
-    expect(schemas[0]!.function.name).toBe('check_blueprint_candidate')
-    expect(JSON.stringify(schemas)).toContain('wires/nodes/junctions/signalId')
+    expect(schemas.map((schema) => schema.function.name)).toEqual([
+      'get_current_document',
+      'get_easyanalyse_format_rules',
+      'check_document_format',
+      'check_blueprint_format',
+      'create_blueprint_candidate',
+      'validate_document',
+      'check_layout_overlaps',
+      'check_blueprint_candidate',
+    ])
+    expect(JSON.stringify(schemas)).toContain('Hard-check one EasyAnalyse DocumentFile candidate')
+    expect(JSON.stringify(schemas)).toContain('issueCount>0 is not a hard finalization gate by itself')
+    expect(JSON.stringify(schemas)).toContain('wires, nodes, junctions')
+    expect(JSON.stringify(schemas)).toContain('visual network lines crossing device bounds')
     expect(JSON.stringify(schemas)).not.toMatch(/Authorization|apiKey|sk-/i)
   })
 
@@ -45,7 +56,49 @@ describe('agentTools', () => {
     expect(JSON.stringify(malformed)).not.toMatch(/sk-|Authorization|Bearer|apiKey/)
     const unknown = await runAgentTool('unknown_tool', { document: documentAt() })
     expect(unknown.ok).toBe(false)
-    expect(unknown.toolName).toBe('check_blueprint_candidate')
+    expect(unknown.toolName).toBe('check_blueprint_format')
+  })
+
+  it('check_document_format treats schema/openability errors as hard failures but ignores semantic issues', async () => {
+    const semanticIssue = { severity: 'error' as const, code: 'semantic.device.name', message: 'semantic only', entityId: 'a', path: 'devices[0].name' }
+    const result = await runAgentTool('check_document_format', { document: documentAt() }, {
+      validateDocument: () => ({
+        detectedFormat: 'semantic-v4',
+        schemaValid: true,
+        semanticValid: false,
+        issueCount: 1,
+        issues: [semanticIssue],
+        normalizedDocument: documentAt(),
+      }),
+    })
+    expect(result).toMatchObject({ ok: true, toolName: 'check_document_format', issueCount: 0 })
+
+    const malformed = await runAgentTool('check_document_format', { document: { ...documentAt(), wires: [] } }, { validateDocument: () => validReport(documentAt()) })
+    expect(malformed).toMatchObject({ ok: false, toolName: 'check_document_format' })
+    expect(malformed.issues.map((issue) => issue.code)).toContain('format.unknown_field')
+  })
+
+  it('create_blueprint_candidate gates storage on hard format and uses injected callback after a pass', async () => {
+    const createBlueprintCandidate = vi.fn(async (candidate: AgentBlueprintCandidate) => {
+      void candidate
+      return { id: 'bp-1' }
+    })
+    const invalid = await runAgentTool(
+      'create_blueprint_candidate',
+      { candidate: { title: 'C', summary: 'S', rationale: 'R', tradeoffs: [], document: { ...documentAt(), schemaVersion: '3.0.0' }, issues: [] } },
+      { validateDocument: () => validReport(documentAt()), createBlueprintCandidate },
+    )
+    expect(invalid.ok).toBe(false)
+    expect(createBlueprintCandidate).not.toHaveBeenCalled()
+
+    const candidate: AgentBlueprintCandidate = { title: 'C', summary: 'S', rationale: 'R', tradeoffs: [], document: documentAt(300, 0), issues: [] }
+    const created = await runAgentTool('create_blueprint_candidate', { candidate }, {
+      validateDocument: () => validReport(candidate.document),
+      createBlueprintCandidate,
+    })
+    expect(created).toMatchObject({ ok: true, toolName: 'create_blueprint_candidate', data: { created: true, result: { id: 'bp-1' } } })
+    expect(createBlueprintCandidate).toHaveBeenCalledTimes(1)
+    expect(createBlueprintCandidate.mock.calls[0]![0]).toEqual(candidate)
   })
 
   it('check_blueprint_candidate combines validation and layout and does not mutate candidate', async () => {
@@ -54,6 +107,15 @@ describe('agentTools', () => {
     const result = await runAgentTool('check_blueprint_candidate', { candidate }, { validateDocument: () => validReport(candidate.document) })
     expect(candidate).toEqual(before)
     expect(result.ok).toBe(false)
+    expect(result.issues[0]).toMatchObject({
+      code: 'layout.device.overlap',
+      details: {
+        leftDeviceId: 'a',
+        rightDeviceId: 'b',
+        overlapWidth: 100,
+        overlapHeight: 100,
+      },
+    })
     const data = result.data as { selfCheck: { candidates: Array<{ title?: string; validation: { ok: boolean }; layout: { ok: boolean; issueCount: number } }> } }
     expect(data.selfCheck.candidates[0]).toMatchObject({ title: 'C', validation: { ok: true }, layout: { ok: false, issueCount: 1 } })
   })

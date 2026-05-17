@@ -10,6 +10,8 @@ interface KonvaMockProps {
   children?: ReactNode
   text?: ReactNode
   draggable?: boolean
+  width?: number
+  height?: number
   onMouseDown?: (event: { evt: MouseEvent; target: { getType: () => string } }) => void
   onMouseMove?: (event: { evt: MouseEvent; target: { getType: () => string } }) => void
   onMouseUp?: (event: { evt: MouseEvent; target: { getType: () => string } }) => void
@@ -31,11 +33,15 @@ vi.mock('react-konva', async () => {
     onMouseLeave,
     onClick,
     onWheel,
+    width,
+    height,
   }: KonvaMockProps) =>
     React.createElement(
       tag,
       {
         'data-konva-node': tag,
+        'data-width': width === undefined ? undefined : String(width),
+        'data-height': height === undefined ? undefined : String(height),
         'data-draggable': draggable === undefined ? undefined : String(draggable),
         onMouseDown: onMouseDown ? (event: React.MouseEvent<HTMLElement>) => onMouseDown({ evt: event.nativeEvent, target }) : undefined,
         onMouseMove: onMouseMove ? (event: React.MouseEvent<HTMLElement>) => onMouseMove({ evt: event.nativeEvent, target }) : undefined,
@@ -60,6 +66,8 @@ vi.mock('react-konva', async () => {
   }
 })
 
+let resizeObserverRect = { width: 800, height: 480 }
+
 class ResizeObserverMock implements ResizeObserver {
   private callback: ResizeObserverCallback
 
@@ -68,11 +76,12 @@ class ResizeObserverMock implements ResizeObserver {
   }
 
   observe(target: Element) {
+    const { width, height } = resizeObserverRect
     this.callback(
       [
         {
           target,
-          contentRect: { width: 800, height: 480, x: 0, y: 0, top: 0, right: 800, bottom: 480, left: 0, toJSON: () => ({}) },
+          contentRect: { width, height, x: 0, y: 0, top: 0, right: width, bottom: height, left: 0, toJSON: () => ({}) },
         } as ResizeObserverEntry,
       ],
       this,
@@ -130,6 +139,7 @@ afterEach(() => {
   mountedContainer?.remove()
   mountedRoot = null
   mountedContainer = null
+  resizeObserverRect = { width: 800, height: 480 }
   vi.unstubAllGlobals()
 })
 
@@ -164,5 +174,25 @@ describe('BlueprintPreviewCanvas renderer integration', () => {
     })
 
     await expect(hashDocument(mainDocument)).resolves.toBe(beforeHash)
+  })
+
+  it('ignores hidden-tab zero-size resize events so Konva never receives a zero-size Stage', async () => {
+    resizeObserverRect = { width: 0, height: 0 }
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+    const { BlueprintPreviewCanvas } = await import('./BlueprintPreviewCanvas')
+    const blueprintDocument = createDocument({ document: { id: 'blueprint-doc', title: 'Hidden preview candidate' } })
+
+    mountedContainer = window.document.createElement('div')
+    window.document.body.appendChild(mountedContainer)
+    mountedRoot = createRoot(mountedContainer)
+
+    await act(async () => {
+      mountedRoot?.render(<BlueprintPreviewCanvas document={blueprintDocument} locale="en-US" theme="dark" />)
+    })
+
+    const stage = window.document.querySelector<HTMLElement>('[data-konva-node="section"]')
+    expect(stage).toBeInstanceOf(HTMLElement)
+    expect(stage?.dataset.width).toBe('1200')
+    expect(stage?.dataset.height).toBe('760')
   })
 })

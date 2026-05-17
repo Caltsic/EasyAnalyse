@@ -1,6 +1,7 @@
 use std::fs::{self, OpenOptions};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "linux")]
 use std::process::{Command, Stdio};
 
 use easyanalyse_core::{
@@ -144,6 +145,7 @@ enum NativeKeychainCommand {
     KeyringCrate,
 }
 
+#[cfg(target_os = "linux")]
 fn command_exists(binary: &str) -> bool {
     Command::new(binary)
         .arg("--version")
@@ -159,12 +161,12 @@ fn native_keychain_command() -> Option<NativeKeychainCommand> {
         if command_exists("secret-tool") {
             return Some(NativeKeychainCommand::SecretTool);
         }
+        return None;
     }
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
         return Some(NativeKeychainCommand::KeyringCrate);
     }
-    None
 }
 
 fn native_secret_save(secret_ref: &str, value: &str) -> Result<(), String> {
@@ -519,8 +521,9 @@ mod tests {
     use super::{
         decode_json_text, get_blueprint_sidecar_path, load_blueprint_workspace_from_path,
         save_blueprint_workspace_to_path, secret_store_status_for_native_availability,
-        write_secret_map_to_path,
     };
+    #[cfg(unix)]
+    use super::write_secret_map_to_path;
     use serde_json::json;
     use std::fs;
     use std::path::PathBuf;

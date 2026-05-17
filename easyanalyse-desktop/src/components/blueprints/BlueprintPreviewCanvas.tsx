@@ -2,6 +2,7 @@ import { CircuitCanvasRenderer } from '../canvas/CircuitCanvasRenderer'
 import type { KeyboardEvent } from 'react'
 import type { DocumentFile, Locale } from '../../types/document'
 import type { ThemeMode } from '../../lib/theme'
+import { translate } from '../../lib/i18n'
 
 export interface BlueprintPreviewCanvasProps {
   document: DocumentFile
@@ -38,7 +39,7 @@ export function BlueprintPreviewCanvas({
   return (
     <div
       className={className}
-      aria-label="Blueprint preview canvas"
+      aria-label={translate(locale, 'blueprintPreviewCanvas')}
       role="region"
       tabIndex={0}
       onKeyDownCapture={handlePreviewKeyDownCapture}

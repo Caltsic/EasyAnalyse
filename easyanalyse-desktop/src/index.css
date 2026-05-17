@@ -178,3 +178,70 @@ strong {
   color: var(--muted);
   background: var(--bg);
 }
+
+.app-error-boundary {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.app-error-boundary--compact {
+  min-height: 220px;
+  place-items: stretch;
+  padding: 0;
+  background: transparent;
+}
+
+.app-error-boundary__content {
+  width: min(720px, 100%);
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--danger) 36%, var(--border));
+  border-radius: 8px;
+  background: var(--panel-solid);
+  box-shadow: var(--shadow);
+}
+
+.app-error-boundary--compact .app-error-boundary__content {
+  width: 100%;
+  min-height: 220px;
+  align-content: start;
+  box-shadow: none;
+}
+
+.app-error-boundary__content h2 {
+  color: var(--danger);
+}
+
+.app-error-boundary__message,
+.app-error-boundary__details pre {
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-radius: 6px;
+  padding: 10px;
+  background: var(--danger-soft);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+
+.app-error-boundary__details {
+  color: var(--muted);
+}
+
+.app-error-boundary__details summary {
+  cursor: pointer;
+}
+
+.app-error-boundary__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

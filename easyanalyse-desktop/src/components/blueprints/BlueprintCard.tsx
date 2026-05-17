@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { getBlueprintRuntimeState } from '../../lib/blueprintWorkspace'
+import type { TranslationKey } from '../../lib/i18n'
 import type { BlueprintRecord } from '../../types/blueprint'
 
 interface BlueprintCardProps {
@@ -13,6 +14,7 @@ interface BlueprintCardProps {
   onApply: () => void
   onArchive: () => void
   onDelete: () => void
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string
 }
 
 function countWarnings(record: BlueprintRecord) {
@@ -21,6 +23,24 @@ function countWarnings(record: BlueprintRecord) {
 
 function formatAppliedAt(value: string) {
   return value.slice(0, 10)
+}
+
+function formatLifecycleStatus(status: BlueprintRecord['lifecycleStatus'], t: BlueprintCardProps['t']) {
+  if (status === 'active') return t('active')
+  if (status === 'archived') return t('archived')
+  return t('deleted')
+}
+
+function formatValidationState(state: BlueprintRecord['validationState'], t: BlueprintCardProps['t']) {
+  if (state === 'valid') return t('valid')
+  if (state === 'invalid') return t('invalid')
+  return t('unknown')
+}
+
+function formatSource(source: BlueprintRecord['source'], t: BlueprintCardProps['t']) {
+  if (source === 'agent') return t('agentSource')
+  if (source === 'manual_snapshot') return t('manualSnapshot')
+  return source
 }
 
 export function BlueprintCard({
@@ -34,6 +54,7 @@ export function BlueprintCard({
   onApply,
   onArchive,
   onDelete,
+  t,
 }: BlueprintCardProps) {
   const runtime = useMemo(
     () => (currentMainHash ? getBlueprintRuntimeState(record, currentMainHash) : null),
@@ -56,46 +77,46 @@ export function BlueprintCard({
           {record.description && <p>{record.description}</p>}
         </div>
         <span className={`blueprint-badge blueprint-badge--${record.lifecycleStatus}`}>
-          {record.lifecycleStatus}
+          {formatLifecycleStatus(record.lifecycleStatus, t)}
         </span>
       </div>
 
-      <div className="blueprint-card__meta" aria-label="Blueprint status">
-        <span>Validation: {record.validationState}</span>
-        <span>Source: {record.source}</span>
-        <span>Issues: {issueCount}</span>
-        <span>Warnings: {warningCount}</span>
+      <div className="blueprint-card__meta" aria-label={t('blueprintStatus')}>
+        <span>{t('validationStateLabel')}: {formatValidationState(record.validationState, t)}</span>
+        <span>{t('sourceLabel')}: {formatSource(record.source, t)}</span>
+        <span>{t('issuesLabel')}: {issueCount}</span>
+        <span>{t('warningsLabel')}: {warningCount}</span>
       </div>
 
       <div className="blueprint-card__runtime">
-        {runtime?.isCurrentMainDocument && <span>Current main document</span>}
-        {runtime?.hasBaseHashMismatch && <span>Base hash differs</span>}
-        {!currentMainHash && <span>Current main hash pending</span>}
-        {record.appliedInfo && <span>Applied {formatAppliedAt(record.appliedInfo.appliedAt)}</span>}
+        {runtime?.isCurrentMainDocument && <span>{t('currentMainDocument')}</span>}
+        {runtime?.hasBaseHashMismatch && <span>{t('baseHashDiffers')}</span>}
+        {!currentMainHash && <span>{t('currentMainHashPending')}</span>}
+        {record.appliedInfo && <span>{t('appliedAt', { date: formatAppliedAt(record.appliedInfo.appliedAt) })}</span>}
       </div>
 
       <div className="blueprint-card__hashes">
-        <span title={record.documentHash}>Document hash: {record.documentHash.slice(0, 12)}</span>
+        <span title={record.documentHash}>{t('documentHash', { hash: record.documentHash.slice(0, 12) })}</span>
         {record.baseMainDocumentHash && (
-          <span title={record.baseMainDocumentHash}>Base hash: {record.baseMainDocumentHash.slice(0, 12)}</span>
+          <span title={record.baseMainDocumentHash}>{t('baseHash', { hash: record.baseMainDocumentHash.slice(0, 12) })}</span>
         )}
       </div>
 
       <div className="blueprint-card__actions">
         <button className="ghost-button" type="button" onClick={onSelect} disabled={actionsDisabled || isDeleted}>
-          Select
+          {t('select')}
         </button>
         <button className="ghost-button" type="button" onClick={onValidate} disabled={actionsDisabled || validating || isDeleted}>
-          {validating ? 'Validating' : 'Validate'}
+          {validating ? t('validating') : t('validate')}
         </button>
         <button className="ghost-button" type="button" onClick={onApply} disabled={actionsDisabled || isDeleted}>
-          Apply
+          {t('apply')}
         </button>
         <button className="ghost-button" type="button" onClick={onArchive} disabled={actionsDisabled || !canArchive}>
-          Archive
+          {t('archive')}
         </button>
         <button className="ghost-button" type="button" onClick={onDelete} disabled={actionsDisabled || !canDelete}>
-          Delete
+          {t('delete')}
         </button>
       </div>
     </article>

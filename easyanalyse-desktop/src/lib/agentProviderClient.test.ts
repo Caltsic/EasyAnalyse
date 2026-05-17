@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DocumentFile, ValidationReport } from '../types/document'
 import { AGENT_RESPONSE_SEMANTIC_VERSION } from './agentResponse'
-import { buildAgentUserPrompt, runConfiguredAgentProvider } from './agentProviderClient'
+import { buildAgentSystemPrompt, buildAgentUserPrompt, runConfiguredAgentProvider } from './agentProviderClient'
 import type { OpenAiCompatibleFetch } from './openAiCompatibleProvider'
 
 function createDocument(position = { x: 10, y: 10 }): DocumentFile {
@@ -46,6 +46,10 @@ function body(content: unknown) {
 const validationOk: ValidationReport = { detectedFormat: 'semantic-v4', schemaValid: true, semanticValid: true, issueCount: 0, issues: [] }
 
 describe('agentProviderClient M7 self-check and examples', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('injects relevant semantic v4 examples into the user prompt', () => {
     const prompt = buildAgentUserPrompt({ prompt: 'Design an MCU RS485 interface', includeDocumentContext: false })
     expect(prompt).toContain('Reference EasyAnalyse semantic v4 examples')
@@ -53,7 +57,16 @@ describe('agentProviderClient M7 self-check and examples', () => {
     expect(prompt).not.toMatch(/"wires"|"nodes"|"junction"|"signalId"/)
   })
 
-  it('runs post-provider self-check and asks the provider to repair overlapping candidates', async () => {
+  it('system prompt explains EasyAnalyse connectivity and hard-format/advisory tool boundary', () => {
+    const prompt = buildAgentSystemPrompt()
+    expect(prompt).toContain('Connectivity is defined only by exact terminal.label equality')
+    expect(prompt).toContain('check_blueprint_format is the hard format gate')
+    expect(prompt).toContain('semantic/layout issues are hints, not a requirement to reach 0 issues')
+    expect(prompt).toContain('view.networkLines are optional visual rails')
+    expect(prompt).toContain('layout.network-line.device-overlap')
+  })
+
+  it('runs post-provider self-check without repairing advisory-only layout candidates', async () => {
     const overlapping = createDocument({ x: 10, y: 10 })
     const repaired = createDocument({ x: 10, y: 10 })
     repaired.view.devices = {
@@ -64,11 +77,10 @@ describe('agentProviderClient M7 self-check and examples', () => {
     let callCount = 0
     const fetchMock = vi.fn<OpenAiCompatibleFetch>(async (_url, init) => {
       const requestBody = JSON.parse(init.body)
-      if (callCount === 1) {
-        expect(JSON.stringify(requestBody.messages)).toContain('Machine-readable self-check reports')
-      }
+      expect(JSON.stringify(requestBody.messages)).not.toContain('Machine-readable self-check reports')
       return new Response(JSON.stringify(body(callCount++ === 0 ? responseFor(overlapping) : responseFor(repaired))), { status: 200 })
     })
+    const progress = vi.fn()
 
     const result = await runConfiguredAgentProvider({
       provider: { id: 'deepseek', name: 'DeepSeek', kind: 'deepseek', baseUrl: 'https://api.deepseek.test/v1', models: ['deepseek-chat'], defaultModel: 'deepseek-chat' },
@@ -77,14 +89,113 @@ describe('agentProviderClient M7 self-check and examples', () => {
       prompt: 'Create an RC filter',
       fetchImpl: fetchMock,
       validateDocument: () => validationOk,
+      progress,
       selfCheck: { enabled: true, repairOnIssues: true, maxRepairAttempts: 1 },
     })
 
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(result.response.kind).toBe('blueprints')
     if (result.response.kind !== 'blueprints') throw new Error('expected blueprints')
-    expect(result.response.blueprints[0].selfCheck?.ok).toBe(true)
-    expect(result.repairTrace).toEqual([expect.objectContaining({ attempt: 1, ok: true })])
+    expect(result.response.blueprints[0].selfCheck?.ok).toBe(false)
+    expect(result.response.blueprints[0].toolIssues?.map((issue) => issue.code)).toContain('layout.device.overlap')
+    expect(result.repairTrace).toBeUndefined()
+    expect(result.toolTrace?.some((entry) => entry.toolName === 'check_blueprint_candidate')).toBe(true)
+    expect(progress.mock.calls.map(([event]) => event.message)).toEqual(expect.arrayContaining([
+      'Built provider prompt.',
+      'Provider context budget check passed.',
+      'Running local blueprint self-check.',
+      'Agent provider run completed.',
+    ]))
+    expect(progress.mock.calls.map(([event]) => event.message)).not.toContain('Requesting self-check repair attempt 1.')
+  })
+
+  it('does not impose a default timeout on long provider runs', async () => {
+    vi.useFakeTimers()
+    const document = createDocument({ x: 240, y: 10 })
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(
+      async () =>
+        new Promise((resolve) => {
+          setTimeout(() => {
+            resolve(new Response(JSON.stringify(body(responseFor(document))), { status: 200 }))
+          }, 300_001)
+        }),
+    )
+
+    const run = runConfiguredAgentProvider({
+      provider: { id: 'deepseek', name: 'DeepSeek', kind: 'deepseek', baseUrl: 'https://api.deepseek.test/v1', models: ['deepseek-chat'], defaultModel: 'deepseek-chat' },
+      modelId: 'deepseek-chat',
+      apiKey: ['sk', 'unit', 'key'].join('-'),
+      prompt: 'Create a long-running blueprint',
+      fetchImpl: fetchMock,
+      selfCheck: { enabled: false, repairOnIssues: false, maxRepairAttempts: 0 },
+    })
+    const observed = vi.fn()
+    void run.then(
+      () => observed('resolved'),
+      (error: unknown) => observed(error),
+    )
+
+    await vi.advanceTimersByTimeAsync(300_000)
+    await Promise.resolve()
+    expect(observed).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(run).resolves.toMatchObject({ response: expect.objectContaining({ kind: 'blueprints' }) })
+  })
+
+  it('retains malformed blueprint candidates without crashing local self-check sorting', async () => {
+    const malformedDocument = {
+      schemaVersion: '4.0.0',
+      document: { id: 'malformed-agent-doc', title: 'Malformed agent document' },
+      devices: [
+        {
+          id: 'r1',
+          kind: 'resistor',
+          terminals: [
+            { id: 'r1-a', label: 'VIN', direction: 'input' },
+            { id: 'r1-b', label: 'VOUT', direction: 'output' },
+          ],
+        },
+        {
+          id: 'led1',
+          name: 'LED1',
+          kind: 'led',
+          terminals: [
+            { id: 'led1-a', name: 'A', label: 'VOUT', direction: 'input' },
+            { id: 'led1-k', label: 'GND', direction: 'output' },
+          ],
+        },
+      ],
+      view: {
+        canvas: { units: 'px' },
+        devices: {
+          r1: { position: { x: 10, y: 10 }, shape: 'rectangle' },
+          led1: { position: { x: 260, y: 10 }, shape: 'rectangle' },
+        },
+        networkLines: {
+          vin: { position: { x: 0, y: 10 } },
+        },
+      },
+    } as unknown as DocumentFile
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () =>
+      new Response(JSON.stringify(body(responseFor(malformedDocument))), { status: 200 }),
+    )
+
+    const result = await runConfiguredAgentProvider({
+      provider: { id: 'deepseek', name: 'DeepSeek', kind: 'deepseek', baseUrl: 'https://api.deepseek.test/v1', models: ['deepseek-chat'], defaultModel: 'deepseek-chat' },
+      modelId: 'deepseek-chat',
+      apiKey: ['sk', 'unit', 'key'].join('-'),
+      prompt: 'Return a malformed candidate',
+      fetchImpl: fetchMock,
+      validateDocument: () => validationOk,
+      selfCheck: { enabled: true, repairOnIssues: false, maxRepairAttempts: 0 },
+    })
+
+    expect(result.response.kind).toBe('blueprints')
+    expect(result.issues.map((issue) => issue.code)).toEqual(expect.arrayContaining([
+      'missing-device-name',
+      'missing-terminal-name',
+    ]))
     expect(result.toolTrace?.some((entry) => entry.toolName === 'check_blueprint_candidate')).toBe(true)
   })
 })

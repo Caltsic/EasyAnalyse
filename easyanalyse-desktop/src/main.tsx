@@ -1,4 +1,5 @@
 import { createRoot } from 'react-dom/client'
+import { AppErrorBoundary, AppErrorFallback } from './components/AppErrorBoundary'
 import { applyTheme, getInitialTheme } from './lib/theme'
 import './index.css'
 
@@ -16,4 +17,22 @@ const appElementPromise = isViewerRoute
   ? import('./components/viewer/MobileViewerApp').then(({ MobileViewerApp }) => <MobileViewerApp />)
   : import('./App').then(({ default: App }) => <App />)
 
-void appElementPromise.then((appElement) => root.render(appElement))
+void appElementPromise
+  .then((appElement) => {
+    root.render(
+      <AppErrorBoundary>
+        {appElement}
+      </AppErrorBoundary>,
+    )
+  })
+  .catch((error: unknown) => {
+    console.error('EasyAnalyse failed to start', error)
+    root.render(
+      <AppErrorFallback
+        title="EasyAnalyse failed to start"
+        description="The application could not load its UI bundle. Reload the app after checking the error details."
+        error={error}
+        onReload={() => window.location.reload()}
+      />,
+    )
+  })

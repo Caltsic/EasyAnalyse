@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, type KeyboardEvent } from 'react'
 import { diffBlueprintDocument, type BlueprintDiffSummary } from '../../lib/blueprintDiff'
+import type { TranslationKey } from '../../lib/i18n'
 import type { BlueprintRecord } from '../../types/blueprint'
 import type { DocumentFile, ValidationIssue, ValidationReport } from '../../types/document'
 
@@ -10,6 +11,7 @@ interface ApplyBlueprintDialogProps {
   onCancel: () => void
   onConfirm: () => void | Promise<void>
   applying?: boolean
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string
 }
 
 function countIssues(report: ValidationReport | undefined, severity: ValidationIssue['severity']): number {
@@ -20,20 +22,34 @@ function hasBaseMismatch(record: BlueprintRecord, currentMainHash: string | null
   return Boolean(record.baseMainDocumentHash && currentMainHash && record.baseMainDocumentHash !== currentMainHash)
 }
 
-function ValidationReportView({ record }: { record: BlueprintRecord }) {
+function formatValidationBoolean(value: boolean | undefined, t: ApplyBlueprintDialogProps['t']) {
+  if (value === undefined) return t('unknown')
+  return value ? t('valid') : t('invalid')
+}
+
+function formatValidationState(state: BlueprintRecord['validationState'], t: ApplyBlueprintDialogProps['t']) {
+  if (state === 'valid') return t('valid')
+  if (state === 'invalid') return t('invalid')
+  return t('unknown')
+}
+
+function ValidationReportView({ record, t }: { record: BlueprintRecord; t: ApplyBlueprintDialogProps['t'] }) {
   const report = record.validationReport
   const errors = countIssues(report, 'error')
   const warnings = countIssues(report, 'warning')
   return (
-    <section className="apply-blueprint-dialog__section" aria-label="Validation report">
-      <h4>Validation report</h4>
+    <section className="apply-blueprint-dialog__section" aria-label={t('validationReport')}>
+      <h4>{t('validationReport')}</h4>
       <p>
-        State: {record.validationState}. Format: {report?.detectedFormat ?? 'unknown'}. Schema:{' '}
-        {report ? (report.schemaValid ? 'valid' : 'invalid') : 'unknown'}. Semantic:{' '}
-        {report ? (report.semanticValid ? 'valid' : 'invalid') : 'unknown'}.
+        {t('validationReportSummary', {
+          state: formatValidationState(record.validationState, t),
+          format: report?.detectedFormat ?? t('unknown'),
+          schema: formatValidationBoolean(report?.schemaValid, t),
+          semantic: formatValidationBoolean(report?.semanticValid, t),
+        })}
       </p>
       <p>
-        Errors: {errors}. Warnings: {warnings}. Issues: {report?.issueCount ?? report?.issues.length ?? 0}.
+        {t('validationIssueSummary', { errors, warnings, issues: report?.issueCount ?? report?.issues.length ?? 0 })}
       </p>
       {report && report.issues.length > 0 && (
         <ul>
@@ -49,7 +65,7 @@ function ValidationReportView({ record }: { record: BlueprintRecord }) {
   )
 }
 
-function DiffList({ title, items }: { title: string; items: string[] }) {
+function DiffList({ title, items, t }: { title: string; items: string[]; t: ApplyBlueprintDialogProps['t'] }) {
   if (items.length === 0) {
     return null
   }
@@ -58,27 +74,49 @@ function DiffList({ title, items }: { title: string; items: string[] }) {
       <strong>{title}</strong>
       <ul>
         {items.slice(0, 8).map((item) => <li key={item}>{item}</li>)}
-        {items.length > 8 && <li>{items.length - 8} more…</li>}
+        {items.length > 8 && <li>{t('moreItems', { count: items.length - 8 })}</li>}
       </ul>
     </div>
   )
 }
 
-function DiffSummaryView({ diff }: { diff: BlueprintDiffSummary }) {
+function buildDiffSummaryLines(diff: BlueprintDiffSummary, t: ApplyBlueprintDialogProps['t']) {
+  const lines = [
+    t('diffDevicesSummary', {
+      added: diff.devices.added.length,
+      removed: diff.devices.removed.length,
+      changed: diff.devices.changed.length,
+    }),
+    t('diffTerminalsSummary', {
+      added: diff.terminals.added.length,
+      removed: diff.terminals.removed.length,
+      changed: diff.terminals.changed.length,
+      labelChanges: diff.terminals.labelChanged.length,
+    }),
+    t('diffLabelsSummary', { changed: diff.labels.changed.length }),
+  ]
+  if (diff.viewChanged) lines.push(t('viewLayoutChanged'))
+  if (diff.documentMetaChanged) lines.push(t('documentMetadataChanged'))
+  if (diff.rawJsonChanged) lines.push(t('rawJsonChanged'))
+  if (!diff.rawJsonChanged) lines.push(t('noDocumentChangesDetected'))
+  return lines
+}
+
+function DiffSummaryView({ diff, t }: { diff: BlueprintDiffSummary; t: ApplyBlueprintDialogProps['t'] }) {
   return (
-    <section className="apply-blueprint-dialog__section" aria-label="Blueprint diff summary">
-      <h4>Diff summary</h4>
+    <section className="apply-blueprint-dialog__section" aria-label={t('blueprintDiffSummary')}>
+      <h4>{t('blueprintDiffSummary')}</h4>
       <ul>
-        {diff.summaryLines.map((line) => <li key={line}>{line}</li>)}
+        {buildDiffSummaryLines(diff, t).map((line) => <li key={line}>{line}</li>)}
       </ul>
-      <DiffList title="Added devices" items={diff.devices.added} />
-      <DiffList title="Removed devices" items={diff.devices.removed} />
-      <DiffList title="Changed devices" items={diff.devices.changed} />
-      <DiffList title="Added terminals" items={diff.terminals.added} />
-      <DiffList title="Removed terminals" items={diff.terminals.removed} />
-      <DiffList title="Changed terminals" items={diff.terminals.changed} />
-      <DiffList title="Terminal label changes" items={diff.terminals.labelChanged} />
-      <DiffList title="Network label changes" items={diff.labels.changed} />
+      <DiffList title={t('addedDevices')} items={diff.devices.added} t={t} />
+      <DiffList title={t('removedDevices')} items={diff.devices.removed} t={t} />
+      <DiffList title={t('changedDevices')} items={diff.devices.changed} t={t} />
+      <DiffList title={t('addedTerminals')} items={diff.terminals.added} t={t} />
+      <DiffList title={t('removedTerminals')} items={diff.terminals.removed} t={t} />
+      <DiffList title={t('changedTerminals')} items={diff.terminals.changed} t={t} />
+      <DiffList title={t('terminalLabelChanges')} items={diff.terminals.labelChanged} t={t} />
+      <DiffList title={t('networkLabelChanges')} items={diff.labels.changed} t={t} />
     </section>
   )
 }
@@ -90,6 +128,7 @@ export function ApplyBlueprintDialog({
   onCancel,
   onConfirm,
   applying = false,
+  t,
 }: ApplyBlueprintDialogProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const diff = useMemo(() => diffBlueprintDocument(mainDocument, record.document), [mainDocument, record.document])
@@ -150,42 +189,37 @@ export function ApplyBlueprintDialog({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="apply-blueprint-dialog__header">
-          <h3 id="apply-blueprint-dialog-title">Apply blueprint</h3>
-          <button type="button" className="ghost-button" onClick={handleCancel} disabled={applying} aria-label="Close apply blueprint dialog">
+          <h3 id="apply-blueprint-dialog-title">{t('applyBlueprint')}</h3>
+          <button type="button" className="ghost-button" onClick={handleCancel} disabled={applying} aria-label={t('closeApplyBlueprintDialog')}>
             ×
           </button>
         </div>
-        <p>
-          You are about to replace the in-memory main document with blueprint “{record.title}”. This does not save the main
-          document or blueprint sidecar to disk.
-        </p>
+        <p>{t('applyBlueprintIntro', { title: record.title })}</p>
         {riskyValidation && (
           <div className="apply-blueprint-dialog__risk" role="alert">
-            <strong>Strong risk warning:</strong> this blueprint is {record.validationState}. Application is allowed, but review the
-            validation report before continuing.
+            <strong>{t('strongRiskWarning')}</strong> {t('strongRiskWarningDetail', { state: formatValidationState(record.validationState, t) })}
           </div>
         )}
         {hasErrors && (
           <div className="apply-blueprint-dialog__risk" role="alert">
-            Validation errors are present; applying is allowed, but a later save to disk may fail.
+            {t('validationErrorsPresent')}
           </div>
         )}
         {baseMismatch && (
           <div className="apply-blueprint-dialog__risk" role="alert">
-            Base main document hash differs from the current main document. Treat this as a whole-document replacement risk;
-            no merge will be attempted.
+            {t('baseHashMismatchWarning')}
           </div>
         )}
-        <ValidationReportView record={record} />
-        <DiffSummaryView diff={diff} />
+        <ValidationReportView record={record} t={t} />
+        <DiffSummaryView diff={diff} t={t} />
         <details className="apply-blueprint-dialog__section">
-          <summary>Raw JSON preview</summary>
+          <summary>{t('rawJsonPreview')}</summary>
           <pre>{JSON.stringify(record.document, null, 2)}</pre>
         </details>
         <div className="apply-blueprint-dialog__actions">
-          <button type="button" className="ghost-button" onClick={handleCancel} disabled={applying} data-modal-initial-focus>Cancel</button>
+          <button type="button" className="ghost-button" onClick={handleCancel} disabled={applying} data-modal-initial-focus>{t('cancel')}</button>
           <button type="button" onClick={() => void onConfirm()} disabled={applying}>
-            {applying ? 'Applying' : 'Confirm apply'}
+            {applying ? t('applying') : t('confirmApply')}
           </button>
         </div>
       </div>

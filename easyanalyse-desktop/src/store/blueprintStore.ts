@@ -15,6 +15,7 @@ import type {
   AgentBlueprintCandidate,
   AgentResponseParseIssue,
 } from '../types/agent'
+import type { AgentThreadWorkspace } from '../types/agentThread'
 import type {
   BlueprintAppliedInfo,
   BlueprintMainDocumentRef,
@@ -31,6 +32,7 @@ export interface BlueprintState {
   loadError: string | null
   saveError: string | null
   validationError: string | null
+  setWorkspaceAgentThreads(agentThreads: AgentThreadWorkspace): void
   addAgentBlueprintCandidates(
     candidates: AgentBlueprintCandidate[],
     context: { mainDocument: DocumentFile; filePath: string | null; issues?: AgentResponseParseIssue[] },
@@ -111,6 +113,20 @@ function updateBlueprint(
   }
 }
 
+function withWorkspaceAgentThreads(
+  workspace: BlueprintWorkspaceFile,
+  agentThreads: AgentThreadWorkspace,
+): BlueprintWorkspaceFile {
+  return {
+    ...workspace,
+    updatedAt: new Date().toISOString(),
+    extensions: {
+      ...(workspace.extensions ?? {}),
+      agentThreads,
+    },
+  }
+}
+
 function isReportValid(report: ValidationReport): boolean {
   const snakeReport = report as ValidationReport & { schema_valid?: boolean; semantic_valid?: boolean }
   const schemaValid = snakeReport.schemaValid ?? snakeReport.schema_valid
@@ -131,6 +147,19 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
   loadError: null,
   saveError: null,
   validationError: null,
+
+  setWorkspaceAgentThreads: (agentThreads) => {
+    set((state) => {
+      if (state.workspace === null || state.workspace.extensions?.agentThreads === agentThreads) {
+        return {}
+      }
+
+      return {
+        workspace: withWorkspaceAgentThreads(state.workspace, agentThreads),
+        dirty: true,
+      }
+    })
+  },
 
   addAgentBlueprintCandidates: async (candidates, context) => {
     const insertionVersion = ++candidateInsertionVersion
@@ -173,21 +202,24 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
       const currentWorkspace = state.workspace
       const workspace = currentWorkspace ?? createWorkspaceForDocument(context.filePath, context.mainDocument, mainHash)
       const mainDocument = workspace.mainDocument
-      const pathMatches = (mainDocument?.path ?? null) === context.filePath
-      const idMatches = mainDocument?.documentId === context.mainDocument.document.id
-      const hashMatches = mainDocument?.hash === mainHash
+      const currentDocumentId = mainDocument?.documentId
+      const nextDocumentId = context.mainDocument.document.id
+      const definitelyDifferentDocument = currentWorkspace !== null
+        && currentDocumentId !== undefined
+        && currentDocumentId !== nextDocumentId
 
-      if (currentWorkspace !== null && (!pathMatches || !idMatches || !hashMatches)) {
+      if (definitelyDifferentDocument) {
         inserted = []
         return {}
       }
 
+      const reboundWorkspace = withUpdatedMainDocumentRef(workspace, context.filePath, context.mainDocument, mainHash)
       inserted = records
       return {
         workspace: {
-          ...workspace,
+          ...reboundWorkspace,
           updatedAt: new Date().toISOString(),
-          blueprints: [...workspace.blueprints, ...records],
+          blueprints: [...reboundWorkspace.blueprints, ...records],
         },
         selectedBlueprintId: records.at(-1)?.id ?? state.selectedBlueprintId,
         dirty: records.length > 0 ? true : state.dirty,

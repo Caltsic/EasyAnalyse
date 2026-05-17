@@ -112,6 +112,7 @@ beforeEach(() => {
     document: createDocument(),
     filePath: '/tmp/agent.easyanalyse.json',
     dirty: false,
+    locale: 'en-US',
   })
   useSettingsStore.setState({
     settings: { basic: { locale: 'system' }, appearance: { theme: 'system' }, agent: { providers: [] } },
@@ -163,7 +164,7 @@ describe('AgentPanel', () => {
 
     await enterPromptAndSubmit(host, 'blueprint slow')
     await act(async () => {
-      host.querySelector<HTMLButtonElement>('button[type="button"]')?.click()
+      host.querySelector<HTMLButtonElement>('button[aria-label="Cancel run"]')?.click()
     })
     pending.resolve(parseAgentResponse(createMockAgentResponse({ prompt: 'blueprint slow', scenario: 'blueprints' })))
     await act(async () => {
@@ -267,6 +268,48 @@ describe('AgentPanel', () => {
     expect(host.textContent).toContain('2 blueprint candidates stored')
   })
 
+  it('shows configured provider activity while a response is still pending', async () => {
+    const provider = deepseekProvider()
+    const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })
+    await secretStore.saveSecret({ providerId: provider.id, value: 'test-deepseek-key' })
+    const parsed = parseAgentResponse(createMockAgentResponse({ prompt: 'deepseek slow blueprint', scenario: 'blueprints' }))
+    const pending = deferred<AgentResponseParseResult>()
+    providerMock.runConfiguredAgentProvider.mockImplementation((input) => {
+      input.progress?.({ phase: 'request', message: 'Sending provider request 1 with tool access.' })
+      input.progress?.({ phase: 'response', message: 'Provider returned reasoning metadata (14228 characters) without final content yet.' })
+      return pending.promise
+    })
+    useSettingsStore.setState({
+      settings: {
+        basic: { locale: 'system' },
+        appearance: { theme: 'system' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+      },
+      loaded: true,
+      warnings: [],
+    })
+    const host = await renderPanel({ secretStore })
+
+    await enterPromptAndSubmit(host, 'deepseek slow blueprint')
+
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain('Provider returned reasoning metadata'))
+    })
+    expect(host.textContent).toContain('Running')
+    expect(host.textContent).toContain('Sending provider request 1 with tool access')
+    const toolDetails = Array.from(host.querySelectorAll<HTMLDetailsElement>('details.agent-message__tool-details'))
+    expect(toolDetails.length).toBeGreaterThan(0)
+    expect(toolDetails.every((details) => !details.open)).toBe(true)
+
+    await act(async () => {
+      pending.resolve(parsed)
+      await pending.promise
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(useBlueprintStore.getState().workspace?.blueprints).toHaveLength(2))
+    })
+  })
+
   it('does not call a configured provider when its API key is missing', async () => {
     const provider = deepseekProvider({ apiKeyRef: undefined })
     useSettingsStore.setState({
@@ -329,7 +372,7 @@ describe('AgentPanel', () => {
     await vi.waitFor(() => expect(capturedSignal).toBeInstanceOf(AbortSignal))
     const signal = capturedSignal as AbortSignal
     await act(async () => {
-      host.querySelector<HTMLButtonElement>('button[type="button"]')?.click()
+      host.querySelector<HTMLButtonElement>('button[aria-label="Cancel run"]')?.click()
     })
     expect(signal.aborted).toBe(true)
     pending.resolve(parseAgentResponse(createMockAgentResponse({ prompt: 'slow real provider', scenario: 'blueprints' })))

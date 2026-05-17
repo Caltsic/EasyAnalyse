@@ -38,9 +38,9 @@ export const DEEPSEEK_PROVIDER_PRESET: ProviderPreset = freezeProviderPreset({
   id: 'deepseek',
   name: 'DeepSeek',
   kind: 'deepseek',
-  baseUrl: 'https://api.deepseek.com/v1',
-  models: ['deepseek-chat', 'deepseek-reasoner'],
-  defaultModel: 'deepseek-chat',
+  baseUrl: 'https://api.deepseek.com',
+  models: ['deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-chat', 'deepseek-reasoner'],
+  defaultModel: 'deepseek-v4-flash',
 })
 
 export const PROVIDER_PRESETS: readonly ProviderPreset[] = Object.freeze([

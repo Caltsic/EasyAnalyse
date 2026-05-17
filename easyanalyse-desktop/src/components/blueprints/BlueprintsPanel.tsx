@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { hashDocument } from '../../lib/documentHash'
+import { translate } from '../../lib/i18n'
 import { useBlueprintStore } from '../../store/blueprintStore'
 import { useEditorStore } from '../../store/editorStore'
 import type { BlueprintRecord } from '../../types/blueprint'
+import { AppErrorBoundary } from '../AppErrorBoundary'
 import { ApplyBlueprintDialog } from './ApplyBlueprintDialog'
 import { BlueprintCard } from './BlueprintCard'
 import { BlueprintPreviewCanvas } from './BlueprintPreviewCanvas'
@@ -68,6 +70,8 @@ export function BlueprintsPanel() {
   )
   const applyModalOpen = pendingApplyRecord !== null
   const blueprintActionsDisabled = topActionBusy || applyModalOpen || applyBusy
+  const t = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) =>
+    translate(locale, key, params)
 
   const runTopAction = async (message: string, action: () => Promise<void>) => {
     if (activeTopActionTokenRef.current !== null) {
@@ -92,22 +96,22 @@ export function BlueprintsPanel() {
   }
 
   const handleCreateSnapshot = async () => {
-    await runTopAction('Creating snapshot', async () => {
+    await runTopAction(t('creatingSnapshot'), async () => {
       await createSnapshotFromDocument(document, {
         title: document.document.title,
-        description: editorDirty ? 'Snapshot from unsaved main document state' : undefined,
+        description: editorDirty ? t('snapshotFromUnsavedMain') : undefined,
       })
     })
   }
 
   const handleSave = async () => {
-    await runTopAction('Saving workspace', async () => {
+    await runTopAction(t('savingWorkspace'), async () => {
       await saveWorkspace()
     })
   }
 
   const handleReload = async () => {
-    await runTopAction('Reloading workspace', async () => {
+    await runTopAction(t('reloadingWorkspace'), async () => {
       await loadForMainDocument(filePath, document)
     })
   }
@@ -160,44 +164,44 @@ export function BlueprintsPanel() {
   }
 
   return (
-    <section className="blueprints-panel" aria-label="Blueprints">
+    <section className="blueprints-panel" aria-label={t('blueprints')}>
       <div className="blueprints-panel__header">
         <div>
-          <h2>Blueprints</h2>
-          <p>{dirty ? 'Workspace dirty' : 'Workspace clean'}</p>
+          <h2>{t('blueprints')}</h2>
+          <p>{dirty ? t('workspaceDirty') : t('workspaceClean')}</p>
         </div>
         <div className="blueprints-panel__actions">
           <button type="button" onClick={() => void handleCreateSnapshot()} disabled={topActionBusy}>
-            Create snapshot
+            {t('createSnapshot')}
           </button>
           <button className="ghost-button" type="button" onClick={() => void handleSave()} disabled={topActionBusy}>
-            Save workspace
+            {t('saveWorkspace')}
           </button>
           <button className="ghost-button" type="button" onClick={() => void handleReload()} disabled={topActionBusy}>
-            Reload
+            {t('reload')}
           </button>
         </div>
       </div>
 
-      <div className="blueprints-panel__status" aria-label="Blueprint workspace status">
-        <span>{sidecarPath ? `Sidecar: ${sidecarPath}` : 'Sidecar: not available until the main document is saved'}</span>
-        <span>{sidecarPath ? 'Persistent sidecar workspace' : 'In-memory workspace'}</span>
-        {editorDirty && <span>Main document has unsaved changes. Snapshots capture the current unsaved editor state.</span>}
-        {!sidecarPath && <span>Save the main document to enable a persistent sidecar path.</span>}
+      <div className="blueprints-panel__status" aria-label={t('blueprintWorkspaceStatus')}>
+        <span>{sidecarPath ? t('sidecarPath', { path: sidecarPath }) : t('sidecarUnavailable')}</span>
+        <span>{sidecarPath ? t('persistentSidecarWorkspace') : t('inMemoryWorkspace')}</span>
+        {editorDirty && <span>{t('mainDocumentUnsaved')}</span>}
+        {!sidecarPath && <span>{t('saveMainForSidecar')}</span>}
         {busyMessage && <span>{busyMessage}</span>}
-        {loadError && <span>Load error: {loadError}</span>}
-        {saveError && <span>Save error: {saveError}</span>}
-        {validationError && <span>Validation error: {validationError}</span>}
-        {actionError && <span>Action error: {actionError}</span>}
+        {loadError && <span>{t('loadError', { message: loadError })}</span>}
+        {saveError && <span>{t('saveError', { message: saveError })}</span>}
+        {validationError && <span>{t('validationError', { message: validationError })}</span>}
+        {actionError && <span>{t('actionError', { message: actionError })}</span>}
       </div>
 
       {blueprints.length === 0 ? (
         <div className="blueprints-panel__empty">
-          <h3>No blueprints yet</h3>
-          <p>Create a snapshot to keep a sidecar blueprint for this main document.</p>
+          <h3>{t('noBlueprintsYet')}</h3>
+          <p>{t('noBlueprintsHint')}</p>
         </div>
       ) : (
-        <div className="blueprints-panel__list" aria-label="Blueprint list">
+        <div className="blueprints-panel__list" aria-label={t('blueprintList')}>
           {blueprints.map((record) => (
             <BlueprintCard
               key={record.id}
@@ -206,6 +210,7 @@ export function BlueprintsPanel() {
               selected={record.id === selectedBlueprintId}
               actionsDisabled={blueprintActionsDisabled}
               validating={validatingBlueprintIds.has(record.id)}
+              t={t}
               onSelect={() => {
                 if (!blueprintActionsDisabled) {
                   selectBlueprint(record.id)
@@ -232,16 +237,26 @@ export function BlueprintsPanel() {
         </div>
       )}
       {selectedBlueprint && selectedBlueprint.lifecycleStatus !== 'deleted' && (
-        <section className="blueprints-panel__preview" aria-label="Selected blueprint preview">
+        <section className="blueprints-panel__preview" aria-label={t('selectedBlueprintPreview')}>
           <div className="blueprints-panel__preview-header">
-            <h3>Preview: {selectedBlueprint.title}</h3>
-            <p>Read-only blueprint preview. It does not mutate the main document.</p>
+            <h3>{t('previewTitle', { title: selectedBlueprint.title })}</h3>
+            <p>{t('previewHint')}</p>
           </div>
-          <BlueprintPreviewCanvas
-            document={selectedBlueprint.document}
-            locale={locale}
-            className="blueprints-panel__preview-canvas"
-          />
+          <AppErrorBoundary
+            compact
+            resetKey={`${selectedBlueprint.id}:${selectedBlueprint.documentHash}`}
+            title={t('blueprintPreviewFailed')}
+            description={t('blueprintPreviewFailedDescription')}
+            detailsLabel={t('errorDetails')}
+            tryAgainLabel={t('tryAgain')}
+            reloadLabel={t('reload')}
+          >
+            <BlueprintPreviewCanvas
+              document={selectedBlueprint.document}
+              locale={locale}
+              className="blueprints-panel__preview-canvas"
+            />
+          </AppErrorBoundary>
         </section>
       )}
       {pendingApplyRecord && (
@@ -250,6 +265,7 @@ export function BlueprintsPanel() {
           mainDocument={document}
           currentMainHash={currentMainHash}
           applying={applyBusy}
+          t={t}
           onCancel={() => {
             if (!applyBusy) {
               setPendingApplyRecord(null)

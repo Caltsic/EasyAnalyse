@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useEditorStore } from '../../store/editorStore'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -41,6 +42,10 @@ vi.mock('../agent/AgentPanel', async () => {
 let root: Root | null = null
 let container: HTMLDivElement | null = null
 
+beforeEach(() => {
+  useEditorStore.setState({ locale: 'en-US' })
+})
+
 async function renderSidebar() {
   const { RightSidebar } = await import('./RightSidebar')
   container = window.document.createElement('div')
@@ -62,7 +67,7 @@ afterEach(() => {
 })
 
 describe('RightSidebar', () => {
-  it('keeps Inspector, Blueprints, and Agent panels mounted while switching tabs', async () => {
+  it('keeps Inspector, Blueprints, and Agent panels mounted while switching views', async () => {
     const host = await renderSidebar()
 
     expect(host.querySelector('.right-sidebar')).toBeInstanceOf(HTMLElement)
@@ -78,12 +83,13 @@ describe('RightSidebar', () => {
     const blueprintsPanel = host.querySelector<HTMLElement>('#right-sidebar-blueprints')
     const agentPanel = host.querySelector<HTMLElement>('#right-sidebar-agent')
 
-    expect(inspectorTab?.getAttribute('aria-selected')).toBe('true')
+    expect(host.textContent).toContain('AI Chat')
+    expect(inspectorTab?.getAttribute('aria-selected')).toBe('false')
     expect(blueprintsTab?.getAttribute('aria-selected')).toBe('false')
-    expect(agentTab?.getAttribute('aria-selected')).toBe('false')
-    expect(inspectorPanel?.hidden).toBe(false)
+    expect(agentTab?.getAttribute('aria-selected')).toBe('true')
+    expect(inspectorPanel?.hidden).toBe(true)
     expect(blueprintsPanel?.hidden).toBe(true)
-    expect(agentPanel?.hidden).toBe(true)
+    expect(agentPanel?.hidden).toBe(false)
 
     await act(async () => {
       blueprintsTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -97,25 +103,22 @@ describe('RightSidebar', () => {
     expect(agentPanel?.hidden).toBe(true)
 
     await act(async () => {
-      agentTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      inspectorTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(inspectorTab?.getAttribute('aria-selected')).toBe('false')
+    expect(inspectorTab?.getAttribute('aria-selected')).toBe('true')
     expect(blueprintsTab?.getAttribute('aria-selected')).toBe('false')
-    expect(agentTab?.getAttribute('aria-selected')).toBe('true')
-    expect(inspectorPanel?.hidden).toBe(true)
+    expect(agentTab?.getAttribute('aria-selected')).toBe('false')
+    expect(inspectorPanel?.hidden).toBe(false)
     expect(blueprintsPanel?.hidden).toBe(true)
-    expect(agentPanel?.hidden).toBe(false)
+    expect(agentPanel?.hidden).toBe(true)
   })
 
-  it('preserves Agent panel local input state when switching tabs', async () => {
+  it('preserves Agent panel local input state when switching views', async () => {
     const host = await renderSidebar()
     const inspectorTab = host.querySelector<HTMLButtonElement>('[role="tab"][aria-controls="right-sidebar-inspector"]')
     const agentTab = host.querySelector<HTMLButtonElement>('[role="tab"][aria-controls="right-sidebar-agent"]')
 
-    await act(async () => {
-      agentTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
     const input = host.querySelector<HTMLInputElement>('#mock-agent-input')
     expect(input).toBeInstanceOf(HTMLInputElement)
     await act(async () => {

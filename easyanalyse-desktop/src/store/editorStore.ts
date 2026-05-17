@@ -322,9 +322,23 @@ function compareTerminalPlacement(left: TerminalDefinition, right: TerminalDefin
   const rightOrder = right.order ?? Number.MAX_SAFE_INTEGER
   return (
     leftOrder - rightOrder ||
-    left.name.localeCompare(right.name) ||
-    left.id.localeCompare(right.id)
+    compareText(left.name, right.name) ||
+    compareText(left.id, right.id)
   )
+}
+
+function safeText(value: unknown) {
+  if (typeof value === 'string') {
+    return value
+  }
+  if (value === null || value === undefined) {
+    return ''
+  }
+  return String(value)
+}
+
+function compareText(left: unknown, right: unknown) {
+  return safeText(left).localeCompare(safeText(right))
 }
 
 function nextNetworkLineView(document: DocumentFile, label: string): NetworkLineViewDefinition {

@@ -139,6 +139,7 @@ export interface ValidationIssue {
   message: string
   entityId?: string | null
   path?: string | null
+  details?: unknown
 }
 
 export interface ValidationReport {

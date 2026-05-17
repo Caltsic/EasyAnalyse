@@ -164,7 +164,7 @@ export function deriveCircuitInsights(
   const deviceLayouts = resolveDeviceLayouts(document)
   const devices = document.devices
     .map((device) => buildDerivedDevice(device, document, deviceLayouts))
-    .sort((left, right) => left.title.localeCompare(right.title) || left.id.localeCompare(right.id))
+    .sort((left, right) => compareText(left.title, right.title) || compareText(left.id, right.id))
   const deviceById = Object.fromEntries(devices.map((device) => [device.id, device]))
   const terminalById = Object.fromEntries(
     devices.flatMap((device) => device.terminals.map((terminal) => [terminal.id, terminal] as const)),
@@ -183,7 +183,7 @@ export function deriveCircuitInsights(
       }, {}),
     ).map(([label, items]) => [
       label,
-      items.sort((left, right) => left.id.localeCompare(right.id)),
+      items.sort((left, right) => compareText(left.id, right.id)),
     ]),
   )
   const connectionGroups = deriveConnectionGroups(devices)
@@ -240,7 +240,7 @@ export function deriveCircuitInsights(
     deviceRelationsById,
     focusSummariesByDeviceId,
     connectionHighlightsByKey,
-    labelSuggestions: connectionGroups.map((group) => group.label).sort((left, right) => left.localeCompare(right)),
+    labelSuggestions: connectionGroups.map((group) => group.label).sort(compareText),
   }
 }
 
@@ -249,16 +249,17 @@ function resolveDeviceLayouts(document: DocumentFile) {
   const explicit = new Map<string, Point>()
   const pending = new Set<string>()
 
-  for (const device of document.devices) {
-    const view = getDeviceView(document, device.id)
+  for (const [index, device] of document.devices.entries()) {
+    const deviceId = safeText(device.id, safeText(device.name, `device-${index + 1}`))
+    const view = getDeviceView(document, deviceId)
     if (
       view.position &&
       Number.isFinite(view.position.x) &&
       Number.isFinite(view.position.y)
     ) {
-      explicit.set(device.id, view.position)
+      explicit.set(deviceId, view.position)
     } else {
-      pending.add(device.id)
+      pending.add(deviceId)
     }
   }
 
@@ -320,22 +321,24 @@ function resolveDeviceLayouts(document: DocumentFile) {
 
 function buildAdjacency(document: DocumentFile) {
   const labelMembers = new Map<string, Set<string>>()
-  for (const device of document.devices) {
-    for (const terminal of device.terminals) {
-      const connectionLabel = normalizeTerminalLabel(terminal.label)
+  for (const [index, device] of document.devices.entries()) {
+    const deviceId = safeText(device.id, safeText(device.name, `device-${index + 1}`))
+    const terminals = Array.isArray(device.terminals) ? device.terminals : []
+    for (const terminal of terminals) {
+      const connectionLabel = normalizeTerminalLabel(typeof terminal.label === 'string' ? terminal.label : undefined)
       if (!connectionLabel) {
         continue
       }
 
       const bucket = labelMembers.get(connectionLabel) ?? new Set<string>()
-      bucket.add(device.id)
+      bucket.add(deviceId)
       labelMembers.set(connectionLabel, bucket)
     }
   }
 
   const adjacency = new Map<string, Set<string>>()
-  for (const device of document.devices) {
-    adjacency.set(device.id, new Set())
+  for (const [index, device] of document.devices.entries()) {
+    adjacency.set(safeText(device.id, safeText(device.name, `device-${index + 1}`)), new Set())
   }
 
   for (const memberIds of labelMembers.values()) {
@@ -383,7 +386,7 @@ function connectedComponents(adjacency: Map<string, Set<string>>) {
     groups.push(group.sort())
   }
 
-  return groups.sort((left, right) => right.length - left.length || left[0]!.localeCompare(right[0]!))
+  return groups.sort((left, right) => right.length - left.length || compareText(left[0], right[0]))
 }
 
 function buildDerivedDevice(
@@ -391,12 +394,15 @@ function buildDerivedDevice(
   document: DocumentFile,
   layouts: Map<string, Point>,
 ): DerivedDevice {
-  const view = getDeviceView(document, device.id)
+  const deviceId = safeText(device.id, safeText(device.name, 'device'))
+  const deviceName = safeText(device.name, deviceId)
+  const sourceTerminals = Array.isArray(device.terminals) ? device.terminals : []
+  const view = getDeviceView(document, deviceId)
   const visualPreset = getDeviceVisualPreset(device)
-  const shape = view.shape ?? getDefaultShape(device.kind)
+  const shape = view.shape ?? getDefaultShape(safeText(device.kind, 'module'))
 
   const terminalsBySide = new Map<TerminalSide, TerminalDefinition[]>()
-  for (const terminal of device.terminals) {
+  for (const terminal of sourceTerminals) {
     const side = terminal.side ?? inferSideFromDirection(getTerminalFlowDirection(terminal))
     const bucket = terminalsBySide.get(side) ?? []
     bucket.push({ ...terminal, side })
@@ -407,7 +413,7 @@ function buildDerivedDevice(
     bucket.sort((left, right) => {
       const leftOrder = left.order ?? Number.MAX_SAFE_INTEGER
       const rightOrder = right.order ?? Number.MAX_SAFE_INTEGER
-      return leftOrder - rightOrder || left.name.localeCompare(right.name) || left.id.localeCompare(right.id)
+      return leftOrder - rightOrder || compareText(left.name, right.name) || compareText(left.id, right.id)
     })
   }
 
@@ -427,7 +433,7 @@ function buildDerivedDevice(
     view.size?.height ?? visualPreset.defaultSize.height ?? DEFAULT_HEIGHT,
     maxVerticalCount > 2 ? 88 + maxVerticalCount * 26 : 0,
   )
-  const position = layouts.get(device.id) ?? { x: MARGIN_X, y: MARGIN_Y }
+  const position = layouts.get(deviceId) ?? { x: MARGIN_X, y: MARGIN_Y }
   const rotationDeg = normalizeRotationDeg(view.rotationDeg ?? 0)
   const bounds = {
     x: position.x,
@@ -436,7 +442,8 @@ function buildDerivedDevice(
     height,
   }
 
-  const terminals = device.terminals.map((terminal) => {
+  const terminals = sourceTerminals.map((terminal, terminalIndex) => {
+    const terminalId = safeText(terminal.id, `${deviceId}-terminal-${terminalIndex + 1}`)
     const flowDirection = getTerminalFlowDirection(terminal)
     const side = terminal.side ?? inferSideFromDirection(flowDirection)
     const bucket = terminalsBySide.get(side) ?? [terminal]
@@ -458,21 +465,21 @@ function buildDerivedDevice(
       placement?.point ?? getSignalPoint(bounds, shape, side, Math.max(0, index), bucket.length, visualPreset.key)
 
     return {
-      id: terminal.id,
-      deviceId: device.id,
+      id: terminalId,
+      deviceId,
       direction: terminal.direction,
       flowDirection,
       side: resolvedSide,
-      displayLabel: getTerminalDisplayLabel(terminal),
-      connectionLabel: normalizeTerminalLabel(terminal.label),
-      name: terminal.name,
+      displayLabel: safeText(getTerminalDisplayLabel(terminal), terminalId),
+      connectionLabel: normalizeTerminalLabel(typeof terminal.label === 'string' ? terminal.label : undefined),
+      name: safeText(terminal.name, terminalId),
       description: terminal.description ?? null,
       point,
       source: terminal,
     } satisfies DerivedTerminal
   })
 
-  const reference = getDeviceReference(device, document)
+  const reference = safeText(getDeviceReference(device, document), deviceId)
   const parameterSummary = summarizeDeviceParameter(device, document)
   const connectionLabels = [
     ...new Set(
@@ -480,14 +487,14 @@ function buildDerivedDevice(
         .map((terminal) => terminal.connectionLabel)
         .filter((label): label is string => Boolean(label)),
     ),
-  ].sort((left, right) => left.localeCompare(right))
+  ].sort(compareText)
 
   return {
-    id: device.id,
+    id: deviceId,
     reference,
-    title: `${reference} ${device.name}`,
+    title: `${reference} ${deviceName}`.trim(),
     parameterSummary,
-    kind: device.kind,
+    kind: safeText(device.kind, 'module'),
     visualKind: visualPreset.key,
     shape,
     rotationDeg,
@@ -512,7 +519,7 @@ function summarizeDeviceParameter(device: DeviceDefinition, document: DocumentFi
     return direct
   }
 
-  const powerSummaries = device.terminals
+  const powerSummaries = (Array.isArray(device.terminals) ? device.terminals : [])
     .filter((terminal) => isPowerLikeLabel(terminal.label))
     .map((terminal) => summarizePowerLabel(terminal.label, document))
     .filter((label): label is string => Boolean(label))
@@ -541,7 +548,7 @@ function summarizePowerLabel(label: string | undefined, document: DocumentFile) 
   }
 
   const sources = document.devices.flatMap((candidate) =>
-    candidate.terminals
+    (Array.isArray(candidate.terminals) ? candidate.terminals : [])
       .filter(
         (terminal) =>
           normalizeTerminalLabel(terminal.label) === normalized &&
@@ -600,7 +607,7 @@ function isPowerLikeLabel(label: string | undefined) {
 function deriveNetworkLines(document: DocumentFile) {
   return Object.entries(document.view.networkLines ?? {})
     .map(([id, source]) => buildDerivedNetworkLine(document, id, source))
-    .sort((left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id))
+    .sort((left, right) => compareText(left.label, right.label) || compareText(left.id, right.id))
 }
 
 function buildDerivedNetworkLine(
@@ -609,9 +616,11 @@ function buildDerivedNetworkLine(
   source: NetworkLineViewDefinition,
 ): DerivedNetworkLine {
   const normalized = getNetworkLineView(document, id) ?? source
-  const label = normalized.label.trim() || id
-  const labelKey = normalizeTerminalLabel(normalized.label) ?? label
-  const position = normalized.position
+  const label = safeText(normalized.label, id)
+  const labelKey = normalizeTerminalLabel(typeof normalized.label === 'string' ? normalized.label : undefined) ?? label
+  const position = normalized.position && Number.isFinite(normalized.position.x) && Number.isFinite(normalized.position.y)
+    ? normalized.position
+    : { x: 0, y: 0 }
   const length = normalized.length ?? 720
   const orientation = normalized.orientation === 'vertical' ? 'vertical' : 'horizontal'
   const start =
@@ -661,14 +670,14 @@ function deriveConnectionGroups(devices: DerivedDevice[]) {
     .map(([label, bucket]) => ({
       key: label,
       label,
-      terminalIds: bucket.terminalIds.sort(),
-      deviceIds: [...bucket.deviceIds].sort(),
+      terminalIds: bucket.terminalIds.sort(compareText),
+      deviceIds: [...bucket.deviceIds].sort(compareText),
       point: {
         x: bucket.points.reduce((sum, point) => sum + point.x, 0) / bucket.points.length,
         y: bucket.points.reduce((sum, point) => sum + point.y, 0) / bucket.points.length,
       },
     }) satisfies DerivedConnectionGroup)
-    .sort((left, right) => left.label.localeCompare(right.label))
+    .sort((left, right) => compareText(left.label, right.label))
 }
 
 function deriveDeviceRelations(
@@ -700,7 +709,7 @@ function deriveDeviceRelations(
     const terminals = group.terminalIds
       .map((terminalId) => terminalById[terminalId])
       .filter((terminal): terminal is DerivedTerminal => Boolean(terminal))
-    const allDeviceIds = [...new Set(terminals.map((terminal) => terminal.deviceId))].sort()
+    const allDeviceIds = [...new Set(terminals.map((terminal) => terminal.deviceId))].sort(compareText)
     const terminalsByDevice = new Map<string, DerivedTerminal[]>()
 
     for (const terminal of terminals) {
@@ -746,14 +755,14 @@ function deriveDeviceRelations(
   }
 
   for (const relation of Object.values(relations)) {
-    relation.upstreamDeviceIds.sort()
-    relation.downstreamDeviceIds.sort()
+    relation.upstreamDeviceIds.sort(compareText)
+    relation.downstreamDeviceIds.sort(compareText)
     relation.upstreamDeviceIds = relation.upstreamDeviceIds.filter(
       (deviceId) => !relation.downstreamDeviceIds.includes(deviceId),
     )
-    relation.relatedTerminalIds.sort()
-    relation.connectionKeys.sort()
-    relation.connectionLabels.sort((left, right) => left.localeCompare(right))
+    relation.relatedTerminalIds.sort(compareText)
+    relation.connectionKeys.sort(compareText)
+    relation.connectionLabels.sort(compareText)
     relation.upstreamLabels = relation.upstreamDeviceIds.map((deviceId) => deviceById[deviceId]?.title ?? deviceId)
     relation.downstreamLabels = relation.downstreamDeviceIds.map((deviceId) => deviceById[deviceId]?.title ?? deviceId)
 
@@ -775,7 +784,7 @@ function buildTerminalColorMap(devices: DerivedDevice[]) {
     devices.flatMap((device) =>
       device.terminals.map((terminal) => terminal.connectionLabel ?? terminal.id),
     ),
-  )].sort((left, right) => left.localeCompare(right) || left.length - right.length)
+  )].sort((left, right) => compareText(left, right) || left.length - right.length)
 
   const assigned = new Map<string, string>()
   const usedColors = new Set<string>()
@@ -968,4 +977,13 @@ function hashString(value: string) {
     hash = (hash * 31 + char.charCodeAt(0)) >>> 0
   }
   return hash
+}
+
+function safeText(value: unknown, fallback = ''): string {
+  if (typeof value === 'string' && value.trim().length > 0) return value.trim()
+  return fallback
+}
+
+function compareText(left: unknown, right: unknown): number {
+  return safeText(left).localeCompare(safeText(right))
 }

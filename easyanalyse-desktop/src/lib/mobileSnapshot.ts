@@ -164,7 +164,7 @@ export function deriveMobileRenderSnapshot(
       upstreamLabels: relation.upstreamLabels,
       downstreamLabels: relation.downstreamLabels,
     }))
-    .sort((left, right) => left.title.localeCompare(right.title) || left.deviceId.localeCompare(right.deviceId))
+    .sort((left, right) => compareText(left.title, right.title) || compareText(left.deviceId, right.deviceId))
 
   const terminalSearchItems = devices.flatMap((device) =>
     device.terminals.map((terminal) => ({
@@ -229,4 +229,18 @@ export function deriveMobileRenderSnapshot(
       issues: report.issues,
     },
   }
+}
+
+function safeText(value: unknown) {
+  if (typeof value === 'string') {
+    return value
+  }
+  if (value === null || value === undefined) {
+    return ''
+  }
+  return String(value)
+}
+
+function compareText(left: unknown, right: unknown) {
+  return safeText(left).localeCompare(safeText(right))
 }

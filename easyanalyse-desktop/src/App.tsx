@@ -64,6 +64,7 @@ function App() {
   const cancelPendingDevicePlacement = useEditorStore((state) => state.cancelPendingDevicePlacement)
   const resetViewportToOrigin = useEditorStore((state) => state.resetViewportToOrigin)
   const rotateSelection = useEditorStore((state) => state.rotateSelection)
+  const setLocale = useEditorStore((state) => state.setLocale)
 
   useEffect(() => {
     void initialize()
@@ -257,8 +258,26 @@ function App() {
               {t(isDarkTheme ? 'themeLight' : 'themeDark')}
             </button>
             <button className="ghost-button" onClick={() => setSettingsOpen(true)}>
-              Provider / Model
+              {t('providerModel')}
             </button>
+            <div className="topbar__language-switch" role="group" aria-label={t('language')}>
+              <button
+                type="button"
+                className={locale === 'zh-CN' ? 'is-active' : undefined}
+                aria-pressed={locale === 'zh-CN'}
+                onClick={() => setLocale('zh-CN')}
+              >
+                {t('languageChinese')}
+              </button>
+              <button
+                type="button"
+                className={locale === 'en-US' ? 'is-active' : undefined}
+                aria-pressed={locale === 'en-US'}
+                onClick={() => setLocale('en-US')}
+              >
+                {t('languageEnglish')}
+              </button>
+            </div>
             {isTauriRuntime() && (
               <button className="ghost-button" onClick={handleOpenMobileShare}>
                 {t('shareToPhone')}
@@ -266,7 +285,7 @@ function App() {
             )}
             <select
               className="topbar__template-select"
-              aria-label="Device template"
+              aria-label={t('deviceTemplate')}
               value={deviceTemplateKey}
               onChange={(event) => setDeviceTemplateKey(event.target.value as DeviceVisualKind)}
             >
@@ -291,11 +310,11 @@ function App() {
         </main>
       </div>
       {settingsOpen && (
-        <div className="settings-modal" role="dialog" aria-modal="true" aria-label="Provider and model settings">
+        <div className="settings-modal" role="dialog" aria-modal="true" aria-label={t('providerModelSettingsLabel')}>
           <div className="settings-modal__backdrop" onClick={() => setSettingsOpen(false)} />
           <div className="settings-modal__panel">
             <button className="settings-modal__close ghost-button" type="button" onClick={() => setSettingsOpen(false)}>
-              Close
+              {t('close')}
             </button>
             <ProviderModelSettings />
           </div>

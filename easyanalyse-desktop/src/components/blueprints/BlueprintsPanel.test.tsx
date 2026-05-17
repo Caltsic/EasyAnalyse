@@ -4,16 +4,24 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DOCUMENT_HASH_ALGORITHM, hashDocument } from '../../lib/documentHash'
 import { createEmptyBlueprintWorkspace } from '../../lib/blueprintWorkspace'
+import { translate } from '../../lib/i18n'
 import { useBlueprintStore } from '../../store/blueprintStore'
 import { useEditorStore } from '../../store/editorStore'
 import type { BlueprintRecord } from '../../types/blueprint'
 import type { DocumentFile } from '../../types/document'
 import { ApplyBlueprintDialog } from './ApplyBlueprintDialog'
 
+const previewCanvasMockState = vi.hoisted(() => ({ throwOnRender: false }))
+
 vi.mock('./BlueprintPreviewCanvas', () => ({
-  BlueprintPreviewCanvas: ({ document, className }: { document: DocumentFile; className?: string }) => (
-    <div aria-label="Blueprint preview canvas" className={className} data-document-title={document.document.title} />
-  ),
+  BlueprintPreviewCanvas: ({ document, className }: { document: DocumentFile; className?: string }) => {
+    if (previewCanvasMockState.throwOnRender) {
+      throw new Error('preview render exploded')
+    }
+    return (
+      <div aria-label="Blueprint preview canvas" className={className} data-document-title={document.document.title} />
+    )
+  },
 }))
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -126,6 +134,7 @@ async function renderApplyDialog(props: Partial<ComponentProps<typeof ApplyBluep
         mainDocument={props.mainDocument ?? mainDocument}
         currentMainHash={currentMainHash}
         applying={props.applying ?? false}
+        t={(key, params) => translate('en-US', key, params)}
         onCancel={onCancel}
         onConfirm={onConfirm}
       />,
@@ -154,10 +163,44 @@ afterEach(() => {
 })
 
 beforeEach(() => {
+  previewCanvasMockState.throwOnRender = false
   resetStores()
 })
 
 describe('BlueprintsPanel', () => {
+  it('keeps the panel mounted when the selected blueprint preview fails to render', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const main = createDocument()
+      const mainHash = await hashDocument(main)
+      const record = await createBlueprintRecord({
+        id: 'bp-preview-crash',
+        title: 'Preview crash candidate',
+        baseMainDocumentHash: mainHash,
+      })
+      previewCanvasMockState.throwOnRender = true
+      resetStores(main)
+      useBlueprintStore.setState({
+        workspace: {
+          ...createEmptyBlueprintWorkspace({
+            mainDocument: { documentId: main.document.id, hash: mainHash },
+          }),
+          blueprints: [record],
+        },
+        selectedBlueprintId: record.id,
+      })
+
+      const host = await renderPanel()
+
+      expect(host.textContent).toContain('Blueprints')
+      expect(host.textContent).toContain('Preview: Preview crash candidate')
+      expect(host.textContent).toContain('Blueprint preview failed')
+      expect(host.textContent).toContain('preview render exploded')
+    } finally {
+      consoleError.mockRestore()
+    }
+  })
+
   it('does not focus the destructive confirm action by default or apply from root Enter/Space', async () => {
     const { host, onConfirm } = await renderApplyDialog()
     const dialog = host.querySelector('[role="dialog"]') as HTMLElement
@@ -552,7 +595,7 @@ describe('BlueprintsPanel', () => {
     expect(dialogText).toContain('Apply blueprint')
     expect(dialogText).toContain('State: unknown')
     expect(dialogText).toContain('Strong risk warning')
-    expect(dialogText).toContain('this blueprint is unknown')
+    expect(dialogText).toContain('This blueprint is unknown')
   })
 
   it('opens confirmation and applies valid, invalid, and unknown blueprints without saving to disk', async () => {

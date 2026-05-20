@@ -21,6 +21,7 @@ import type { AgentProviderProgressEvent } from '../../lib/agentProviderClient'
 import { translate, type TranslationKey } from '../../lib/i18n'
 import { defaultSecretStore, isManagedSecretRef, type SecretStore } from '../../lib/secretStore'
 import { useAgentThreadStore } from '../../store/agentThreadStore'
+import { useBlueprintStore } from '../../store/blueprintStore'
 import { useEditorStore } from '../../store/editorStore'
 import { useSettingsStore } from '../../store/settingsStore'
 import type {
@@ -332,6 +333,7 @@ export function AgentPanel({
     activeAssistantMessageRef.current = { threadId, messageId: assistantMessageId }
     const documentAtStart = document
     const filePathAtStart = filePath
+    const threadMessagesAtStart = agentThreads.find((thread) => thread.id === threadId)?.messages ?? []
     const requestId = `agent-panel-${runId}`
     const startedAtMs = Date.now()
     activityIdRef.current = 1
@@ -393,6 +395,7 @@ export function AgentPanel({
         prompt: trimmedPrompt,
         currentDocument: documentAtStart,
         filePath: filePathAtStart,
+        threadMessages: threadMessagesAtStart,
         requestId,
         includeDocumentContext,
         signal: abortController.signal,
@@ -882,6 +885,7 @@ async function runSelectedProvider(input: {
   prompt: string
   currentDocument: DocumentFile
   filePath: string | null
+  threadMessages: AgentThreadMessage[]
   requestId: string
   includeDocumentContext: boolean
   signal: AbortSignal
@@ -929,9 +933,33 @@ async function runSelectedProvider(input: {
     apiKey,
     prompt: input.prompt,
     currentDocument: input.currentDocument,
+    threadMessages: input.threadMessages,
     includeDocumentContext: input.includeDocumentContext,
     getCurrentDocument: () => input.currentDocument,
+    getBlueprintWorkspace: () => useBlueprintStore.getState().workspace,
+    getSelectedBlueprintId: () => useBlueprintStore.getState().selectedBlueprintId,
+    getCurrentSelection: () => useEditorStore.getState().selection,
+    getEditorFocus: () => {
+      const state = useEditorStore.getState()
+      return {
+        focusedDeviceId: state.focusedDeviceId,
+        focusedLabelKey: state.focusedLabelKey,
+        focusedNetworkLineId: state.focusedNetworkLineId,
+      }
+    },
     createBlueprintCandidate: async (candidate) => {
+      const latestEditor = useEditorStore.getState()
+      if (latestEditor.document !== input.currentDocument || latestEditor.filePath !== input.filePath) {
+        return {
+          ok: false,
+          code: 'agent_tool.stale_context',
+          message: 'Current document changed while the agent was creating a blueprint candidate. The candidate was not stored; ask the user to retry against the current document.',
+          details: {
+            expectedFilePath: input.filePath,
+            actualFilePath: latestEditor.filePath,
+          },
+        }
+      }
       const blueprintIds = await input.storeBlueprintCandidates([candidate], {
         toolName: 'create_blueprint_candidate',
         summary: `Stored blueprint candidate "${candidate.title}".`,

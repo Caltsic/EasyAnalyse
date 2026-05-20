@@ -15,6 +15,7 @@ import {
 } from './openAiCompatibleProvider'
 import type { DocumentFile, ValidationIssue } from '../types/document'
 import type { AgentToolExecutor, AgentToolRuntimeContext } from '../types/agentTools'
+import type { AgentThreadMessage } from '../types/agentThread'
 import type { AgentProviderPublicConfig } from '../types/settings'
 
 export type AgentProviderProgressEvent = ProviderProgressEvent
@@ -27,6 +28,7 @@ export interface RunConfiguredAgentProviderInput {
   prompt: string
   currentDocument?: DocumentFile | null
   includeDocumentContext?: boolean
+  threadMessages?: AgentThreadMessage[]
   requestId?: string
   signal?: AbortSignal
   timeoutMs?: number
@@ -37,6 +39,10 @@ export interface RunConfiguredAgentProviderInput {
   validateDocument?: AgentToolRuntimeContext['validateDocument']
   createBlueprintCandidate?: AgentToolRuntimeContext['createBlueprintCandidate']
   getCurrentDocument?: AgentToolRuntimeContext['getCurrentDocument']
+  getBlueprintWorkspace?: AgentToolRuntimeContext['getBlueprintWorkspace']
+  getSelectedBlueprintId?: AgentToolRuntimeContext['getSelectedBlueprintId']
+  getCurrentSelection?: AgentToolRuntimeContext['getCurrentSelection']
+  getEditorFocus?: AgentToolRuntimeContext['getEditorFocus']
   getEasyAnalyseFormatRules?: AgentToolRuntimeContext['getEasyAnalyseFormatRules']
   toolExecutor?: AgentToolExecutor
   progress?: AgentProviderProgressHandler
@@ -77,7 +83,7 @@ const EASYANALYSE_LAYOUT_AUTHORING_RULES = [
   '- For op-amp stages, put input source and bias/filter parts to the left, the op-amp near the middle, feedback parts above or below the op-amp, output/load parts to the right, and supply/ground rails outside the active device row.',
   '- For filters and cascaded amplifiers, use left-to-right stage order. Do not stack many devices at the same x/y. Split dense feedback networks onto separate rows.',
   '- view.networkLines are optional visual rails for labels already used by terminals. Good rail positions are above the top device row, below the bottom device row, or to the outside of the device columns. Do not run a networkLine through a device rectangle. If a clean rail cannot be drawn, omit the networkLine.',
-  '- If a tool reports layout.device.overlap, prefer changing only view.devices positions. If it reports layout.network-line.device-overlap, prefer changing only that view.networkLines entry, or remove it if it is not essential.',
+  '- If a tool reports layout.device.overlap, prefer changing only view.devices positions. If it reports layout.network-line.device-overlap, prefer changing only that view.networkLines entry, or remove it if it is not essential. If it reports layout.text.device-overlap, increase spacing around the related terminal/network label or move the nearby device/rail.',
 ].join('\n')
 
 export function buildAgentSystemPrompt(): string {
@@ -97,7 +103,7 @@ export function buildAgentSystemPrompt(): string {
     'Each candidate MUST include title, summary, rationale, tradeoffs array, complete document, and issues array. Use view.canvas.units "px".',
     'candidate.issues is for human-visible caveats and advisory validation/layout findings; it is not a substitute for fixing hard format errors from check_blueprint_format.',
     'On repair turns, keep the already-valid semantic circuit intact. Make the smallest possible changes needed by hard format errors. Prefer editing view.devices positions and view.networkLines coordinates only when you choose to address advisory layout hints.',
-    'If a hard format tool reports missing required device/terminal fields or invalid terminal.direction, repair those fields. If advisory layout tools report layout.device.overlap or layout.network-line.device-overlap, treat that as a readability hint and improve it when feasible.',
+    'If a hard format tool reports missing required device/terminal fields or invalid terminal.direction, repair those fields. If advisory layout tools report layout.device.overlap, layout.network-line.device-overlap, or layout.text.device-overlap, treat that as a readability hint and improve it when feasible.',
     'If the user asks for a generated circuit from scratch, produce a complete standalone document. If the user asks to modify the current document and context is provided, return a complete modified document candidate, not a patch.',
     'Valid tiny semantic v4 pattern: a resistor from VIN to VOUT and capacitor from VOUT to GND is represented by R1.A label VIN, R1.B label VOUT, C1.A label VOUT, C1.B label GND. No wire or node array is needed.',
     'Minimal valid response skeleton: {"schemaVersion":"agent-response-v1","semanticVersion":"easyanalyse-semantic-v4","kind":"blueprints","summary":"...","blueprints":[{"title":"...","summary":"...","rationale":"...","tradeoffs":[],"document":{"schemaVersion":"4.0.0","document":{"id":"...","title":"...","createdAt":"...","updatedAt":"..."},"devices":[],"view":{"canvas":{"units":"px","grid":{"enabled":true,"size":16}},"devices":{},"networkLines":{}}},"issues":[]}]}.',
@@ -108,13 +114,21 @@ export function buildAgentUserPrompt(input: {
   prompt: string
   currentDocument?: DocumentFile | null
   includeDocumentContext?: boolean
+  threadMessages?: AgentThreadMessage[]
   requestId?: string
 }): string {
   const parts = [
-    `User request:\n${input.prompt.trim()}`,
-    '',
     `Request id: ${input.requestId ?? 'agent-panel'}`,
   ]
+  const historySummary = buildAgentThreadHistorySummary(input.threadMessages ?? [])
+  if (historySummary) {
+    parts.push(
+      '',
+      'Recent conversation summary for this Agent thread. This is context only; the current user request below is authoritative:',
+      historySummary,
+    )
+  }
+  parts.push('', `Current user request:\n${input.prompt.trim()}`)
   const examples = selectAgentReferenceExamples(input.prompt, input.currentDocument ?? null)
   if (examples.length > 0) {
     parts.push('', formatAgentReferenceExamplesForPrompt(examples))
@@ -136,6 +150,51 @@ export function buildAgentUserPrompt(input: {
   return parts.join('\n')
 }
 
+export function buildAgentThreadHistorySummary(
+  messages: readonly AgentThreadMessage[],
+  options: { maxMessages?: number; maxChars?: number; maxContentChars?: number } = {},
+): string {
+  const maxMessages = Math.max(0, options.maxMessages ?? 12)
+  const maxChars = Math.max(0, options.maxChars ?? 8_000)
+  const maxContentChars = Math.max(80, options.maxContentChars ?? 900)
+  if (maxMessages === 0 || maxChars === 0 || messages.length === 0) return ''
+  const recent = messages.slice(-maxMessages)
+  const lines: string[] = []
+  for (const message of recent) {
+    const timestamp = message.createdAt ? ` ${message.createdAt}` : ''
+    if (message.role === 'user') {
+      lines.push(`- User${timestamp}: ${truncateForPrompt(redactPromptText(message.content), maxContentChars)}`)
+    } else if (message.role === 'assistant') {
+      lines.push(`- Assistant${timestamp}: ${truncateForPrompt(redactPromptText(message.content), maxContentChars)}`)
+    } else {
+      const blueprintPart = message.blueprintIds.length > 0 ? `; blueprints=${message.blueprintIds.length}` : ''
+      lines.push(`- Tool ${message.toolName} [${message.status}]${timestamp}: ${truncateForPrompt(redactPromptText(message.summary), Math.min(maxContentChars, 500))}; issues=${message.issueCount}${blueprintPart}`)
+    }
+  }
+  let summary = lines.join('\n')
+  if (summary.length <= maxChars) return summary
+  const truncatedLines: string[] = []
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const candidate = [lines[index], ...truncatedLines].join('\n')
+    if (candidate.length > maxChars) break
+    truncatedLines.unshift(lines[index]!)
+  }
+  summary = truncatedLines.join('\n')
+  return summary ? `[Older thread messages omitted to fit context]\n${summary}` : ''
+}
+
+function redactPromptText(value: string): string {
+  return value
+    .replace(/sk-[A-Za-z0-9._-]{8,}/g, '[redacted-api-key]')
+    .replace(/Bearer\s+[A-Za-z0-9._-]{8,}/gi, 'Bearer [redacted]')
+    .replace(/api[_-]?key\s*[:=]\s*["']?[^"'\s,}]+/gi, 'apiKey=[redacted]')
+}
+
+function truncateForPrompt(value: string, maxLength: number): string {
+  const normalized = value.replace(/\s+/g, ' ').trim()
+  return normalized.length <= maxLength ? normalized : `${normalized.slice(0, Math.max(0, maxLength - 3))}...`
+}
+
 export async function runConfiguredAgentProvider(input: RunConfiguredAgentProviderInput): Promise<ProviderParseResult> {
   const provider = normalizeProviderConfig(input.provider)
   const model = normalizeModelConfig(input.modelId, provider)
@@ -155,6 +214,7 @@ export async function runConfiguredAgentProvider(input: RunConfiguredAgentProvid
     prompt: input.prompt,
     currentDocument: input.currentDocument ?? null,
     includeDocumentContext: input.includeDocumentContext,
+    threadMessages: input.threadMessages,
     requestId: input.requestId,
   })
   emitProgress(input.progress, { phase: 'preparing', message: 'Built provider prompt.' })
@@ -210,6 +270,10 @@ export async function runConfiguredAgentProvider(input: RunConfiguredAgentProvid
           signal,
           maxToolIterations: input.maxToolIterations,
           getCurrentDocument: input.getCurrentDocument,
+          getBlueprintWorkspace: input.getBlueprintWorkspace,
+          getSelectedBlueprintId: input.getSelectedBlueprintId,
+          getCurrentSelection: input.getCurrentSelection,
+          getEditorFocus: input.getEditorFocus,
           getEasyAnalyseFormatRules: input.getEasyAnalyseFormatRules,
           validateDocument: input.validateDocument,
           createBlueprintCandidate: input.createBlueprintCandidate,

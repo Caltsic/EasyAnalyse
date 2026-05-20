@@ -4,6 +4,8 @@ import type { DocumentFile, ValidationIssue } from '../types/document'
 export interface LayoutOverlapCheckOptions {
   padding?: number
   networkLinePadding?: number
+  textPadding?: number
+  includeTextDeviceOverlaps?: boolean
   includeTouching?: boolean
   maxPairs?: number
 }
@@ -44,21 +46,57 @@ export interface LayoutNetworkLineDeviceOverlapIssue {
   }
 }
 
-export type LayoutOverlapIssue = LayoutDeviceOverlapIssue | LayoutNetworkLineDeviceOverlapIssue
+export interface LayoutTextDeviceOverlapIssue {
+  severity: 'warning'
+  code: 'layout.text.device-overlap'
+  message: string
+  entityId: string
+  path: string
+  details: {
+    textId: string
+    textKind: 'terminal-label' | 'network-line-label'
+    text: string
+    ownerDeviceId?: string
+    deviceId: string
+    textBounds: Bounds
+    deviceBounds: Bounds
+    overlapWidth: number
+    overlapHeight: number
+    overlapArea: number
+    padding: number
+  }
+}
+
+export type LayoutOverlapIssue = LayoutDeviceOverlapIssue | LayoutNetworkLineDeviceOverlapIssue | LayoutTextDeviceOverlapIssue
 
 export interface LayoutOverlapReport {
   ok: boolean
   issueCount: number
   checkedDeviceCount: number
   checkedNetworkLineCount: number
+  checkedTextBoxCount: number
   checkedPairCount: number
   checkedNetworkLineDevicePairCount: number
+  checkedTextDevicePairCount: number
   truncated: boolean
   issues: LayoutOverlapIssue[]
 }
 
 type Bounds = { x: number; y: number; width: number; height: number }
 type Point = { x: number; y: number }
+type LayoutTextBox = {
+  id: string
+  kind: 'terminal-label' | 'network-line-label'
+  text: string
+  ownerDeviceId?: string
+  path: string
+  bounds: Bounds
+}
+
+const TERMINAL_LABEL_WIDTH = 172
+const TERMINAL_LABEL_HEIGHT = 18
+const NETWORK_LINE_LABEL_WIDTH = 160
+const NETWORK_LINE_LABEL_HEIGHT = 22
 
 export function checkLayoutOverlaps(
   document: DocumentFile,
@@ -66,11 +104,13 @@ export function checkLayoutOverlaps(
 ): LayoutOverlapReport {
   const padding = Math.max(0, finiteOr(options.padding, 0))
   const networkLinePadding = Math.max(0, finiteOr(options.networkLinePadding, 0))
+  const textPadding = Math.max(0, finiteOr(options.textPadding, 0))
+  const includeTextDeviceOverlaps = options.includeTextDeviceOverlaps === true
   const includeTouching = options.includeTouching === true
   const maxPairs = options.maxPairs === undefined ? Number.POSITIVE_INFINITY : Math.max(0, Math.floor(options.maxPairs))
   const insights = deriveCircuitInsights(document)
   const devices = insights.devices
-    .map((device) => ({ id: device.id, bounds: expandBounds(device.bounds, padding) }))
+    .map((device) => ({ id: device.id, rawBounds: device.bounds, bounds: expandBounds(device.bounds, padding) }))
     .sort((left, right) => compareText(left.id, right.id))
   const networkLines = insights.networkLines
     .map((networkLine) => ({
@@ -80,9 +120,13 @@ export function checkLayoutOverlaps(
       end: networkLine.end,
     }))
     .sort((left, right) => compareText(left.label, right.label) || compareText(left.id, right.id))
+  const textBoxes = includeTextDeviceOverlaps
+    ? buildTextBoxes(insights).sort((left, right) => compareText(left.kind, right.kind) || compareText(left.id, right.id))
+    : []
 
   let checkedPairCount = 0
   let checkedNetworkLineDevicePairCount = 0
+  let checkedTextDevicePairCount = 0
   const allIssues: LayoutOverlapIssue[] = []
   for (let leftIndex = 0; leftIndex < devices.length; leftIndex += 1) {
     for (let rightIndex = leftIndex + 1; rightIndex < devices.length; rightIndex += 1) {
@@ -116,7 +160,7 @@ export function checkLayoutOverlaps(
   for (const networkLine of networkLines) {
     for (const device of devices) {
       checkedNetworkLineDevicePairCount += 1
-      const deviceBounds = expandBounds(device.bounds, networkLinePadding)
+      const deviceBounds = expandBounds(device.rawBounds, networkLinePadding)
       const overlapLength = lineBoundsOverlapLength(networkLine.start, networkLine.end, deviceBounds, includeTouching)
       if (overlapLength <= 0) {
         continue
@@ -142,14 +186,46 @@ export function checkLayoutOverlaps(
     }
   }
 
+  for (const textBox of textBoxes) {
+    for (const device of devices) {
+      if (textBox.ownerDeviceId === device.id) continue
+      checkedTextDevicePairCount += 1
+      const deviceBounds = expandBounds(device.rawBounds, textPadding)
+      const overlap = boundsOverlap(textBox.bounds, deviceBounds, includeTouching)
+      if (!overlap) continue
+      allIssues.push({
+        severity: 'warning',
+        code: 'layout.text.device-overlap',
+        message: `Text ${textBox.id} overlaps device ${device.id}.`,
+        entityId: textBox.id,
+        path: textBox.path,
+        details: {
+          textId: textBox.id,
+          textKind: textBox.kind,
+          text: textBox.text,
+          ...(textBox.ownerDeviceId ? { ownerDeviceId: textBox.ownerDeviceId } : {}),
+          deviceId: device.id,
+          textBounds: textBox.bounds,
+          deviceBounds,
+          overlapWidth: overlap.width,
+          overlapHeight: overlap.height,
+          overlapArea: overlap.area,
+          padding: textPadding,
+        },
+      })
+    }
+  }
+
   const issues = allIssues.slice(0, maxPairs)
   return {
     ok: issues.length === 0,
     issueCount: issues.length,
     checkedDeviceCount: devices.length,
     checkedNetworkLineCount: networkLines.length,
+    checkedTextBoxCount: textBoxes.length,
     checkedPairCount,
     checkedNetworkLineDevicePairCount,
+    checkedTextDevicePairCount,
     truncated: allIssues.length > issues.length,
     issues,
   }
@@ -173,6 +249,93 @@ function expandBounds(bounds: Bounds, padding: number): Bounds {
     width: bounds.width + padding * 2,
     height: bounds.height + padding * 2,
   }
+}
+
+function buildTextBoxes(insights: ReturnType<typeof deriveCircuitInsights>): LayoutTextBox[] {
+  const terminalLabels = insights.devices.flatMap((device) =>
+    device.terminals
+      .filter((terminal) => terminal.displayLabel.trim().length > 0)
+      .map((terminal) => ({
+        id: `terminal-label:${terminal.id}`,
+        kind: 'terminal-label' as const,
+        text: terminal.displayLabel,
+        ownerDeviceId: device.id,
+        path: `devices.${device.id}.terminals.${terminal.id}`,
+        bounds: terminalLabelBounds(terminal.point, terminal.side),
+      })),
+  )
+  const networkLineLabels = insights.networkLines
+    .filter((networkLine) => networkLine.label.trim().length > 0)
+    .map((networkLine) => ({
+      id: `network-line-label:${networkLine.id}`,
+      kind: 'network-line-label' as const,
+      text: networkLine.label,
+      path: `view.networkLines.${networkLine.id}`,
+      bounds: networkLineLabelBounds(networkLine.position, networkLine.orientation),
+    }))
+  return [...terminalLabels, ...networkLineLabels]
+}
+
+function terminalLabelBounds(point: Point, side: string): Bounds {
+  switch (side) {
+    case 'left':
+      return {
+        x: point.x - (TERMINAL_LABEL_WIDTH + 18),
+        y: point.y - 9,
+        width: TERMINAL_LABEL_WIDTH,
+        height: TERMINAL_LABEL_HEIGHT,
+      }
+    case 'right':
+      return {
+        x: point.x + 18,
+        y: point.y - 9,
+        width: TERMINAL_LABEL_WIDTH,
+        height: TERMINAL_LABEL_HEIGHT,
+      }
+    case 'top':
+      return {
+        x: point.x - TERMINAL_LABEL_WIDTH / 2,
+        y: point.y - 34,
+        width: TERMINAL_LABEL_WIDTH,
+        height: TERMINAL_LABEL_HEIGHT,
+      }
+    case 'bottom':
+    case 'auto':
+    default:
+      return {
+        x: point.x - TERMINAL_LABEL_WIDTH / 2,
+        y: point.y + 16,
+        width: TERMINAL_LABEL_WIDTH,
+        height: TERMINAL_LABEL_HEIGHT,
+      }
+  }
+}
+
+function networkLineLabelBounds(point: Point, orientation: string): Bounds {
+  if (orientation === 'vertical') {
+    return {
+      x: point.x - NETWORK_LINE_LABEL_HEIGHT,
+      y: point.y - NETWORK_LINE_LABEL_WIDTH / 2,
+      width: NETWORK_LINE_LABEL_HEIGHT,
+      height: NETWORK_LINE_LABEL_WIDTH,
+    }
+  }
+  return {
+    x: point.x - NETWORK_LINE_LABEL_WIDTH / 2,
+    y: point.y - 32,
+    width: NETWORK_LINE_LABEL_WIDTH,
+    height: NETWORK_LINE_LABEL_HEIGHT,
+  }
+}
+
+function boundsOverlap(left: Bounds, right: Bounds, includeTouching: boolean): { width: number; height: number; area: number } | null {
+  const overlapWidth = Math.min(left.x + left.width, right.x + right.width) - Math.max(left.x, right.x)
+  const overlapHeight = Math.min(left.y + left.height, right.y + right.height) - Math.max(left.y, right.y)
+  const overlaps = includeTouching ? overlapWidth >= 0 && overlapHeight >= 0 : overlapWidth > 0 && overlapHeight > 0
+  if (!overlaps) return null
+  const width = Math.max(0, overlapWidth)
+  const height = Math.max(0, overlapHeight)
+  return { width, height, area: width * height }
 }
 
 function finiteOr(value: unknown, fallback: number): number {

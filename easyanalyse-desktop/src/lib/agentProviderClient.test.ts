@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DocumentFile, ValidationReport } from '../types/document'
 import { AGENT_RESPONSE_SEMANTIC_VERSION } from './agentResponse'
-import { buildAgentSystemPrompt, buildAgentUserPrompt, runConfiguredAgentProvider } from './agentProviderClient'
+import { buildAgentSystemPrompt, buildAgentThreadHistorySummary, buildAgentUserPrompt, runConfiguredAgentProvider } from './agentProviderClient'
 import type { OpenAiCompatibleFetch } from './openAiCompatibleProvider'
 
 function createDocument(position = { x: 10, y: 10 }): DocumentFile {
@@ -64,6 +64,34 @@ describe('agentProviderClient M7 self-check and examples', () => {
     expect(prompt).toContain('semantic/layout issues are hints, not a requirement to reach 0 issues')
     expect(prompt).toContain('view.networkLines are optional visual rails')
     expect(prompt).toContain('layout.network-line.device-overlap')
+  })
+
+  it('injects bounded thread history summary before the current request', () => {
+    const prompt = buildAgentUserPrompt({
+      prompt: '继续把这个候选改成 5kHz',
+      includeDocumentContext: false,
+      threadMessages: [
+        { id: 'u1', role: 'user', createdAt: '2026-05-20T00:00:00.000Z', content: '先做一个低通滤波器' },
+        { id: 'a1', role: 'assistant', createdAt: '2026-05-20T00:00:01.000Z', content: '已经生成一个 RC 候选。' },
+        { id: 't1', role: 'tool', createdAt: '2026-05-20T00:00:02.000Z', toolName: 'create_blueprint_candidate', status: 'success', summary: 'Stored candidate', blueprintIds: ['bp-1'], issueCount: 0 },
+      ],
+    })
+
+    expect(prompt).toContain('Recent conversation summary for this Agent thread')
+    expect(prompt).toContain('先做一个低通滤波器')
+    expect(prompt).toContain('Tool create_blueprint_candidate [success]')
+    expect(prompt.indexOf('Recent conversation summary')).toBeLessThan(prompt.indexOf('Current user request'))
+    expect(prompt).toContain('继续把这个候选改成 5kHz')
+  })
+
+  it('redacts and truncates thread history summaries', () => {
+    const summary = buildAgentThreadHistorySummary([
+      { id: 'u1', role: 'user', createdAt: 'now', content: `apiKey=sk-secret-value ${'x'.repeat(400)}` },
+    ], { maxContentChars: 120, maxChars: 200 })
+
+    expect(summary).toContain('[redacted')
+    expect(summary).not.toContain('sk-secret-value')
+    expect(summary.length).toBeLessThanOrEqual(220)
   })
 
   it('runs post-provider self-check without repairing advisory-only layout candidates', async () => {

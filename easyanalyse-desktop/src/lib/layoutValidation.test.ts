@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkLayoutOverlaps, type LayoutDeviceOverlapIssue, type LayoutNetworkLineDeviceOverlapIssue } from './layoutValidation'
+import { checkLayoutOverlaps, type LayoutDeviceOverlapIssue, type LayoutNetworkLineDeviceOverlapIssue, type LayoutTextDeviceOverlapIssue } from './layoutValidation'
 import type { DocumentFile, NetworkLineViewDefinition } from '../types/document'
 
 function doc(
@@ -106,5 +106,53 @@ describe('checkLayoutOverlaps', () => {
       ),
     )
     expect(report.issues.filter((issue) => issue.code === 'layout.network-line.device-overlap')).toEqual([])
+  })
+
+  it('reports terminal and network-line text labels that overlap other device bounds with coordinates', () => {
+    const input: DocumentFile = {
+      schemaVersion: '4.0.0',
+      document: { id: 'd-text', title: 'Text overlap test' },
+      devices: [
+        {
+          id: 'left',
+          name: 'LEFT',
+          kind: 'resistor',
+          terminals: [{ id: 'left-out', name: 'OUT', label: 'SIGNAL_LONG', direction: 'output', side: 'right' }],
+        },
+        {
+          id: 'right',
+          name: 'RIGHT',
+          kind: 'capacitor',
+          terminals: [],
+        },
+      ],
+      view: {
+        canvas: { units: 'px' },
+        devices: {
+          left: { position: { x: 0, y: 0 }, size: { width: 100, height: 100 } },
+          right: { position: { x: 135, y: 40 }, size: { width: 100, height: 100 } },
+        },
+        networkLines: {
+          rail: { label: 'RAIL_TEXT', position: { x: 135, y: 78 }, length: 80, orientation: 'horizontal' },
+        },
+      },
+    }
+
+    const report = checkLayoutOverlaps(input, { includeTextDeviceOverlaps: true })
+    const textIssues = report.issues.filter((issue): issue is LayoutTextDeviceOverlapIssue => issue.code === 'layout.text.device-overlap')
+    expect(report.checkedTextBoxCount).toBe(2)
+    expect(report.checkedTextDevicePairCount).toBe(3)
+    expect(textIssues.map((issue) => [issue.details.textKind, issue.details.deviceId])).toEqual([
+      ['network-line-label', 'left'],
+      ['network-line-label', 'right'],
+      ['terminal-label', 'right'],
+    ])
+    expect(textIssues[2]!.details).toMatchObject({
+      textId: 'terminal-label:left-out',
+      ownerDeviceId: 'left',
+      textBounds: expect.objectContaining({ width: 172, height: 18 }),
+      deviceBounds: expect.objectContaining({ x: 135, y: 40 }),
+      overlapArea: expect.any(Number),
+    })
   })
 })

@@ -536,6 +536,13 @@ function buildToolRuntimeContext(input: OpenAiCompatibleRunInput): AgentToolRunt
   return {
     currentDocument: input.currentDocument ?? null,
     ...(input.getCurrentDocument ? { getCurrentDocument: input.getCurrentDocument } : {}),
+    ...(input.blueprintWorkspace ? { blueprintWorkspace: input.blueprintWorkspace } : {}),
+    ...(input.getBlueprintWorkspace ? { getBlueprintWorkspace: input.getBlueprintWorkspace } : {}),
+    ...(input.selectedBlueprintId !== undefined ? { selectedBlueprintId: input.selectedBlueprintId } : {}),
+    ...(input.getSelectedBlueprintId ? { getSelectedBlueprintId: input.getSelectedBlueprintId } : {}),
+    ...(input.currentSelection ? { currentSelection: input.currentSelection } : {}),
+    ...(input.getCurrentSelection ? { getCurrentSelection: input.getCurrentSelection } : {}),
+    ...(input.getEditorFocus ? { getEditorFocus: input.getEditorFocus } : {}),
     ...(input.getEasyAnalyseFormatRules ? { getEasyAnalyseFormatRules: input.getEasyAnalyseFormatRules } : {}),
     ...(input.validateDocument ? { validateDocument: input.validateDocument } : {}),
     ...(input.createBlueprintCandidate ? { createBlueprintCandidate: input.createBlueprintCandidate } : {}),
@@ -596,6 +603,7 @@ function buildToolIssueRepairPrompt(
   return [
     `A hard EasyAnalyse format tool reported ${state.issueCount} issue${state.issueCount === 1 ? '' : 's'} on tool round ${state.toolIterations}/${state.maxToolIterations}.`,
     'Repair hard format errors before returning or creating a blueprint candidate.',
+    'If the errors are repairable, repair and continue. If the request is impossible or lacks required design information, return a valid AgentResponse kind "question" or "error" instead of forcing a broken blueprint.',
     'Call check_blueprint_format again when you need to verify the corrected candidate.',
     'Make the smallest possible edit to the previous candidate. Do not redesign the circuit when the latest issues are only schema or required-field repairs.',
     'Semantic quality and layout readability issues are advisory; do not treat advisory-only check_blueprint_candidate issues as blockers.',
@@ -607,6 +615,7 @@ function buildToolIssueRepairPrompt(
     '- To fix layout.device.overlap, move devices to a wide grid such as x=80,380,680,980,1280 and y=96,320,544,768. Keep default rectangular devices at least 280 px apart horizontally and 180 px apart vertically.',
     '- view.networkLines is only a visual label summary. It never creates connectivity. Each network line label must also appear on at least one terminal, otherwise remove it.',
     '- To fix layout.network-line.device-overlap, move the view.networkLines entry outside device bounds, shorten it, change orientation, or remove it. Prefer rails above/below/left/right of the device grid; do not draw visual rails through components.',
+    '- To fix layout.text.device-overlap, use the reported textBounds and deviceBounds. Move the nearby device, its terminal side/order, or the optional networkLine label so text does not cover a module.',
     '',
     `Issue groups: ${issueSummary || 'none'}`,
     ...(repairHints.length > 0 ? ['', 'Repair hints:', ...repairHints.map((hint) => `- ${hint}`)] : []),
@@ -692,6 +701,27 @@ function formatIssueDetails(issue: ValidationIssue): string {
     ].filter(Boolean)
     return parts.join('; ')
   }
+  if (issue.code === 'layout.text.device-overlap') {
+    const textId = optionalString(details.textId) ?? optionalString(issue.entityId) ?? 'text'
+    const textKind = optionalString(details.textKind) ?? 'text'
+    const text = optionalString(details.text)
+    const ownerDeviceId = optionalString(details.ownerDeviceId)
+    const deviceId = optionalString(details.deviceId) ?? 'device'
+    const textBounds = readBounds(details.textBounds)
+    const deviceBounds = readBounds(details.deviceBounds)
+    const overlapWidth = optionalNumber(details.overlapWidth)
+    const overlapHeight = optionalNumber(details.overlapHeight)
+    const moveRightX = textBounds && deviceBounds ? Math.ceil(textBounds.x + textBounds.width + 64) : null
+    const moveBelowY = textBounds && deviceBounds ? Math.ceil(textBounds.y + textBounds.height + 64) : null
+    const parts = [
+      `details: ${textKind} ${textId}${text ? ` text=${text}` : ''}${ownerDeviceId ? ` owner=${ownerDeviceId}` : ''}`,
+      `textBounds=${formatBounds(textBounds)} overlaps device=${deviceId} bounds=${formatBounds(deviceBounds)}`,
+      overlapWidth === undefined ? null : `overlapWidth=${round(overlapWidth)}`,
+      overlapHeight === undefined ? null : `overlapHeight=${round(overlapHeight)}`,
+      moveRightX === null || !deviceBounds ? null : `minimal fix: move ${deviceId} to x>=${moveRightX} or y>=${moveBelowY}, or move the label/rail away from the device`,
+    ].filter(Boolean)
+    return parts.join('; ')
+  }
   const serialized = safeStringify(details)
   return serialized ? `details=${truncate(oneLine(serialized), 700)}` : ''
 }
@@ -746,6 +776,7 @@ function buildRepairHints(issues: readonly ValidationIssue[]): string[] {
     if (/missing-view/.test(code)) hints.add('Include view.canvas, view.devices, and view.networkLines in every candidate document.')
     if (code === 'layout.device.overlap') hints.add('Move overlapping devices farther apart in view.devices. Positions are top-left coordinates, not centers; use at least 280 px horizontal and 180 px vertical top-left gaps, or a wide grid such as x=80,380,680,980,1280 and y=96,320,544,768.')
     if (code === 'layout.network-line.device-overlap') hints.add('Move or remove visual network lines that cross devices. view.networkLines are optional rails, not wires; place them outside the device grid or shorten/change orientation so they do not intersect device bounds.')
+    if (code === 'layout.text.device-overlap') hints.add('Move the reported device, terminal side/order, or optional networkLine label so textBounds no longer intersects deviceBounds. Prefer adding spacing before changing circuit semantics.')
     if (code === 'agent_tool.invalid_args') hints.add('Call check_blueprint_format or create_blueprint_candidate with { candidate: { title, summary, rationale, tradeoffs, document, issues } }, not with only a document or partial object.')
   })
   return [...hints]

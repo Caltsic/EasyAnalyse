@@ -41,6 +41,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install icon generation dependencies
+        run: python -m pip install --upgrade pip pillow
+
       - name: Install dependencies
         run: npm ci
 

@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import { getErrorMessage } from '../lib/errors'
+import { isRecord } from '../lib/guards'
 import { makeId } from '../lib/ids'
 import type { AgentBlueprintCandidate, AgentResponseParseIssue } from '../types/agent'
 import type {
@@ -91,10 +93,6 @@ export function normalizeAgentThreadWorkspace(value: unknown): AgentThreadWorksp
 
 export function getAgentThreadsFromWorkspace(workspace: BlueprintWorkspaceFile | null): AgentThreadWorkspace {
   return normalizeAgentThreadWorkspace(workspace?.extensions?.agentThreads)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function nonEmptyString(value: unknown): string | null {
@@ -282,10 +280,6 @@ function candidateIssueCount(candidates: AgentBlueprintCandidate[], issues?: Age
 
 function getInsertionSummary(count: number): string {
   return count === 1 ? 'Stored 1 agent blueprint candidate.' : `Stored ${count} agent blueprint candidates.`
-}
-
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 const initialAgentThreads = getAgentThreadsFromWorkspace(useBlueprintStore.getState().workspace)

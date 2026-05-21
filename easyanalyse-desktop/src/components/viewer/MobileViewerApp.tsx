@@ -7,6 +7,7 @@ import { fetchSharedSession } from '../../lib/tauri'
 import { getStoredLocale, translate } from '../../lib/i18n'
 import { useTheme } from '../../lib/useTheme'
 import type { DeviceProperties, Locale, MobileSharePayload } from '../../types/document'
+import { EmptyState } from '../ui'
 
 type ViewerSelection =
   | { entityType: 'device'; id: string }
@@ -325,7 +326,7 @@ export function MobileViewerApp() {
                     </button>
                   ))}
                   {!searchResults.devices.length && !searchResults.labels.length && (
-                    <div className="viewer-empty">{t('viewerNoResults')}</div>
+                    <EmptyState className="viewer-empty">{t('viewerNoResults')}</EmptyState>
                   )}
                 </div>
               </section>
@@ -437,7 +438,7 @@ export function MobileViewerApp() {
                     <span className="eyebrow">{t('viewerValidation')}</span>
                     <div className="viewer-list">
                       {report.issues.length === 0 ? (
-                        <div className="viewer-empty">{t('validationHealthy')}</div>
+                        <EmptyState className="viewer-empty">{t('validationHealthy')}</EmptyState>
                       ) : (
                         report.issues.slice(0, 12).map((issue, index) => (
                           <div className="list-item" key={`${issue.code}-${index}`}>

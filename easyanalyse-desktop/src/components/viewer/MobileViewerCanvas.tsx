@@ -18,6 +18,7 @@ import {
 } from '../../lib/geometry'
 import { translate } from '../../lib/i18n'
 import { getCanvasTheme } from '../../lib/canvasTheme'
+import { compareCoercedText } from '../../lib/text'
 import type { DocumentFile, Locale, Point, TerminalDirection, TerminalSide } from '../../types/document'
 import type { ThemeMode } from '../../lib/theme'
 
@@ -446,19 +447,7 @@ function layoutTerminalLabels(
     })
 }
 
-function safeText(value: unknown) {
-  if (typeof value === 'string') {
-    return value
-  }
-  if (value === null || value === undefined) {
-    return ''
-  }
-  return String(value)
-}
-
-function compareText(left: unknown, right: unknown) {
-  return safeText(left).localeCompare(safeText(right))
-}
+const compareText = compareCoercedText
 
 function getTerminalRoleStroke(direction: TerminalDirection, sourceStroke = '#111827') {
   if (isSourceLikeDirection(direction)) {

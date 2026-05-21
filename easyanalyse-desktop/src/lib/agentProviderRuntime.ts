@@ -1,4 +1,6 @@
 import type { DocumentFile } from '../types/document'
+import { getErrorMessage as errorMessage } from './errors'
+import { isRecord } from './guards'
 import { AgentProviderError, type AgentProviderErrorCode } from './openAiCompatibleProvider'
 
 export interface ControlledProviderOperationContext {
@@ -385,12 +387,4 @@ function isAbortError(error: unknown): boolean {
   if (error instanceof DOMException) return error.name === 'AbortError'
   if (!isRecord(error)) return false
   return error.name === 'AbortError'
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }

@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420",
     "generate:icons": "node scripts/generate-icons.mjs",
+    "typecheck": "tsc -b --pretty false",
     "build": "npm run generate:icons && tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",
+    "verify": "npm run typecheck && npm run lint && npm test && npm run build",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",

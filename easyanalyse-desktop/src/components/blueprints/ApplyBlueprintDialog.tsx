@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, type KeyboardEvent } from 'react'
+import { useMemo } from 'react'
 import { diffBlueprintDocument, type BlueprintDiffSummary } from '../../lib/blueprintDiff'
 import type { TranslationKey } from '../../lib/i18n'
 import type { BlueprintRecord } from '../../types/blueprint'
 import type { DocumentFile, ValidationIssue, ValidationReport } from '../../types/document'
+import { ModalShell } from '../ui'
 
 interface ApplyBlueprintDialogProps {
   record: BlueprintRecord
@@ -130,15 +131,10 @@ export function ApplyBlueprintDialog({
   applying = false,
   t,
 }: ApplyBlueprintDialogProps) {
-  const dialogRef = useRef<HTMLDivElement | null>(null)
   const diff = useMemo(() => diffBlueprintDocument(mainDocument, record.document), [mainDocument, record.document])
   const riskyValidation = record.validationState !== 'valid'
   const baseMismatch = hasBaseMismatch(record, currentMainHash)
   const hasErrors = countIssues(record.validationReport, 'error') > 0 || record.validationState === 'invalid'
-
-  useEffect(() => {
-    dialogRef.current?.querySelector<HTMLButtonElement>('button[data-modal-initial-focus]')?.focus()
-  }, [])
 
   const handleCancel = () => {
     if (!applying) {
@@ -146,48 +142,17 @@ export function ApplyBlueprintDialog({
     }
   }
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    event.stopPropagation()
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      handleCancel()
-      return
-    }
-    if (event.key !== 'Tab') {
-      return
-    }
-    const focusable = Array.from(
-      dialogRef.current?.querySelectorAll<HTMLElement>(
-        'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
-      ) ?? [],
-    )
-    if (focusable.length === 0) {
-      event.preventDefault()
-      dialogRef.current?.focus()
-      return
-    }
-    const first = focusable[0]
-    const last = focusable[focusable.length - 1]
-    if (!event.shiftKey && window.document.activeElement === last) {
-      event.preventDefault()
-      first.focus()
-    } else if (event.shiftKey && window.document.activeElement === first) {
-      event.preventDefault()
-      last.focus()
-    }
-  }
-
   return (
-    <div className="apply-blueprint-dialog__backdrop" onClick={handleCancel} onKeyDownCapture={handleKeyDown}>
-      <div
-        ref={dialogRef}
-        className="apply-blueprint-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="apply-blueprint-dialog-title"
-        tabIndex={-1}
-        onClick={(event) => event.stopPropagation()}
-      >
+    <ModalShell
+      rootClassName="apply-blueprint-dialog__backdrop"
+      panelClassName="apply-blueprint-dialog"
+      ariaLabelledBy="apply-blueprint-dialog-title"
+      onClose={handleCancel}
+      closeOnEscape
+      closeDisabled={applying}
+      trapFocus
+      initialFocusSelector="button[data-modal-initial-focus]"
+    >
         <div className="apply-blueprint-dialog__header">
           <h3 id="apply-blueprint-dialog-title">{t('applyBlueprint')}</h3>
           <button type="button" className="ghost-button" onClick={handleCancel} disabled={applying} aria-label={t('closeApplyBlueprintDialog')}>
@@ -222,7 +187,6 @@ export function ApplyBlueprintDialog({
             {applying ? t('applying') : t('confirmApply')}
           </button>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   )
 }

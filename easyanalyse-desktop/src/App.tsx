@@ -5,6 +5,7 @@ import { CloudBackground } from './components/layout/CloudBackground'
 import { RightSidebar } from './components/layout/RightSidebar'
 import { MobileSharePanel } from './components/share/MobileSharePanel'
 import { ProviderModelSettings } from './components/settings/ProviderModelSettings'
+import { Button, ModalShell } from './components/ui'
 import { getDeviceTemplateOptions, type DeviceVisualKind } from './lib/deviceSymbols'
 import { normalizeDocumentLocal } from './lib/document'
 import { translate } from './lib/i18n'
@@ -310,15 +311,23 @@ function App() {
         </main>
       </div>
       {settingsOpen && (
-        <div className="settings-modal" role="dialog" aria-modal="true" aria-label={t('providerModelSettingsLabel')}>
-          <div className="settings-modal__backdrop" onClick={() => setSettingsOpen(false)} />
-          <div className="settings-modal__panel">
-            <button className="settings-modal__close ghost-button" type="button" onClick={() => setSettingsOpen(false)}>
-              {t('close')}
-            </button>
-            <ProviderModelSettings />
-          </div>
-        </div>
+        <ModalShell
+          rootClassName="settings-modal"
+          backdropClassName="settings-modal__backdrop"
+          panelClassName="settings-modal__panel"
+          ariaLabel={t('providerModelSettingsLabel')}
+          onClose={() => setSettingsOpen(false)}
+        >
+          <Button
+            className="settings-modal__close ghost-button"
+            variant="ghost"
+            type="button"
+            onClick={() => setSettingsOpen(false)}
+          >
+            {t('close')}
+          </Button>
+          <ProviderModelSettings />
+        </ModalShell>
       )}
       <MobileSharePanel
         open={mobileShareOpen}

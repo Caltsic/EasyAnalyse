@@ -2,6 +2,7 @@ import { checkLayoutOverlaps, layoutIssuesAsValidationIssues } from './layoutVal
 import { validateDocumentCommand } from './tauri'
 import { diffBlueprintDocument } from './blueprintDiff'
 import { deriveCircuitInsights } from './circuitDescription'
+import { isRecord } from './guards'
 import type { AgentBlueprintCandidate } from '../types/agent'
 import type { DocumentFile, ValidationIssue } from '../types/document'
 import type { BlueprintRecord, BlueprintWorkspaceFile } from '../types/blueprint'
@@ -1256,8 +1257,4 @@ function safeStringify(value: unknown): string | undefined {
   } catch {
     return undefined
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { getErrorMessage } from '../../lib/errors'
 import { translate } from '../../lib/i18n'
 import { cloneProviderPreset, DEEPSEEK_PROVIDER_PRESET, type ProviderPreset } from '../../lib/providerPresets'
 import { defaultSecretStore, maskSecretRef, type SecretStore, type SecretStoreSecurityStatus } from '../../lib/secretStore'
@@ -107,7 +108,7 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
       }
     }).catch((error: unknown) => {
       if (!cancelled) {
-        setSecretWarning(error instanceof Error ? error.message : String(error))
+        setSecretWarning(getErrorMessage(error))
       }
     })
     return () => {
@@ -124,8 +125,6 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
     setOperationError(null)
     setDraft(draftFromPreset(DEEPSEEK_PROVIDER_PRESET, existingProvider))
   }
-
-  const readableError = (error: unknown) => error instanceof Error ? error.message : String(error)
 
   const saveDraft = async () => {
     setOperationError(null)
@@ -160,7 +159,7 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
         await secretStore.deleteSecret(newApiKeyRef).catch(() => undefined)
       }
       setDraft((current) => ({ ...current, apiKey: '' }))
-      setOperationError(t('unableToSaveProvider', { message: readableError(error) }))
+      setOperationError(t('unableToSaveProvider', { message: getErrorMessage(error) }))
       setBusyAction(null)
       return
     }
@@ -169,7 +168,7 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
       try {
         await secretStore.deleteSecret(oldApiKeyRef)
       } catch (error) {
-        setOperationError(t('providerSavedUnableToDeleteOldKey', { message: readableError(error) }))
+        setOperationError(t('providerSavedUnableToDeleteOldKey', { message: getErrorMessage(error) }))
       }
     }
     setBusyAction(null)
@@ -182,7 +181,7 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
       await clearProviderApiKey(provider.id, undefined, secretStore)
       setDraft((current) => current.id === provider.id ? { ...current, apiKeyRef: '', apiKey: '' } : current)
     } catch (error) {
-      setOperationError(t('unableToClearApiKey', { message: readableError(error) }))
+      setOperationError(t('unableToClearApiKey', { message: getErrorMessage(error) }))
     } finally {
       setBusyAction(null)
     }
@@ -194,7 +193,7 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
     try {
       await deleteProvider(provider.id, undefined, secretStore)
     } catch (error) {
-      setOperationError(t('unableToDeleteProvider', { message: readableError(error) }))
+      setOperationError(t('unableToDeleteProvider', { message: getErrorMessage(error) }))
     } finally {
       setBusyAction(null)
     }

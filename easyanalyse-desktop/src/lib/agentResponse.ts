@@ -11,6 +11,7 @@ import type {
   AgentResponseSemanticVersion,
 } from '../types/agent'
 import type { DocumentFile, ValidationIssue } from '../types/document'
+import { isRecord } from './guards'
 
 export const AGENT_RESPONSE_SCHEMA_VERSION = 'agent-response-v1'
 export const AGENT_RESPONSE_SEMANTIC_VERSION: AgentResponseSemanticVersion = 'easyanalyse-semantic-v4'
@@ -423,10 +424,6 @@ function isAgentResponseKind(value: string): value is AgentResponseKind {
 function asObject(value: unknown, path: string): JsonRecord {
   if (!isRecord(value)) throw new Error(`${path} must be a JSON object`)
   return value
-}
-
-function isRecord(value: unknown): value is JsonRecord {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function requireString(value: unknown, path: string): string {

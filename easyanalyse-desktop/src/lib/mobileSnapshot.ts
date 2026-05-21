@@ -1,5 +1,6 @@
 import { deriveCircuitInsights } from './circuitDescription'
 import { buildDeviceSymbolPrimitives, getDeviceSymbolAccent } from './deviceSymbolPrimitives'
+import { compareCoercedText } from './text'
 import type {
   DocumentFile,
   Locale,
@@ -231,16 +232,4 @@ export function deriveMobileRenderSnapshot(
   }
 }
 
-function safeText(value: unknown) {
-  if (typeof value === 'string') {
-    return value
-  }
-  if (value === null || value === undefined) {
-    return ''
-  }
-  return String(value)
-}
-
-function compareText(left: unknown, right: unknown) {
-  return safeText(left).localeCompare(safeText(right))
-}
+const compareText = compareCoercedText

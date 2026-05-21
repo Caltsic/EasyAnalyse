@@ -1,4 +1,5 @@
 import type { DeviceVisualKind } from './deviceSymbols'
+import { isRecord } from './guards'
 import type { DeviceShape, Point, TerminalDefinition, TerminalSide } from '../types/document'
 
 export interface Bounds {
@@ -13,10 +14,6 @@ const TERMINAL_ANCHOR_KEY = 'terminalAnchor'
 
 export function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function toNormalizedPoint(point: Point, bounds: Bounds): Point {

@@ -18,6 +18,7 @@ import {
 import { runMockAgentProvider } from '../../lib/agentMockProvider'
 import { runConfiguredAgentProvider } from '../../lib/agentProviderClient'
 import type { AgentProviderProgressEvent } from '../../lib/agentProviderClient'
+import { getErrorMessage } from '../../lib/errors'
 import { translate, type TranslationKey } from '../../lib/i18n'
 import { defaultSecretStore, isManagedSecretRef, type SecretStore } from '../../lib/secretStore'
 import { useAgentThreadStore } from '../../store/agentThreadStore'
@@ -85,10 +86,6 @@ export interface AgentPanelProps {
   activeThreadId?: string
   onThreadChange?: (threadId: string) => void
   onNewThread?: () => void
-}
-
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 function selectedProviderFromSettings(): { provider: AgentProviderPublicConfig | null; modelId: string | null } {

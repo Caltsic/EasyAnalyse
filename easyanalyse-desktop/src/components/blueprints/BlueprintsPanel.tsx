@@ -1,17 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { hashDocument } from '../../lib/documentHash'
+import { getErrorMessage } from '../../lib/errors'
 import { translate } from '../../lib/i18n'
 import { useBlueprintStore } from '../../store/blueprintStore'
 import { useEditorStore } from '../../store/editorStore'
 import type { BlueprintRecord } from '../../types/blueprint'
 import { AppErrorBoundary } from '../AppErrorBoundary'
+import { Button, EmptyState } from '../ui'
 import { ApplyBlueprintDialog } from './ApplyBlueprintDialog'
 import { BlueprintCard } from './BlueprintCard'
 import { BlueprintPreviewCanvas } from './BlueprintPreviewCanvas'
-
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error)
-}
 
 export function BlueprintsPanel() {
   const document = useEditorStore((state) => state.document)
@@ -171,15 +169,27 @@ export function BlueprintsPanel() {
           <p>{dirty ? t('workspaceDirty') : t('workspaceClean')}</p>
         </div>
         <div className="blueprints-panel__actions">
-          <button type="button" onClick={() => void handleCreateSnapshot()} disabled={topActionBusy}>
+          <Button type="button" onClick={() => void handleCreateSnapshot()} disabled={topActionBusy}>
             {t('createSnapshot')}
-          </button>
-          <button className="ghost-button" type="button" onClick={() => void handleSave()} disabled={topActionBusy}>
+          </Button>
+          <Button
+            className="ghost-button"
+            variant="ghost"
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={topActionBusy}
+          >
             {t('saveWorkspace')}
-          </button>
-          <button className="ghost-button" type="button" onClick={() => void handleReload()} disabled={topActionBusy}>
+          </Button>
+          <Button
+            className="ghost-button"
+            variant="ghost"
+            type="button"
+            onClick={() => void handleReload()}
+            disabled={topActionBusy}
+          >
             {t('reload')}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -196,10 +206,9 @@ export function BlueprintsPanel() {
       </div>
 
       {blueprints.length === 0 ? (
-        <div className="blueprints-panel__empty">
-          <h3>{t('noBlueprintsYet')}</h3>
-          <p>{t('noBlueprintsHint')}</p>
-        </div>
+        <EmptyState className="blueprints-panel__empty" title={t('noBlueprintsYet')}>
+          {t('noBlueprintsHint')}
+        </EmptyState>
       ) : (
         <div className="blueprints-panel__list" aria-label={t('blueprintList')}>
           {blueprints.map((record) => (

@@ -16,6 +16,7 @@ import {
 import { getDeviceVisualPreset, type DeviceVisualKind } from './deviceSymbols'
 import { getBoundsCenter, getSignalPoint, getStoredTerminalAnchor, projectPointToShapeEdge } from './geometry'
 import { translate } from './i18n'
+import { compareText, safeText } from './text'
 import type {
   DeviceDefinition,
   DeviceShape,
@@ -977,13 +978,4 @@ function hashString(value: string) {
     hash = (hash * 31 + char.charCodeAt(0)) >>> 0
   }
   return hash
-}
-
-function safeText(value: unknown, fallback = ''): string {
-  if (typeof value === 'string' && value.trim().length > 0) return value.trim()
-  return fallback
-}
-
-function compareText(left: unknown, right: unknown): number {
-  return safeText(left).localeCompare(safeText(right))
 }

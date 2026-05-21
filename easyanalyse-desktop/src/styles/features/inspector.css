@@ -1,0 +1,103 @@
+.inspector-shell {
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.inspector-shell__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.inspector-shell__body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 0;
+}
+
+.inspector-section {
+  padding: 14px 16px 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.inspector-section + .inspector-section {
+  border-top: 1px solid var(--border);
+}
+
+.inspector-section__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.inspector-hint {
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+
+.inspector-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.form-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.inspector-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.entity-list,
+.list {
+  display: grid;
+  gap: 8px;
+}
+
+.entity-list__item.is-active {
+  border-color: color-mix(in srgb, var(--accent) 52%, transparent);
+  background: var(--item-active-bg);
+}
+
+.autocomplete {
+  position: relative;
+}
+
+.autocomplete__panel {
+  position: absolute;
+  z-index: 4;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-solid);
+  box-shadow: var(--shadow);
+}
+
+.autocomplete__option {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 8px 10px;
+}
+
+@media (max-width: 768px) {
+  .inspector-actions {
+    grid-template-columns: 1fr;
+  }
+}

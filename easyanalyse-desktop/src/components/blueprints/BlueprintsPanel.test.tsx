@@ -204,9 +204,12 @@ describe('BlueprintsPanel', () => {
   it('does not focus the destructive confirm action by default or apply from root Enter/Space', async () => {
     const { host, onConfirm } = await renderApplyDialog()
     const dialog = host.querySelector('[role="dialog"]') as HTMLElement
+    const title = host.querySelector('#apply-blueprint-dialog-title')
     const confirmButton = firstButtonByText(host, 'Confirm apply') as HTMLButtonElement
     const cancelButton = firstButtonByText(host, 'Cancel') as HTMLButtonElement
 
+    expect(dialog.getAttribute('aria-labelledby')).toBe('apply-blueprint-dialog-title')
+    expect(title?.textContent).toBe('Apply blueprint')
     expect(window.document.activeElement).not.toBe(confirmButton)
     expect(window.document.activeElement).toBe(cancelButton)
 
@@ -216,6 +219,16 @@ describe('BlueprintsPanel', () => {
     })
 
     expect(onConfirm).not.toHaveBeenCalled()
+  })
+
+  it('cancels from the apply dialog backdrop when not applying', async () => {
+    const { host, onCancel } = await renderApplyDialog()
+
+    await act(async () => {
+      host.querySelector('.apply-blueprint-dialog__backdrop')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onCancel).toHaveBeenCalledTimes(1)
   })
 
   it('traps Tab focus inside the apply dialog controls', async () => {
@@ -255,6 +268,12 @@ describe('BlueprintsPanel', () => {
     const applyingDialog = await renderApplyDialog({ applying: true })
     await act(async () => {
       applyingDialog.host.querySelector('.apply-blueprint-dialog__backdrop')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(applyingDialog.onCancel).not.toHaveBeenCalled()
+
+    const applyingRoot = applyingDialog.host.querySelector('[role="dialog"]') as HTMLElement
+    await act(async () => {
+      applyingRoot.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     })
     expect(applyingDialog.onCancel).not.toHaveBeenCalled()
   })

@@ -1,3 +1,5 @@
+@import './styles/ui.css';
+
 :root {
   --bg: #f3f6fb;
   --panel: rgba(255, 255, 255, 0.92);

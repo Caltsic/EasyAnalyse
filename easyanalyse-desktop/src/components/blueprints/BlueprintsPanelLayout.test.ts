@@ -5,11 +5,11 @@ declare function require(moduleName: string): unknown
 const { readFileSync } = require('fs') as { readFileSync: (path: string, encoding: 'utf8') => string }
 const { dirname, resolve } = require('path') as { dirname: (path: string) => string; resolve: (...paths: string[]) => string }
 const { fileURLToPath } = require('url') as { fileURLToPath: (url: string) => string }
-const appCss = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../../App.css'), 'utf8')
+const blueprintsCss = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../../styles/features/blueprints.css'), 'utf8')
 
 function cssRule(selector: string) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return appCss.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
+  return blueprintsCss.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
 }
 
 describe('BlueprintsPanel layout CSS', () => {

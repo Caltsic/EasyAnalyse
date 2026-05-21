@@ -1,5 +1,7 @@
 import { AGENT_RESPONSE_SCHEMA_VERSION, AGENT_RESPONSE_SEMANTIC_VERSION, parseAgentResponse } from './agentResponse'
 import { getAgentToolSchemas, runAgentTool } from './agentTools'
+import { getErrorMessage as errorMessage } from './errors'
+import { isRecord } from './guards'
 import type { AgentResponseParseResult } from '../types/agent'
 import type { AgentToolExecutor, AgentToolRuntimeContext, AgentToolTraceEntry } from '../types/agentTools'
 import type { DocumentFile, ValidationIssue } from '../types/document'
@@ -1373,10 +1375,6 @@ function safeStringify(value: unknown): string | undefined {
   }
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
 function isAbortError(error: unknown): boolean {
   if (error instanceof DOMException) return error.name === 'AbortError'
   if (!isRecord(error)) return false
@@ -1385,8 +1383,4 @@ function isAbortError(error: unknown): boolean {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined
-}
-
-function isRecord(value: unknown): value is JsonRecord {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

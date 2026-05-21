@@ -20,6 +20,8 @@ import {
 import { setStoredTerminalAnchor } from '../lib/geometry'
 import { getStoredLocale, translate } from '../lib/i18n'
 import { makeId } from '../lib/ids'
+import { getErrorMessage } from '../lib/errors'
+import { compareCoercedText } from '../lib/text'
 import { useBlueprintStore } from './blueprintStore'
 import {
   isTauriRuntime,
@@ -154,10 +156,6 @@ function normalizeDialogPath(path: string | string[] | null) {
   }
 
   return null
-}
-
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error)
 }
 
 function getSaveStatusMessage(locale: Locale, path: string, report: ValidationReport) {
@@ -327,19 +325,7 @@ function compareTerminalPlacement(left: TerminalDefinition, right: TerminalDefin
   )
 }
 
-function safeText(value: unknown) {
-  if (typeof value === 'string') {
-    return value
-  }
-  if (value === null || value === undefined) {
-    return ''
-  }
-  return String(value)
-}
-
-function compareText(left: unknown, right: unknown) {
-  return safeText(left).localeCompare(safeText(right))
-}
+const compareText = compareCoercedText
 
 function nextNetworkLineView(document: DocumentFile, label: string): NetworkLineViewDefinition {
   const bounds = summarizeDeviceViewBounds(document)

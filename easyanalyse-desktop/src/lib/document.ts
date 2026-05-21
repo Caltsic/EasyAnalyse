@@ -1,6 +1,7 @@
 import { makeId } from './ids'
 import { translate } from './i18n'
 import { getDefaultShapeForKind, getReferencePrefixForKind } from './deviceSymbols'
+import { compareText, safeText } from './text'
 import type {
   DeviceDefinition,
   DeviceProperties,
@@ -204,15 +205,6 @@ function cleanOptionalString(value: string | undefined) {
 
   const trimmed = value.trim()
   return trimmed || undefined
-}
-
-function safeText(value: unknown, fallback = '') {
-  const trimmed = typeof value === 'string' ? value.trim() : ''
-  return trimmed || fallback
-}
-
-function compareText(left: unknown, right: unknown) {
-  return safeText(left).localeCompare(safeText(right))
 }
 
 function uniqueNonEmptyStrings(values: string[] | undefined) {

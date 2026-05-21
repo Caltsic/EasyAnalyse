@@ -55,7 +55,7 @@ export function BlueprintPreviewCanvas({
         focusedDeviceId={null}
         focusedLabelKey={null}
         focusedNetworkLineId={null}
-        viewportAnimationTarget={null}
+        showViewportReset={false}
       />
     </div>
   )

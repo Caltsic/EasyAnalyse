@@ -18,6 +18,7 @@ import {
 } from '../../lib/geometry'
 import { translate } from '../../lib/i18n'
 import { getCanvasTheme } from '../../lib/canvasTheme'
+import { compareCoercedText } from '../../lib/text'
 import type {
   DeviceShape,
   DocumentFile,
@@ -518,19 +519,7 @@ function layoutTerminalLabels(
     })
 }
 
-function safeText(value: unknown) {
-  if (typeof value === 'string') {
-    return value
-  }
-  if (value === null || value === undefined) {
-    return ''
-  }
-  return String(value)
-}
-
-function compareText(left: unknown, right: unknown) {
-  return safeText(left).localeCompare(safeText(right))
-}
+const compareText = compareCoercedText
 
 function getTerminalInsertIndex(
   side: Exclude<TerminalSide, 'auto'>,
@@ -717,6 +706,7 @@ export interface CircuitCanvasRendererProps {
   focusedDeviceId?: string | null
   focusedLabelKey?: string | null
   focusedNetworkLineId?: string | null
+  showViewportReset?: boolean
   viewportAnimationTarget?: { center: Point; zoom: number; sequence?: number } | null
   onMoveDevice?: (id: string, position: Point) => void
   onMoveDevices?: (ids: string[], delta: Point) => void
@@ -751,6 +741,7 @@ export function CircuitCanvasRenderer({
   focusedDeviceId = null,
   focusedLabelKey = null,
   focusedNetworkLineId = null,
+  showViewportReset = true,
   viewportAnimationTarget = null,
   onMoveDevice = noop,
   onMoveDevices = noop,
@@ -1372,9 +1363,11 @@ export function CircuitCanvasRenderer({
         <div className="canvas-header__meta">
           <span>{t('devicesCount', { count: document.devices.length })}</span>
           <span>{t('labelsCount', { count: insights.connectionGroups.length })}</span>
-          <button className="ghost-button" onClick={onResetViewportToOrigin}>
-            {t('goOrigin')}
-          </button>
+          {showViewportReset ? (
+            <button className="ghost-button" onClick={onResetViewportToOrigin}>
+              {t('goOrigin')}
+            </button>
+          ) : null}
         </div>
       </div>
 

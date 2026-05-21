@@ -11,6 +11,7 @@ import {
   isSourceLikeDirection,
   resolveSharedLabelBucket,
 } from './document'
+import { compareCoercedText } from './text'
 import type { Bounds } from './geometry'
 import type {
   NetworkLineOrientation,
@@ -733,19 +734,7 @@ function sortDevices(left: DerivedDevice, right: DerivedDevice) {
   return compareText(left.title, right.title) || compareText(left.id, right.id)
 }
 
-function safeText(value: unknown) {
-  if (typeof value === 'string') {
-    return value
-  }
-  if (value === null || value === undefined) {
-    return ''
-  }
-  return String(value)
-}
-
-function compareText(left: unknown, right: unknown) {
-  return safeText(left).localeCompare(safeText(right))
-}
+const compareText = compareCoercedText
 
 function buildSyntheticRail(label: string, centroid: Point, deviceBounds: Bounds): FocusRail {
   const railWidth = Math.max(220, deviceBounds.width + 120)

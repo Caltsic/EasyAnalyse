@@ -11,6 +11,7 @@ import {
   saveBlueprintWorkspaceToPath,
   validateDocumentCommand,
 } from '../lib/tauri'
+import { getErrorMessage } from '../lib/errors'
 import type {
   AgentBlueprintCandidate,
   AgentResponseParseIssue,
@@ -49,10 +50,6 @@ export interface BlueprintState {
   deleteBlueprint(id: string): void
   selectBlueprint(id: string | null): void
   markApplied(id: string, info: BlueprintAppliedInfo): void
-}
-
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 function getMainDocumentRef(filePath: string | null, mainDocument: DocumentFile, hash: string): BlueprintMainDocumentRef {

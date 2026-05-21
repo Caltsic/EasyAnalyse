@@ -1,4 +1,5 @@
 import { deriveCircuitInsights } from './circuitDescription'
+import { compareCoercedText } from './text'
 import type { DocumentFile, ValidationIssue } from '../types/document'
 
 export interface LayoutOverlapCheckOptions {
@@ -431,16 +432,4 @@ function onSegment(start: Point, end: Point, point: Point): boolean {
   )
 }
 
-function safeText(value: unknown) {
-  if (typeof value === 'string') {
-    return value
-  }
-  if (value === null || value === undefined) {
-    return ''
-  }
-  return String(value)
-}
-
-function compareText(left: unknown, right: unknown) {
-  return safeText(left).localeCompare(safeText(right))
-}
+const compareText = compareCoercedText

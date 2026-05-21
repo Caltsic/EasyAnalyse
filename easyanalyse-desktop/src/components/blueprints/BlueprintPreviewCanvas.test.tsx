@@ -116,7 +116,7 @@ describe('BlueprintPreviewCanvas', () => {
     await expect(hashDocument(mainDocument)).resolves.toBe(beforeHash)
   })
 
-  it('forces non-interactive preview mode and does not pass mutation callbacks to the renderer', async () => {
+  it('forces non-interactive preview mode and does not pass document mutation callbacks to the renderer', async () => {
     rendererCalls.length = 0
     const { BlueprintPreviewCanvas } = await import('./BlueprintPreviewCanvas')
 
@@ -142,12 +142,14 @@ describe('BlueprintPreviewCanvas', () => {
       'onFocusDevice',
       'onFocusNetworkLine',
       'onClearFocus',
-      'onResetViewportToOrigin',
     ]
 
     for (const callbackName of forbiddenCallbacks) {
       expect(rendererCalls[0]).not.toHaveProperty(callbackName)
     }
+    expect(rendererCalls[0].showViewportReset).toBe(false)
+    expect(rendererCalls[0]).not.toHaveProperty('onResetViewportToOrigin')
+    expect(rendererCalls[0]).not.toHaveProperty('viewportAnimationTarget')
   })
 
   it('isolates focused preview editing keys and global shortcuts from main editor window handlers', async () => {

@@ -1,3 +1,4 @@
+import { isRecord } from './guards'
 import type { AgentProviderKind, AgentProviderPublicConfig, AppLocalePreference, AppSettings, AppThemeMode } from '../types/settings'
 
 export const APP_SETTINGS_STORAGE_KEY = 'easyanalyse.appSettings.v1'
@@ -22,10 +23,6 @@ export interface AppSettingsStorage {
 const VALID_THEMES = new Set<AppThemeMode>(['system', 'light', 'dark'])
 const VALID_LOCALES = new Set<AppLocalePreference>(['system', 'zh-CN', 'en-US'])
 const VALID_PROVIDER_KINDS = new Set<AgentProviderKind>(['openai-compatible', 'anthropic', 'deepseek'])
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 function nonEmptyString(value: unknown): string | undefined {
   if (typeof value !== 'string') {

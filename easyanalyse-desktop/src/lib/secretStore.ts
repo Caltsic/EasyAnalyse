@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { isRecord } from './guards'
 import { isTauriRuntime } from './tauri'
 
 export const SECRET_REF_PREFIX = 'secret-ref:'
@@ -42,10 +43,6 @@ export interface SecretStore {
 export interface CreateSecretStoreOptions {
   backend?: SecretBackend
   idFactory?: () => string
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 export function isSecretRef(value: unknown): value is string {

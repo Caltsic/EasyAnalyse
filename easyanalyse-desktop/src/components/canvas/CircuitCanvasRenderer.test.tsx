@@ -119,6 +119,16 @@ describe('CircuitCanvasRenderer', () => {
     expect(canvasViewSource).toContain('interactive')
   })
 
+  it('can hide the viewport reset action for embedded preview canvases', async () => {
+    const { CircuitCanvasRenderer } = await import('./CircuitCanvasRenderer')
+
+    const markup = renderToStaticMarkup(
+      <CircuitCanvasRenderer document={createPreviewDocument()} theme="light" locale="en-US" showViewportReset={false} />,
+    )
+
+    expect(markup).not.toContain('Origin')
+  })
+
   it('keeps editorStore and main document mutations out of the renderer source', () => {
     expect(rendererSource).not.toContain('useEditorStore')
     expect(rendererSource).not.toContain('../store/editorStore')

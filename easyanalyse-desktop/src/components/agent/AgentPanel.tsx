@@ -184,7 +184,7 @@ export function AgentPanel({
     meta: providerLabel,
     tone: 'neutral',
   }), [provider?.kind, providerLabel, t])
-  const visibleMessages = currentMessages.length > 0 ? currentMessages : [welcomeMessage]
+  const visibleMessages = currentMessages.length > 0 ? orderAgentMessagesForDisplay(currentMessages) : [welcomeMessage]
 
   useEffect(() => {
     if (!running || runState.startedAtMs === null) return undefined
@@ -766,6 +766,37 @@ function formatThreadTime(timestampMs: number): string {
   } catch {
     return ''
   }
+}
+
+function orderAgentMessagesForDisplay(messages: AgentChatMessage[]): AgentChatMessage[] {
+  const ordered: AgentChatMessage[] = []
+  let segment: AgentChatMessage[] = []
+
+  const flushSegment = () => {
+    if (segment.length === 0) return
+    const hasUser = segment.some((message) => message.role === 'user')
+    const hasAssistant = segment.some((message) => message.role === 'assistant')
+    const hasTool = segment.some((message) => message.role === 'tool')
+    if (hasUser && hasAssistant && hasTool) {
+      ordered.push(
+        ...segment.filter((message) => message.role === 'user'),
+        ...segment.filter((message) => message.role === 'tool'),
+        ...segment.filter((message) => message.role === 'assistant'),
+      )
+    } else {
+      ordered.push(...segment)
+    }
+    segment = []
+  }
+
+  messages.forEach((message) => {
+    if (message.role === 'user' && segment.length > 0) {
+      flushSegment()
+    }
+    segment.push(message)
+  })
+  flushSegment()
+  return ordered
 }
 
 function parseTimestampMs(value: string): number | undefined {

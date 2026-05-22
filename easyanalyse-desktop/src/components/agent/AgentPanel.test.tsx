@@ -273,6 +273,17 @@ describe('AgentPanel', () => {
     const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })
     await secretStore.saveSecret({ providerId: provider.id, value: 'test-deepseek-key' })
     const parsed = parseAgentResponse(createMockAgentResponse({ prompt: 'deepseek slow blueprint', scenario: 'blueprints' }))
+    const parsedWithToolTrace = {
+      ...parsed,
+      toolTrace: [
+        {
+          toolName: 'check_blueprint_format',
+          ok: true,
+          summary: 'Blueprint candidate hard format check passed.',
+          issueCount: 0,
+        },
+      ],
+    }
     const pending = deferred<AgentResponseParseResult>()
     providerMock.runConfiguredAgentProvider.mockImplementation((input) => {
       input.progress?.({ phase: 'request', message: 'Sending provider request 1 with tool access.' })
@@ -302,12 +313,19 @@ describe('AgentPanel', () => {
     expect(toolDetails.every((details) => !details.open)).toBe(true)
 
     await act(async () => {
-      pending.resolve(parsed)
+      pending.resolve(parsedWithToolTrace)
       await pending.promise
     })
     await act(async () => {
       await vi.waitFor(() => expect(useBlueprintStore.getState().workspace?.blueprints).toHaveLength(2))
     })
+    const messageArticles = Array.from(host.querySelectorAll<HTMLElement>('article.agent-message'))
+    const messageTexts = messageArticles.map((article) => article.textContent ?? '')
+    const toolChecksIndex = messageTexts.findIndex((text) => text.includes('Tool checks'))
+    const assistantIndex = messageTexts.findIndex((text) => text.includes('2 blueprint candidates stored'))
+    expect(toolChecksIndex).toBeGreaterThan(-1)
+    expect(assistantIndex).toBeGreaterThan(toolChecksIndex)
+    expect(messageArticles.at(-1)?.className).toContain('agent-message--assistant')
   })
 
   it('does not call a configured provider when its API key is missing', async () => {

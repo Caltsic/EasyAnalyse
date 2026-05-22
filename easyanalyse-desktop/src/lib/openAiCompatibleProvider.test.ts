@@ -368,7 +368,7 @@ describe('openAiCompatibleProvider', () => {
     expect(result.toolTrace).toEqual([expect.objectContaining({ toolName: 'check_blueprint_candidate', issueCount: 1 })])
   })
 
-  it('rejects final blueprints after unresolved hard blueprint format errors', async () => {
+  it('accepts final blueprints when the final local hard format check passes after an earlier hard format error', async () => {
     const hardFormatToolCallBody = {
       id: 'chatcmpl-hard-format-failing',
       choices: [
@@ -405,6 +405,55 @@ describe('openAiCompatibleProvider', () => {
     let callCount = 0
     const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => jsonResponse(callCount++ === 0 ? hardFormatToolCallBody : finalBody))
 
+    const result = await runOpenAiCompatibleProvider({
+      ...baseBuildInput(),
+      fetch: fetchMock,
+      currentDocument: createDocument(),
+      maxToolIterations: 1,
+      validateDocument: () => ({ detectedFormat: 'semantic-v4', schemaValid: true, semanticValid: true, issueCount: 0, issues: [] }),
+    })
+
+    expect(result.response.kind).toBe('blueprints')
+    expect(result.toolTrace).toEqual([expect.objectContaining({ toolName: 'check_blueprint_format', issueCount: 1 })])
+  })
+
+  it('rejects final blueprints only when the final local hard format check still fails', async () => {
+    const hardFormatToolCallBody = {
+      id: 'chatcmpl-hard-format-still-failing',
+      choices: [
+        {
+          index: 0,
+          finish_reason: 'tool_calls',
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'call-hard-format',
+                type: 'function',
+                function: {
+                  name: 'check_blueprint_format',
+                  arguments: JSON.stringify({
+                    candidate: {
+                      title: 'Bad',
+                      summary: 'Bad',
+                      rationale: 'Bad',
+                      tradeoffs: [],
+                      document: { ...createDocument(), schemaVersion: '3.0.0' },
+                      issues: [],
+                    },
+                  }),
+                },
+              },
+            ],
+          },
+        },
+      ],
+    }
+    const finalBody = openAiChatBody(agentBlueprints(createDocument({ schemaVersion: '3.0.0' as DocumentFile['schemaVersion'] })))
+    let callCount = 0
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => jsonResponse(callCount++ === 0 ? hardFormatToolCallBody : finalBody))
+
     await expect(
       runOpenAiCompatibleProvider({
         ...baseBuildInput(),
@@ -414,7 +463,7 @@ describe('openAiCompatibleProvider', () => {
       }),
     ).rejects.toMatchObject({
       code: 'AGENT_PROVIDER_PROTOCOL_ERROR',
-      message: expect.stringContaining('hard format tool'),
+      message: expect.stringContaining('final blueprint hard format check still found'),
     })
   })
 

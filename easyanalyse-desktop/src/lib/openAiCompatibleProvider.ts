@@ -484,11 +484,12 @@ export async function runOpenAiCompatibleProvider(input: OpenAiCompatibleRunInpu
       }
       throw error
     }
-    assertNoKnownHardFormatFailure(parsed, {
+    await assertNoKnownHardFormatFailure(parsed, {
       lastHardFormatIssueCount,
       status: response.status,
       provider: input.provider,
       model: input.model,
+      input,
     })
     emitProgress(input.progress, { phase: 'complete', message: 'Provider returned a valid AgentResponse.', detail: { kind: parsed.response.kind } })
     return { ...parsed, toolTrace }
@@ -788,24 +789,68 @@ function oneLine(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
 }
 
-function assertNoKnownHardFormatFailure(
+async function assertNoKnownHardFormatFailure(
   parsed: ProviderParseResult,
   state: {
     lastHardFormatIssueCount: number | null
     status: number
     provider: AgentProviderConfig
     model: AgentModelConfig
+    input: OpenAiCompatibleRunInput
   },
-): void {
+): Promise<void> {
   if (parsed.response.kind !== 'blueprints' || state.lastHardFormatIssueCount === null || state.lastHardFormatIssueCount === 0) return
+  const finalHardFormatIssues = await collectFinalBlueprintHardFormatIssues(parsed, state.input)
+  if (finalHardFormatIssues.length === 0) return
+
+  const issueSummary = summarizeIssueCodes(finalHardFormatIssues)
+  const issueLines = finalHardFormatIssues.slice(0, 8).map(formatIssueLine)
   throw createError({
     code: 'AGENT_PROVIDER_PROTOCOL_ERROR',
-    message: `OpenAI-compatible provider returned blueprints after a hard format tool reported ${state.lastHardFormatIssueCount} unresolved issue(s).`,
+    message: [
+      `OpenAI-compatible provider returned blueprints after a hard format tool reported ${state.lastHardFormatIssueCount} unresolved issue(s), and the final blueprint hard format check still found ${finalHardFormatIssues.length} issue(s).`,
+      issueSummary ? `Issue groups: ${issueSummary}.` : '',
+      issueLines.length > 0 ? `First issues: ${issueLines.join(' | ')}` : '',
+    ].filter(Boolean).join(' '),
     retryable: false,
     status: state.status,
     provider: state.provider,
     model: state.model,
   })
+}
+
+async function collectFinalBlueprintHardFormatIssues(
+  parsed: ProviderParseResult,
+  input: OpenAiCompatibleRunInput,
+): Promise<ValidationIssue[]> {
+  if (parsed.response.kind !== 'blueprints') return []
+  const context = buildToolRuntimeContext(input)
+  const issues: ValidationIssue[] = []
+  for (const [index, candidate] of parsed.response.blueprints.entries()) {
+    const result = await runAgentTool('check_blueprint_format', { candidate }, context)
+    const hardIssues = getHardFormatIssuesForToolResult('check_blueprint_format', result.ok, result.issues)
+    issues.push(...hardIssues.map((issue) => annotateFinalBlueprintIssue(issue, index, candidate.title)))
+  }
+  return issues
+}
+
+function annotateFinalBlueprintIssue(issue: ValidationIssue, candidateIndex: number, title: string): ValidationIssue {
+  return {
+    ...issue,
+    path: formatFinalBlueprintIssuePath(issue.path, candidateIndex),
+    details: isRecord(issue.details)
+      ? { ...issue.details, candidateIndex, candidateTitle: title }
+      : { originalDetails: issue.details, candidateIndex, candidateTitle: title },
+  }
+}
+
+function formatFinalBlueprintIssuePath(path: string | null | undefined, candidateIndex: number): string {
+  const candidatePath = `blueprints[${candidateIndex}]`
+  if (!path) return candidatePath
+  if (path === 'candidate') return candidatePath
+  if (path.startsWith('candidate.')) return `${candidatePath}.${path.slice('candidate.'.length)}`
+  if (path === 'document' || path.startsWith('document.')) return `${candidatePath}.${path}`
+  return `${candidatePath}.document.${path}`
 }
 
 function describeAssistantContentState(assistantMessage: JsonRecord | null, choice: JsonRecord): string {

@@ -24,12 +24,32 @@ EasyAnalyse is not a traditional frontend plus remote backend project.
 
 ## Non-Negotiable Rules
 
+### Branching And Permissions
+
+- EASYAnalyse uses trunk-based development. `main` is the single trunk.
+- Work branches are short-lived and use commit-type prefixes: `feat/*`, `fix/*`, `docs/*`, `style/*`, `refactor/*`, `perf/*`, `test/*`, `ci/*`, `chore/*`.
+- `agent` is only a protected preview/integration mirror for Agent work. It must not become a long-lived divergent branch.
+- `release/*` is only for short release stabilization windows.
+- `main`, `agent`, and `release/*` must not be force-pushed.
+- Contributors do not push directly to `main`. Maintainers merge through PRs after CI and review.
+- Permission boundaries are defined in [branching-and-permissions.md](branching-and-permissions.md).
+
 ### Pull Request Shape
 
 - One PR addresses one root cause or one coherent feature slice.
 - Large architecture, UI page rewrite, data model, provider protocol, or public format changes require a design note under `docs/plans/` before implementation.
 - PRs must state validation commands. If no test was added, the PR must explain why.
 - Pure formatting churn across unrelated files is not allowed.
+
+### Issues And Commits
+
+- Bug reports must include reproduction steps, expected result, actual result, environment, and logs/screenshots when available.
+- Feature requests start with feasibility discussion before implementation.
+- Discussion issues are used for architecture, process, and open design topics.
+- Required core labels are `bug`, `feature`, and `discussion`; supporting labels include `docs`, `security`, `ci`, `release`, `agent`, `desktop`, and `mobile`.
+- Commit messages follow Conventional Commits: `type(scope): summary`.
+- Allowed types are `feat`, `fix`, `style`, `perf`, `refactor`, `docs`, `test`, `build`, `ci`, `chore`, and `revert`.
+- Full details are defined in [issue-and-commit-policy.md](issue-and-commit-policy.md).
 
 ### TypeScript
 

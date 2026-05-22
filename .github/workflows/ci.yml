@@ -9,6 +9,13 @@ on:
       - "release/**"
       - "feat/**"
       - "fix/**"
+      - "docs/**"
+      - "style/**"
+      - "refactor/**"
+      - "perf/**"
+      - "test/**"
+      - "ci/**"
+      - "chore/**"
   workflow_dispatch:
 
 permissions:

@@ -1,0 +1,51 @@
+name: Feature request / 需求提案
+description: Propose a feature after feasibility discussion. / 提出需求并先讨论可行性。
+title: "feat: "
+labels: ["feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature requests should discuss feasibility before implementation.
+        需求提案应先讨论可行性，再进入实现。
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / 问题
+      description: What user problem should this solve? / 这个需求解决什么用户问题？
+    validations:
+      required: true
+  - type: textarea
+    id: users
+    attributes:
+      label: Target Users / 目标用户
+      description: Who needs this? / 谁需要这个功能？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Behavior / 建议行为
+      description: Describe the desired workflow or UI/API behavior. / 描述期望流程、UI 或 API 行为。
+    validations:
+      required: true
+  - type: textarea
+    id: success
+    attributes:
+      label: Success Criteria / 成功标准
+      description: How do we know the feature is done? / 如何判断功能完成？
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives / 替代方案
+      description: What alternatives or smaller steps should be considered? / 有哪些替代方案或更小步骤？
+  - type: textarea
+    id: risks
+    attributes:
+      label: Feasibility And Risks / 可行性与风险
+      description: Mention technical risk, UX risk, migration, data format, Provider protocol, or permission impact. / 说明技术、体验、迁移、数据格式、Provider 协议或权限影响。
+    validations:
+      required: true
+

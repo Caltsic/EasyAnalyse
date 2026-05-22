@@ -1,0 +1,32 @@
+name: Discussion / 讨论
+description: Discuss architecture, process, design, or open questions. / 讨论架构、流程、设计或开放问题。
+title: "discussion: "
+labels: ["discussion"]
+body:
+  - type: textarea
+    id: topic
+    attributes:
+      label: Topic / 主题
+      description: What should be discussed? / 需要讨论什么？
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context / 背景
+      description: Provide enough context for maintainers and contributors. / 提供足够背景，方便维护者和贡献者判断。
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Options / 方案
+      description: List possible directions or tradeoffs. / 列出可能方向或取舍。
+  - type: textarea
+    id: decision
+    attributes:
+      label: Desired Decision / 期望决策
+      description: What decision or next step do you want from this discussion? / 希望通过讨论得到什么决策或下一步？
+    validations:
+      required: true
+

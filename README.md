@@ -1,179 +1,41 @@
 # EASYAnalyse
 
-EASYAnalyse 是一款面向硬件工程与 AI 协作的电路搭建、审阅和分析软件。它不是传统 PCB 绘图工具，也不是 SPICE 仿真器；它关注的是把电路意图、器件、端子、网络标签、参数和布局保存成可读、可校验、可由 AI 继续理解的语义 JSON。
+Languages: [中文](README.zh-CN.md) | [English](README.en-US.md)
 
-你可以把它理解为一个“硬件电路工作台”：工程师负责提出目标、审阅结果和做最终判断，AI Agent 负责辅助生成蓝图、检查当前电路、解释结构、提出修改建议，并通过工具把候选电路写入蓝图工作区。
+EASYAnalyse is a hardware circuit construction, review, and AI-assisted analysis workspace. It focuses on semantic circuit JSON rather than PCB layout or SPICE simulation: devices, terminals, network labels, parameters, and canvas layout are stored in a format that humans, software, and AI agents can read and validate.
 
-## 适合用来做什么
+EASYAnalyse 是一款面向硬件工程与 AI 协作的电路搭建、审阅和分析软件。它关注语义电路 JSON，而不是传统 PCB Layout 或 SPICE 仿真：器件、端子、网络标签、参数和画布布局都会保存为人、软件和 AI Agent 都能读取与校验的结构。
 
-- 快速搭建语义电路图：电源、MCU、运放、滤波器、接口电路、驱动电路、基础模拟/数字模块等。
-- 让 AI 根据需求生成电路候选，例如“做一个截止频率 5 kHz 的低通滤波器”。
-- 让 AI 阅读当前电路 JSON，解释设计、排查显示异常或结构问题。
-- 在不覆盖主文档的前提下保存多个蓝图候选，逐个预览、校验、比较和应用。
-- 用统一的 JSON 表达电路，让电路图可以被人、软件和大模型共同理解。
-- 在中文和英文 UI 之间切换，方便不同使用场景。
+## What You Can Do
 
-## 基本使用流程
+- Build semantic circuit diagrams for power, MCU, filters, op-amp blocks, interfaces, drivers, and mixed analog/digital modules.
+- Ask the Agent to design blueprint candidates, inspect the current circuit, explain topology, or diagnose display and format problems.
+- Keep generated circuits in the blueprint workspace before applying them to the main document.
+- Validate whether JSON can be opened and rendered, while treating semantic issues as engineering hints rather than hard blockers.
+- Share read-only mobile snapshots on the local network.
+- Switch the app UI between Chinese and English.
 
-1. 打开 EASYAnalyse 后，可以新建电路，也可以打开已有的 `.json` 电路文件。
-2. 在顶部工具栏选择器件模板，然后点击“添加器件”把器件放到画布。
-3. 在右侧“检查器”中编辑器件名称、类型、参数、端子、方向、位置和网络标签。
-4. 用相同的端子 `label` 表示连接关系。两个端子只要共享同一个非空 label，就被视为连接在同一网络上。
-5. 使用“校验”检查当前 JSON 是否能被软件正确理解和显示。
-6. 保存文档后，可以继续在蓝图工作区创建快照、保存 sidecar 蓝图，或者让 Agent 生成新的候选。
+## 用户可以做什么
 
-## 画布与检查器
+- 搭建电源、MCU、滤波器、运放、接口、驱动和基础模拟/数字模块等语义电路图。
+- 让 Agent 生成蓝图候选、检查当前电路、解释拓扑，或排查显示与格式问题。
+- 在应用蓝图前，把 AI 生成的候选先保存在蓝图工作区中预览、校验和比较。
+- 校验 JSON 是否能被打开和渲染，同时把语义 issue 作为工程提示而不是强制阻断。
+- 在局域网内分享只读手机快照。
+- 在中文和英文界面之间切换。
 
-画布用于查看和调整电路结构，检查器用于编辑选中对象。
+## Guides
 
-你可以在画布上：
+- [中文用户指南](README.zh-CN.md)
+- [English User Guide](README.en-US.md)
+- [Contributing / 贡献指南](CONTRIBUTING.md)
+- [Code Management Standard](docs/governance/code-management.md)
+- [Release Policy](docs/governance/release-policy.md)
+- [Branching and Permissions](docs/governance/branching-and-permissions.md)
+- [Issue and Commit Policy](docs/governance/issue-and-commit-policy.md)
+- [Security Policy](SECURITY.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
 
-- 拖动器件调整布局。
-- 选择多个器件后一起拖动。
-- 按空格旋转选中器件。
-- 聚焦某个器件或网络，查看它的上下游关系。
-- 查看独立网络线、器件端子和标签关系。
+## License
 
-你可以在检查器中：
-
-- 修改器件名称、类型、位号、封装和参数。
-- 添加输入/输出端子。
-- 设置端子的方向、位置、顺序、引脚名和网络标签。
-- 给电阻、电容、电感、晶振、电源、运放、稳压器等器件补充必要电气参数。
-
-## 连接规则
-
-EASYAnalyse 的核心连接规则是端子标签，而不是传统导线对象。
-
-例如：
-
-- MCU 的 `SCL` 端子和传感器的 `SCL` 端子都写成 label `I2C_SCL`，它们就属于同一网络。
-- 电源输出端和芯片供电脚都写成 label `3V3`，它们就属于 3.3 V 电源网络。
-- 如果一个端子没有 label，软件会把它视为未连接或连接语义不完整。
-
-这种方式让 AI 不必猜测导线几何形状，也让工程师可以直接从 JSON 读出电路语义。
-
-## 校验应该怎么理解
-
-校验分为两类：
-
-- 硬格式检查：JSON 是否有必需字段、字段类型是否正确、是否存在无法显示的格式错误。
-- 语义提示：电路是否缺少参数、是否有未连接端子、电源标签是否不够明确、方向是否可疑等。
-
-硬格式问题通常需要修复，因为它可能导致器件无法显示或文档无法打开。
-
-语义提示不等于电路错误。它更像工程审阅提醒：有提示时可以让 Agent 解释原因，也可以由你判断是否需要修改。
-
-## Agent 怎么用
-
-右侧“AI 对话”是 Agent 工作区。它首先是一个正常对话窗口，其次才是在需要时调用工具的硬件开发助手。
-
-推荐流程：
-
-1. 在顶部打开“模型设置”，配置 Provider、模型和 API key。
-2. 如果使用 DeepSeek，可以直接选择 DeepSeek 预设，再填写 API key。
-3. 在 Agent 输入框中描述你的目标，例如“设计一个 5 kHz 高 Q 低通滤波器”。
-4. 如果希望 Agent 读取当前电路，勾选 `Context`。
-5. Agent 会根据需要自主调用工具，例如读取当前文档、检查蓝图格式、检查候选电路、生成蓝图候选。
-6. 工具调用过程默认折叠，保留必要状态；需要排查时可以展开查看细节。
-7. 如果 Agent 生成了蓝图候选，它们会进入“蓝图”面板，而不是直接覆盖当前主电路。
-
-`Context` 勾选的含义是：把当前电路 JSON 一起发给模型。适合让 Agent 检查当前电路、解释已有结构、基于现有设计继续修改。不勾选时，Agent 只根据你当前输入和会话上下文回答。
-
-## Agent 适合处理哪些任务
-
-你可以让 Agent：
-
-- 根据文字需求生成电路蓝图。
-- 解释当前电路每个模块的作用。
-- 检查为什么某个器件没有显示，或为什么 JSON 无法被正确打开。
-- 根据校验工具返回结果判断是否需要修改。
-- 对电源、信号方向、端子命名、参数完整性提出建议。
-- 把一个粗略需求拆成可审阅的电路候选。
-- 连续对话迭代同一个电路，而不是一次性生成后结束。
-
-使用 Agent 时，尽量提供明确约束：
-
-- 电源电压。
-- 输入/输出信号范围。
-- 目标频率、带宽、截止频率、增益或阻抗。
-- 偏好的器件型号。
-- 允许的误差、成本、体积或稳定性要求。
-- 你希望优先生成蓝图，还是先解释方案。
-
-## 蓝图工作区
-
-蓝图是“候选电路”或“历史快照”，用于保护主文档不被 AI 或实验性修改直接覆盖。
-
-在蓝图面板中，你可以：
-
-- 为当前主文档创建快照。
-- 查看 Agent 生成的蓝图候选。
-- 选择某个蓝图并预览它的电路图。
-- 重新校验蓝图。
-- 查看蓝图和当前主文档之间的差异。
-- 应用蓝图，把它替换为当前主文档。
-- 归档或删除不需要的候选。
-
-应用蓝图前，软件会展示风险提示、校验报告、差异摘要和原始 JSON 预览。建议先确认差异，再执行应用。
-
-如果 Agent 显示运行完成但你没有在画布看到新电路，请先切到“蓝图”面板。候选默认会进入蓝图列表，不会直接覆盖主画布。
-
-## Provider 与 API key
-
-模型设置中只保存公开 Provider 元数据，例如 Provider 名称、API 地址、模型列表和默认模型。
-
-API key 会写入本地 SecretStore，普通设置中只保留不可读的 `apiKeyRef`。这能避免 key 直接出现在项目配置或电路 JSON 中。
-
-注意：当你勾选 `Context` 并调用外部模型时，当前电路 JSON 会发送给对应 Provider。涉及未公开硬件设计时，请确认你使用的模型服务和数据策略符合你的要求。
-
-## 手机查看
-
-桌面端可以生成当前电路快照的只读链接，供同一局域网内的手机浏览器打开。
-
-这个功能适合：
-
-- 在手机上快速查看当前电路。
-- 横屏浏览较大的电路图。
-- 把电路快照给同事临时查看。
-
-手机端是只读视图，不会同步后续编辑，也不会修改桌面端文档。
-
-## 中英文切换
-
-顶部工具栏提供中文和英文切换。切换只影响界面文案，不会重置当前文档，也不会改变电路 JSON。
-
-技术名词、Provider 名称、模型名、API key、JSON 字段名等会保留原文，因为这些内容需要和外部服务或数据格式保持一致。
-
-## 当前边界
-
-EASYAnalyse 当前不替代这些工具：
-
-- PCB Layout 工具。
-- SPICE 电路仿真器。
-- 器件选型数据库。
-- 生产级 DRC/ERC 系统。
-
-Agent 生成的电路应视为候选方案。它可以显著提高搭建和审阅效率，但最终电气正确性仍需要工程师确认，尤其是高 Q 滤波器、开关电源、高速接口、保护电路和安全相关设计。
-
-## 常见问题
-
-### 为什么有 issue 也不一定要改？
-
-因为很多 issue 是语义提示，不代表 JSON 无法显示，也不一定代表电路错误。真正必须优先修的是硬格式问题：缺少必需字段、字段类型错误、未知字段导致器件无法渲染等。
-
-### 为什么 Agent 说生成完成，但主画布没变？
-
-为了避免 AI 直接覆盖你的主电路，生成结果会先进入“蓝图”面板。你可以在那里预览、校验、比较，再决定是否应用。
-
-### 什么时候需要勾选 Context？
-
-当你的问题依赖当前电路时需要勾选，例如“检查当前电路为什么不显示”“基于现有设计补一个保护电路”“解释这个滤波器结构”。如果只是问通用知识或从零生成方案，可以不勾选。
-
-### 校验通过是否代表电路一定正确？
-
-不是。校验通过代表 JSON 格式和当前软件的语义规则基本可接受，不代表电气性能、稳定性、噪声、热设计或器件极限一定正确。
-
-### 端子 label 和导线有什么区别？
-
-导线更偏几何表达，label 更偏语义表达。EASYAnalyse 选择 label 作为连接真相，是为了让 AI 和人都能稳定理解“哪些端子属于同一个网络”。
+EASYAnalyse is released under the [MIT License](LICENSE).

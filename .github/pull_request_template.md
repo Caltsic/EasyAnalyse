@@ -1,39 +1,59 @@
-## Summary
+## Summary / 摘要
 
 - 
 
-## Change Type
+## Change Type / 变更类型
 
-- [ ] Patch / hotfix
-- [ ] Minor feature
-- [ ] Major page/API/data change
-- [ ] Refactor only
-- [ ] Docs only
+- [ ] `feat` feature / 新功能
+- [ ] `fix` bug fix / 缺陷修复
+- [ ] `style` UI or visual style / 样式调整
+- [ ] `perf` performance / 性能优化
+- [ ] `refactor` behavior-preserving refactor / 行为不变的重构
+- [ ] `docs` documentation / 文档
+- [ ] `test` tests / 测试
+- [ ] `build` build or dependency / 构建或依赖
+- [ ] `ci` CI/CD
+- [ ] `chore` maintenance / 维护
 
-## Scope Control
+## Related Issue / 关联 Issue
 
-- [ ] This PR addresses one feature slice or one root cause.
-- [ ] No unrelated formatting churn.
-- [ ] Design note/RFC linked for broad architecture, UI, data, provider, or public-format changes.
+- Closes #
 
-## Validation
+## Scope Control / 范围控制
+
+- [ ] This PR addresses one root cause or one coherent feature slice.
+- [ ] No unrelated formatting churn or drive-by refactor is included.
+- [ ] Broad architecture, UI page, data format, Provider protocol, or permission changes have a linked issue/design note.
+- [ ] This branch follows trunk-based development and is short-lived.
+
+## Validation / 验证
 
 - [ ] `npm run typecheck`
 - [ ] `npm run lint`
 - [ ] `npm test`
 - [ ] `npm run build`
+- [ ] `npm run verify`
+- [ ] `npm run tauri:build`
 - [ ] Rust core tests if Rust changed
 - [ ] Android build if Android changed
 - [ ] Manual UI check/screenshots if UI changed
 
-## Public Contract Impact
+## Public Contract Impact / 公共契约影响
 
 - [ ] No public contract change
 - [ ] Agent response/tool contract updated
 - [ ] Semantic document format updated
 - [ ] Tauri command/API updated
+- [ ] Permission/security behavior updated
 - [ ] Docs/examples/changelog updated
 
-## Notes
+## Release Impact / 发布影响
+
+- [ ] None
+- [ ] Patch
+- [ ] Minor
+- [ ] Major
+
+## Notes / 备注
 
 - 

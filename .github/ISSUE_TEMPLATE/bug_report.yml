@@ -1,0 +1,69 @@
+name: Bug report / 缺陷报告
+description: Report a reproducible defect. / 报告可复现缺陷。
+title: "fix: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please include reproduction steps and environment details.
+        请提供复现步骤和环境信息。
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary / 摘要
+      description: What is broken? / 什么地方出错？
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction Steps / 复现步骤
+      description: Provide the smallest reliable path to reproduce the problem. / 提供最小、稳定的复现路径。
+      placeholder: |
+        1. Open ...
+        2. Click ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Result / 期望结果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Result / 实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment / 环境
+      description: OS, EASYAnalyse version, desktop/mobile, Provider/model if relevant. / 操作系统、EASYAnalyse 版本、桌面/移动端、Provider/模型等。
+      placeholder: |
+        OS:
+        EASYAnalyse version:
+        Desktop or mobile:
+        Provider/model:
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs, Screenshots, JSON / 日志、截图、JSON
+      description: Attach logs, screenshots, or a minimal JSON sample if available. / 如有，请附日志、截图或最小 JSON 样例。
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact / 影响
+      options:
+        - Blocks use / 阻断使用
+        - Major workflow affected / 主要流程受影响
+        - Minor issue / 小问题
+        - Cosmetic / 视觉或文案问题
+    validations:
+      required: true
+

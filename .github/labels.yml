@@ -1,0 +1,31 @@
+- name: bug
+  color: d73a4a
+  description: Reproducible defect / 可复现缺陷
+- name: feature
+  color: 2ea44f
+  description: Feature request or enhancement / 需求或增强
+- name: discussion
+  color: 6f42c1
+  description: Needs feasibility or design discussion / 需要可行性或设计讨论
+- name: docs
+  color: 0075ca
+  description: Documentation / 文档
+- name: security
+  color: b60205
+  description: Security-related work / 安全相关
+- name: ci
+  color: 5319e7
+  description: CI, build, or packaging / CI、构建或打包
+- name: release
+  color: fbca04
+  description: Release preparation or publication / 发版准备或发布
+- name: agent
+  color: 1d76db
+  description: Agent, Provider, tools, or blueprints / Agent、Provider、工具或蓝图
+- name: desktop
+  color: 0e8a16
+  description: Desktop app / 桌面端
+- name: mobile
+  color: 0052cc
+  description: Mobile viewer / 移动端
+

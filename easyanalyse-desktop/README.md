@@ -1,27 +1,48 @@
 # EASYAnalyse Desktop
 
-这是 EASYAnalyse 的桌面编辑器，基于 `Tauri 2 + React + TypeScript + Rust`。
+[中文](../README.zh-CN.md) | [English](../README.en-US.md)
 
-它负责：
+Desktop editor for EASYAnalyse, built with `Tauri 2 + React + TypeScript + Rust`.
 
-- 打开和保存语义电路 JSON
-- 在无限画布上编辑 device / terminal / network line
-- 调用 Rust 核心完成归一化与校验
-- 基于 terminal label 做网络聚焦与关系分析
+EASYAnalyse 桌面编辑器，基于 `Tauri 2 + React + TypeScript + Rust`。
 
-仓库整体说明见上级目录 [README.md](../README.md)。
+## Responsibilities / 职责
 
-## 本地开发
+- Open and save semantic circuit JSON.
+- Edit devices, terminals, and network lines on the canvas.
+- Run normalization and validation through the Rust core.
+- Analyze network relations from terminal labels.
+- Host the Agent panel and blueprint workspace.
+- Generate read-only mobile snapshots.
 
-```bash
-npm install
+## Development
+
+```powershell
+npm ci
 npm run tauri:dev
 ```
 
-## 常用命令
+## Validation
 
-```bash
-npm run build
-npm run tauri:build
+```powershell
+npm run typecheck
+npm run lint
 npm test
+npm run build
 ```
+
+Full desktop verification:
+
+```powershell
+npm run verify
+npm run tauri:build
+```
+
+## Governance
+
+Use the repository-level documents:
+
+- [Contributing / 贡献指南](../CONTRIBUTING.md)
+- [Code Management Standard](../docs/governance/code-management.md)
+- [Release Policy](../docs/governance/release-policy.md)
+- [Security Policy](../SECURITY.md)

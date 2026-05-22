@@ -606,6 +606,54 @@ describe('blueprintStore', () => {
     expect(state.workspace?.blueprints).toHaveLength(2)
   })
 
+  it('rebases agent candidate insertion after an applied blueprint changes the main document id on the same file path', async () => {
+    const originalDocument = createDocument({ document: { id: 'doc-original', title: 'Original' } })
+    const appliedDocument = createDocument({
+      document: { id: 'doc-applied-blueprint', title: 'Applied blueprint' },
+      devices: [
+        {
+          id: 'u1',
+          name: 'U1',
+          kind: 'controller',
+          terminals: [{ id: 'u1-vin', name: 'VIN', label: 'VIN', direction: 'input' }],
+        },
+      ],
+      view: {
+        canvas: { units: 'px', grid: { enabled: true, size: 16 } },
+        devices: { u1: { position: { x: 80, y: 120 }, shape: 'rectangle' } },
+      },
+    })
+    const originalHash = await hashDocument(originalDocument)
+    const appliedHash = await hashDocument(appliedDocument)
+    useBlueprintStore.setState({
+      workspace: createEmptyBlueprintWorkspace({
+        mainDocument: {
+          documentId: originalDocument.document.id,
+          path: '/tmp/main.easyanalyse.json',
+          hash: originalHash,
+          hashAlgorithm: 'easyanalyse-document-canonical-sha256-v1',
+        },
+      }),
+      dirty: false,
+      selectedBlueprintId: null,
+    })
+
+    const inserted = await useBlueprintStore.getState().addAgentBlueprintCandidates(
+      [createAgentCandidate()],
+      { mainDocument: appliedDocument, filePath: '/tmp/main.easyanalyse.json' },
+    )
+
+    const state = useBlueprintStore.getState()
+    expect(inserted).toHaveLength(1)
+    expect(state.workspace?.blueprints).toHaveLength(1)
+    expect(state.workspace?.mainDocument).toMatchObject({
+      documentId: appliedDocument.document.id,
+      path: '/tmp/main.easyanalyse.json',
+      hash: appliedHash,
+    })
+    expect(inserted[0]?.baseMainDocumentHash).toBe(appliedHash)
+  })
+
   it('refuses agent candidates for a definitely different loaded document', async () => {
     const document = createDocument({ document: { id: 'doc-agent-main', title: 'Current' } })
     useBlueprintStore.setState({

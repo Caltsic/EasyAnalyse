@@ -25,6 +25,12 @@ import type {
 } from '../types/blueprint'
 import type { DocumentFile, ValidationReport } from '../types/document'
 
+interface AgentCandidateInsertionContext {
+  mainDocument: DocumentFile
+  filePath: string | null
+  issues?: AgentResponseParseIssue[]
+}
+
 export interface BlueprintState {
   workspace: BlueprintWorkspaceFile | null
   sidecarPath: string | null
@@ -36,7 +42,7 @@ export interface BlueprintState {
   setWorkspaceAgentThreads(agentThreads: AgentThreadWorkspace): void
   addAgentBlueprintCandidates(
     candidates: AgentBlueprintCandidate[],
-    context: { mainDocument: DocumentFile; filePath: string | null; issues?: AgentResponseParseIssue[] },
+    context: AgentCandidateInsertionContext,
   ): Promise<BlueprintRecord[]>
   loadForMainDocument(filePath: string | null, mainDocument: DocumentFile): Promise<void>
   rebindForSavedDocument(filePath: string, mainDocument: DocumentFile): Promise<void>
@@ -131,6 +137,20 @@ function isReportValid(report: ValidationReport): boolean {
   return schemaValid === true && semanticValid === true
 }
 
+function isDefinitelyDifferentMainDocument(
+  workspace: BlueprintWorkspaceFile,
+  context: AgentCandidateInsertionContext,
+): boolean {
+  const workspaceDocumentId = workspace.mainDocument?.documentId
+  if (workspaceDocumentId === undefined || workspaceDocumentId === context.mainDocument.document.id) {
+    return false
+  }
+
+  const workspacePath = workspace.mainDocument?.path ?? null
+  const contextPath = context.filePath ?? null
+  return workspacePath !== contextPath
+}
+
 let loadRequestVersion = 0
 let validationRequestVersion = 0
 let candidateInsertionVersion = 0
@@ -198,14 +218,7 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
     set((state) => {
       const currentWorkspace = state.workspace
       const workspace = currentWorkspace ?? createWorkspaceForDocument(context.filePath, context.mainDocument, mainHash)
-      const mainDocument = workspace.mainDocument
-      const currentDocumentId = mainDocument?.documentId
-      const nextDocumentId = context.mainDocument.document.id
-      const definitelyDifferentDocument = currentWorkspace !== null
-        && currentDocumentId !== undefined
-        && currentDocumentId !== nextDocumentId
-
-      if (definitelyDifferentDocument) {
+      if (currentWorkspace !== null && isDefinitelyDifferentMainDocument(workspace, context)) {
         inserted = []
         return {}
       }

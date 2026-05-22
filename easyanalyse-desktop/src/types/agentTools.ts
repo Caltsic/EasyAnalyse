@@ -11,6 +11,7 @@ export type AgentToolName =
   | 'get_current_selection'
   | 'summarize_topology'
   | 'get_easyanalyse_format_rules'
+  | 'generate_filter_blueprint'
   | 'check_document_format'
   | 'check_blueprint_format'
   | 'create_blueprint_candidate'
@@ -106,6 +107,18 @@ export type AgentToolContext = AgentToolRuntimeContext
 
 export type AgentToolInput =
   | Record<string, never>
+  | {
+      filterType?: 'lowpass' | 'highpass'
+      topology?: 'auto' | 'passive-rc' | 'sallen-key'
+      cutoffFrequencyHz?: number
+      q?: number
+      gain?: number
+      resistorOhms?: number
+      capacitorFarads?: number
+      preferredCapacitorFarads?: number
+      title?: string
+      supply?: { positive?: string; negative?: string; ground?: string }
+    }
   | { document?: DocumentFile | string; json?: string; options?: LayoutOverlapCheckOptions }
   | { document: DocumentFile; options?: LayoutOverlapCheckOptions }
   | { candidate: AgentBlueprintCandidate | { document: DocumentFile }; options?: LayoutOverlapCheckOptions }
@@ -246,6 +259,14 @@ export interface SummarizeTopologyData {
 
 export interface GetEasyAnalyseFormatRulesData {
   rules: string
+}
+
+export interface GenerateFilterBlueprintData {
+  candidate: AgentBlueprintCandidate | null
+  format: AgentFormatCheckReport | null
+  assumptions: string[]
+  calculatedValues: Record<string, number | string>
+  warnings: string[]
 }
 
 export interface CheckDocumentFormatData {

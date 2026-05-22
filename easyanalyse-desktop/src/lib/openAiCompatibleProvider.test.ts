@@ -310,6 +310,7 @@ describe('openAiCompatibleProvider', () => {
     const firstBody = JSON.parse(fetchMock.mock.calls[0]![1].body)
     expect(firstBody.tools.map((tool: { function: { name: string } }) => tool.function.name)).toEqual(expect.arrayContaining([
       'check_blueprint_format',
+      'generate_filter_blueprint',
       'create_blueprint_candidate',
       'check_blueprint_candidate',
     ]))

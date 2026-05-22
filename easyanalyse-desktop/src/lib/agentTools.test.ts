@@ -35,6 +35,7 @@ describe('agentTools', () => {
       'get_current_selection',
       'summarize_topology',
       'get_easyanalyse_format_rules',
+      'generate_filter_blueprint',
       'check_document_format',
       'check_blueprint_format',
       'create_blueprint_candidate',
@@ -47,7 +48,45 @@ describe('agentTools', () => {
     expect(JSON.stringify(schemas)).toContain('wires, nodes, junctions')
     expect(JSON.stringify(schemas)).toContain('visual network lines crossing device bounds')
     expect(JSON.stringify(schemas)).toContain('Return the current blueprint workspace summary')
+    expect(JSON.stringify(schemas)).toContain('deterministic filter blueprint candidate')
     expect(JSON.stringify(schemas)).not.toMatch(/Authorization|apiKey|sk-/i)
+  })
+
+  it('generates a deterministic filter blueprint candidate without mutating the main document', async () => {
+    const mainDocument = documentAt()
+    const validateDocument = vi.fn((document: DocumentFile) => validReport(document))
+    const result = await runAgentTool(
+      'generate_filter_blueprint',
+      { filterType: 'lowpass', topology: 'auto', cutoffFrequencyHz: 5000, q: 1 },
+      { currentDocument: mainDocument, validateDocument },
+    )
+
+    expect(result).toMatchObject({ ok: true, toolName: 'generate_filter_blueprint', issueCount: 0 })
+    const data = result.data as {
+      candidate: AgentBlueprintCandidate
+      calculatedValues: Record<string, number | string>
+      assumptions: string[]
+    }
+    expect(data.candidate.title).toContain('Sallen-Key low-pass')
+    expect(data.candidate.document.schemaVersion).toBe('4.0.0')
+    expect(data.candidate.document.devices.map((device) => device.id)).toEqual(expect.arrayContaining(['r1', 'r2', 'c1', 'c2', 'u1']))
+    expect(data.candidate.document.devices.flatMap((device) => device.terminals.map((terminal) => terminal.label))).toEqual(expect.arrayContaining(['VIN', 'VOUT', 'GND', 'SK_N1', 'SK_N2']))
+    expect(data.calculatedValues.topology).toBe('sallen-key')
+    expect(data.assumptions.join(' ')).toContain('Sallen-Key')
+    expect(mainDocument.document.title).toBe('Tool test')
+    expect(validateDocument).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns detailed errors for invalid filter blueprint arguments', async () => {
+    const result = await runAgentTool('generate_filter_blueprint', { filterType: 'bandstop', topology: 'sallen-key', cutoffFrequencyHz: -1 })
+
+    expect(result.ok).toBe(false)
+    expect(result.toolName).toBe('generate_filter_blueprint')
+    expect(result.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'filterType', message: expect.stringContaining('filterType') }),
+      expect.objectContaining({ path: 'cutoffFrequencyHz', message: expect.stringContaining('cutoffFrequencyHz') }),
+    ]))
+    expect(result.data).toMatchObject({ candidate: null, format: null })
   })
 
   it('validate_document calls injected validator and returns stable tool result', async () => {

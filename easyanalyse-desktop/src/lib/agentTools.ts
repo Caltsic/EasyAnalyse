@@ -3,6 +3,7 @@ import { validateDocumentCommand } from './tauri'
 import { diffBlueprintDocument } from './blueprintDiff'
 import { deriveCircuitInsights } from './circuitDescription'
 import { isRecord } from './guards'
+import { generateFilterBlueprint, type GenerateFilterBlueprintInput } from './filterBlueprintGenerator'
 import type { AgentBlueprintCandidate } from '../types/agent'
 import type { DocumentFile, ValidationIssue } from '../types/document'
 import type { BlueprintRecord, BlueprintWorkspaceFile } from '../types/blueprint'
@@ -23,6 +24,7 @@ import type {
   CheckLayoutOverlapsData,
   CompareBlueprintCandidateData,
   CreateBlueprintCandidateData,
+  GenerateFilterBlueprintData,
   GetBlueprintCandidateData,
   GetBlueprintWorkspaceData,
   GetCurrentDocumentData,
@@ -169,6 +171,75 @@ export function getAgentToolSchemas() {
     {
       type: 'function' as const,
       function: {
+        name: 'generate_filter_blueprint',
+        description:
+          [
+            'Generate a deterministic filter blueprint candidate as standard EasyAnalyse semantic v4 JSON.',
+            'Use this before hand-authoring filter circuits. The tool owns common filter topology, device parameters, terminal labels, network names, and default layout.',
+            'It returns an AgentBlueprintCandidate but does not mutate the main document. Store it with create_blueprint_candidate after reviewing the result.',
+          ].join(' '),
+        parameters: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['filterType', 'topology', 'cutoffFrequencyHz'],
+          properties: {
+            filterType: {
+              type: 'string',
+              enum: ['lowpass', 'highpass'],
+              description: 'Filter response type. MVP supports lowpass and highpass.',
+            },
+            topology: {
+              type: 'string',
+              enum: ['auto', 'passive-rc', 'sallen-key'],
+              description: 'Filter topology. Use auto when unsure. Sallen-Key currently supports lowpass only.',
+            },
+            cutoffFrequencyHz: {
+              type: 'number',
+              exclusiveMinimum: 0,
+              description: 'Target cutoff frequency in hertz.',
+            },
+            q: {
+              type: 'number',
+              exclusiveMinimum: 0,
+              description: 'Optional target Q. For auto topology, Q above 0.8 prefers a Sallen-Key low-pass stage.',
+            },
+            gain: {
+              type: 'number',
+              exclusiveMinimum: 0,
+              description: 'Optional non-inverting Sallen-Key gain in V/V.',
+            },
+            resistorOhms: {
+              type: 'number',
+              exclusiveMinimum: 0,
+              description: 'Optional resistor value in ohms. If only R is provided, C is calculated from cutoff.',
+            },
+            capacitorFarads: {
+              type: 'number',
+              exclusiveMinimum: 0,
+              description: 'Optional capacitor value in farads. If only C is provided, R is calculated from cutoff.',
+            },
+            preferredCapacitorFarads: {
+              type: 'number',
+              exclusiveMinimum: 0,
+              description: 'Optional preferred capacitor value in farads used when capacitorFarads is not supplied.',
+            },
+            title: { type: 'string', description: 'Optional blueprint title.' },
+            supply: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                positive: { type: 'string', description: 'Positive supply label, defaults to VCC.' },
+                negative: { type: 'string', description: 'Negative supply label, defaults to GND.' },
+                ground: { type: 'string', description: 'Ground label, defaults to GND.' },
+              },
+            },
+          },
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
         name: 'check_document_format',
         description:
           [
@@ -288,6 +359,7 @@ export async function runAgentTool(
     if (toolName === 'get_current_selection') return getCurrentSelectionTool(context)
     if (toolName === 'summarize_topology') return summarizeTopologyTool(args, context)
     if (toolName === 'get_easyanalyse_format_rules') return getEasyAnalyseFormatRulesTool(context)
+    if (toolName === 'generate_filter_blueprint') return generateFilterBlueprintTool(args, context)
     if (toolName === 'check_document_format') return checkDocumentFormatTool(args, context)
     if (toolName === 'check_blueprint_format') return checkBlueprintFormatTool(args, context)
     if (toolName === 'create_blueprint_candidate') return createBlueprintCandidateTool(args, context)
@@ -526,6 +598,40 @@ async function summarizeTopologyTool(
 async function getEasyAnalyseFormatRulesTool(context: AgentToolRuntimeContext): Promise<AgentToolResult<GetEasyAnalyseFormatRulesData>> {
   const rules = context.getEasyAnalyseFormatRules ? await context.getEasyAnalyseFormatRules() : EASYANALYSE_FORMAT_RULES
   return result('get_easyanalyse_format_rules', true, 'EasyAnalyse format rules returned.', [], { rules })
+}
+
+async function generateFilterBlueprintTool(
+  args: unknown,
+  context: AgentToolRuntimeContext,
+): Promise<AgentToolResult<GenerateFilterBlueprintData>> {
+  const input = parseGenerateFilterBlueprintInput(args)
+  if (!input.ok) {
+    return result('generate_filter_blueprint', false, 'Filter blueprint was not generated because arguments were invalid.', input.issues, {
+      candidate: null,
+      format: null,
+      assumptions: [],
+      calculatedValues: {},
+      warnings: [],
+    })
+  }
+
+  const generated = generateFilterBlueprint(input.value)
+  const checked = await checkBlueprintFormatValue({ candidate: generated.candidate }, context)
+  return result(
+    'generate_filter_blueprint',
+    checked.format.ok,
+    checked.format.ok
+      ? `Filter blueprint candidate "${generated.candidate.title}" generated.`
+      : 'Filter blueprint was generated but failed hard format checks.',
+    checked.format.issues,
+    {
+      candidate: generated.candidate,
+      format: checked.format,
+      assumptions: generated.assumptions,
+      calculatedValues: generated.calculatedValues,
+      warnings: generated.warnings,
+    },
+  )
 }
 
 async function checkDocumentFormatTool(
@@ -1179,6 +1285,80 @@ function mergeAgentLayoutOptions(options: LayoutOverlapCheckOptions | undefined)
   return { ...DEFAULT_AGENT_LAYOUT_OPTIONS, ...(options ?? {}) }
 }
 
+function parseGenerateFilterBlueprintInput(args: unknown): { ok: true; value: GenerateFilterBlueprintInput } | { ok: false; issues: ValidationIssue[] } {
+  if (!isRecord(args)) {
+    return {
+      ok: false,
+      issues: [issue('error', 'agent_tool.invalid_args', 'generate_filter_blueprint requires an object argument.', null, null, {
+        expected: '{ filterType, topology, cutoffFrequencyHz }',
+        actualType: describeType(args),
+      })],
+    }
+  }
+
+  const issues: ValidationIssue[] = []
+  const filterType = args.filterType
+  const topology = args.topology
+  const cutoffFrequencyHz = args.cutoffFrequencyHz
+  if (filterType !== 'lowpass' && filterType !== 'highpass') {
+    issues.push(issue('error', 'agent_tool.invalid_args', 'filterType must be "lowpass" or "highpass".', null, 'filterType', expectedDetails('"lowpass" | "highpass"', filterType, 'Choose one supported filter response type.')))
+  }
+  if (topology !== 'auto' && topology !== 'passive-rc' && topology !== 'sallen-key') {
+    issues.push(issue('error', 'agent_tool.invalid_args', 'topology must be "auto", "passive-rc", or "sallen-key".', null, 'topology', expectedDetails('"auto" | "passive-rc" | "sallen-key"', topology, 'Choose a supported filter topology.')))
+  }
+  if (!isPositiveFiniteNumber(cutoffFrequencyHz)) {
+    issues.push(issue('error', 'agent_tool.invalid_args', 'cutoffFrequencyHz must be a positive finite number.', null, 'cutoffFrequencyHz', expectedDetails('positive number in Hz', cutoffFrequencyHz, 'Pass cutoff frequency in hertz, for example 5000.')))
+  }
+  const q = optionalPositiveNumber(args, 'q', issues)
+  const gain = optionalPositiveNumber(args, 'gain', issues)
+  const resistorOhms = optionalPositiveNumber(args, 'resistorOhms', issues)
+  const capacitorFarads = optionalPositiveNumber(args, 'capacitorFarads', issues)
+  const preferredCapacitorFarads = optionalPositiveNumber(args, 'preferredCapacitorFarads', issues)
+  if (topology === 'sallen-key' && filterType === 'highpass') {
+    issues.push(issue('error', 'agent_tool.unsupported_topology', 'Sallen-Key generation currently supports lowpass filters only.', null, 'topology', {
+      fix: 'Use topology "passive-rc" for highpass in this MVP, or ask for a lowpass Sallen-Key filter.',
+    }))
+  }
+  if (issues.length > 0) {
+    return { ok: false, issues }
+  }
+
+  const supply = isRecord(args.supply)
+    ? {
+        ...(typeof args.supply.positive === 'string' ? { positive: args.supply.positive } : {}),
+        ...(typeof args.supply.negative === 'string' ? { negative: args.supply.negative } : {}),
+        ...(typeof args.supply.ground === 'string' ? { ground: args.supply.ground } : {}),
+      }
+    : undefined
+  return {
+    ok: true,
+    value: {
+      filterType: filterType as GenerateFilterBlueprintInput['filterType'],
+      topology: topology as GenerateFilterBlueprintInput['topology'],
+      cutoffFrequencyHz: cutoffFrequencyHz as number,
+      ...(q === undefined ? {} : { q }),
+      ...(gain === undefined ? {} : { gain }),
+      ...(resistorOhms === undefined ? {} : { resistorOhms }),
+      ...(capacitorFarads === undefined ? {} : { capacitorFarads }),
+      ...(preferredCapacitorFarads === undefined ? {} : { preferredCapacitorFarads }),
+      ...(typeof args.title === 'string' && args.title.trim().length > 0 ? { title: args.title.trim() } : {}),
+      ...(supply ? { supply } : {}),
+    },
+  }
+}
+
+function optionalPositiveNumber(args: Record<string, unknown>, key: string, issues: ValidationIssue[]): number | undefined {
+  const value = args[key]
+  if (value === undefined) return undefined
+  if (isPositiveFiniteNumber(value)) return value
+  issues.push(issue('error', 'agent_tool.invalid_args', `${key} must be a positive finite number when provided.`, null, key, expectedDetails('positive number', value, `Remove ${key} or pass a positive numeric value.`)))
+  return undefined
+}
+
+function isPositiveFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+}
+
 function getStringArg(args: unknown, key: string): string | null {
   if (!isRecord(args)) return null
   const value = args[key]
@@ -1207,6 +1387,7 @@ function isAgentToolName(value: string): value is AgentToolName {
     || value === 'get_current_selection'
     || value === 'summarize_topology'
     || value === 'get_easyanalyse_format_rules'
+    || value === 'generate_filter_blueprint'
     || value === 'check_document_format'
     || value === 'check_blueprint_format'
     || value === 'create_blueprint_candidate'

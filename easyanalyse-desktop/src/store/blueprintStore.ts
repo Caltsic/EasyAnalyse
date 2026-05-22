@@ -159,7 +159,7 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
   },
 
   addAgentBlueprintCandidates: async (candidates, context) => {
-    const insertionVersion = ++candidateInsertionVersion
+    const insertionVersion = candidateInsertionVersion
     const mainHash = await hashDocument(context.mainDocument)
     if (insertionVersion !== candidateInsertionVersion) {
       return []

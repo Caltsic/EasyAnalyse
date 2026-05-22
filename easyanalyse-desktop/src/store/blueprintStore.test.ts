@@ -582,6 +582,30 @@ describe('blueprintStore', () => {
     expect(state.dirty).toBe(true)
   })
 
+  it('retains concurrent agent candidate insertions for the same main document', async () => {
+    const mainDocument = createDocument({ document: { id: 'doc-agent-main', title: 'Main' } })
+    await useBlueprintStore.getState().loadForMainDocument(null, mainDocument)
+
+    const [first, second] = await Promise.all([
+      useBlueprintStore.getState().addAgentBlueprintCandidates(
+        [createAgentCandidate(createDocument({ document: { id: 'candidate-one', title: 'Candidate one' } }))],
+        { mainDocument, filePath: null },
+      ),
+      useBlueprintStore.getState().addAgentBlueprintCandidates(
+        [createAgentCandidate(createDocument({ document: { id: 'candidate-two', title: 'Candidate two' } }))],
+        { mainDocument, filePath: null },
+      ),
+    ])
+
+    const state = useBlueprintStore.getState()
+    expect(first).toHaveLength(1)
+    expect(second).toHaveLength(1)
+    expect(state.workspace?.blueprints.map((record) => record.document.document.id)).toEqual(
+      expect.arrayContaining(['candidate-one', 'candidate-two']),
+    )
+    expect(state.workspace?.blueprints).toHaveLength(2)
+  })
+
   it('refuses agent candidates for a definitely different loaded document', async () => {
     const document = createDocument({ document: { id: 'doc-agent-main', title: 'Current' } })
     useBlueprintStore.setState({

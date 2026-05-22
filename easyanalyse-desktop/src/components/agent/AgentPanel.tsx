@@ -992,6 +992,13 @@ async function runSelectedProvider(input: {
         toolName: 'create_blueprint_candidate',
         summary: `Stored blueprint candidate "${candidate.title}".`,
       })
+      if (blueprintIds.length === 0) {
+        return {
+          ok: false,
+          code: 'agent_tool.blueprint_insert_not_stored',
+          message: 'The blueprint candidate passed format checks, but EasyAnalyse did not store it because the active blueprint workspace was not compatible with the current main document or was reloaded during insertion.',
+        }
+      }
       return { blueprintIds }
     },
     requestId: input.requestId,

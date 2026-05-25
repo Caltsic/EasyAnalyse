@@ -547,6 +547,8 @@ function buildToolRuntimeContext(input: OpenAiCompatibleRunInput): AgentToolRunt
     ...(input.getCurrentSelection ? { getCurrentSelection: input.getCurrentSelection } : {}),
     ...(input.getEditorFocus ? { getEditorFocus: input.getEditorFocus } : {}),
     ...(input.getEasyAnalyseFormatRules ? { getEasyAnalyseFormatRules: input.getEasyAnalyseFormatRules } : {}),
+    ...(input.userRequest !== undefined ? { userRequest: input.userRequest } : {}),
+    ...(input.reviewCircuitCorrectness ? { reviewCircuitCorrectness: input.reviewCircuitCorrectness } : {}),
     ...(input.validateDocument ? { validateDocument: input.validateDocument } : {}),
     ...(input.createBlueprintCandidate ? { createBlueprintCandidate: input.createBlueprintCandidate } : {}),
   }

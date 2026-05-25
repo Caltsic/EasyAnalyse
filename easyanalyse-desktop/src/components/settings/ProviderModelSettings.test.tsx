@@ -92,6 +92,37 @@ describe('ProviderModelSettings', () => {
     expect(container.querySelector('input[name="apiKeyRef"]')).toBeNull()
   })
 
+  it('selects a custom correctness reviewer without changing the active provider', async () => {
+    useSettingsStore.getState().replaceSettings({
+      agent: {
+        providers: [
+          { id: 'main', name: 'Main Provider', kind: 'deepseek', baseUrl: 'https://example.invalid/main', models: ['main-model'], defaultModel: 'main-model' },
+          { id: 'reviewer', name: 'Reviewer Provider', kind: 'openai-compatible', baseUrl: 'https://example.invalid/reviewer', models: ['review-a', 'review-b'], defaultModel: 'review-b' },
+        ],
+        selectedProviderId: 'main',
+        selectedModelId: 'main-model',
+      },
+    }, null)
+
+    await act(async () => {
+      root.render(<ProviderModelSettings />)
+    })
+
+    expect(container.textContent).toContain('Circuit correctness reviewer')
+    await changeField(container, 'correctnessReviewerMode', 'custom-provider')
+    await changeField(container, 'correctnessReviewerProviderId', 'reviewer')
+    await changeField(container, 'correctnessReviewerModelId', 'review-a')
+
+    expect(useSettingsStore.getState().settings.agent.selectedProviderId).toBe('main')
+    expect(useSettingsStore.getState().settings.agent.selectedModelId).toBe('main-model')
+    expect(useSettingsStore.getState().settings.agent.correctnessReviewer).toEqual({
+      mode: 'custom-provider',
+      providerId: 'reviewer',
+      modelId: 'review-a',
+    })
+    expect(container.querySelector('input[name="apiKeyRef"]')).toBeNull()
+  })
+
   it('keeps an invalid draft in the form and shows warnings instead of clearing rejected providers', async () => {
     await act(async () => {
       root.render(<ProviderModelSettings />)

@@ -9,6 +9,7 @@ import type { DocumentFile, ValidationIssue } from '../types/document'
 import type { BlueprintRecord, BlueprintWorkspaceFile } from '../types/blueprint'
 import type {
   AgentBlueprintRecordSummary,
+  AgentCircuitCorrectnessReviewReport,
   AgentDocumentSummary,
   AgentFormatCheckReport,
   AgentSelfCheckCandidateReport,
@@ -30,6 +31,7 @@ import type {
   GetCurrentDocumentData,
   GetCurrentSelectionData,
   GetEasyAnalyseFormatRulesData,
+  ReviewCircuitCorrectnessData,
   SummarizeTopologyData,
   ValidateDocumentData,
 } from '../types/agentTools'
@@ -329,6 +331,37 @@ export function getAgentToolSchemas() {
     {
       type: 'function' as const,
       function: {
+        name: 'review_circuit_correctness',
+        description:
+          [
+            'Ask the strict EasyAnalyse circuit correctness reviewer to judge whether a complete blueprint logically satisfies the current user request.',
+            'Use this for complex circuits, suspicious generated circuits, or when format checks pass but electrical intent may be wrong.',
+            'The reviewer is advisory: fail/warning results should guide repair or user-facing caveats, but this tool is not a hard JSON format gate.',
+          ].join(' '),
+        parameters: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            candidate: {
+              type: 'object',
+              additionalProperties: true,
+              description: 'Optional AgentBlueprintCandidate object. Prefer this when reviewing a generated candidate before returning or storing it.',
+            },
+            document: {
+              description: 'Optional semantic v4 DocumentFile object, or JSON string containing one.',
+              oneOf: [{ type: 'object', additionalProperties: true }, { type: 'string' }],
+            },
+            json: { type: 'string', description: 'Optional JSON string containing a semantic v4 DocumentFile.' },
+            blueprintId: { type: 'string', description: 'Optional blueprint id from the current blueprint workspace. Defaults to selected blueprint when no candidate/document is provided.' },
+            reviewFocus: { type: 'string', description: 'Optional specific concern to ask the strict reviewer to focus on.' },
+            userRequest: { type: 'string', description: 'Optional original user circuit request. Defaults to the current Agent user request.' },
+          },
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
         name: 'check_blueprint_candidate',
         description:
           [
@@ -365,6 +398,7 @@ export async function runAgentTool(
     if (toolName === 'create_blueprint_candidate') return createBlueprintCandidateTool(args, context)
     if (toolName === 'validate_document') return validateDocumentTool(args, context)
     if (toolName === 'check_layout_overlaps') return checkLayoutOverlapsTool(args)
+    if (toolName === 'review_circuit_correctness') return reviewCircuitCorrectnessTool(args, context)
     if (toolName === 'check_blueprint_candidate') return checkBlueprintCandidateTool(args, context)
     return errorResult('check_blueprint_format', 'Unknown EasyAnalyse agent tool.', 'agent_tool.unknown')
   } catch (error) {
@@ -720,6 +754,78 @@ function checkLayoutOverlapsTool(args: unknown): AgentToolResult<CheckLayoutOver
   const layout = checkLayoutOverlaps(document, options)
   const issues = layoutIssuesAsValidationIssues(layout.issues)
   return result('check_layout_overlaps', layout.ok, layout.ok ? 'No layout overlaps found.' : `${layout.issueCount} layout overlap warning(s).`, issues, { layout })
+}
+
+async function reviewCircuitCorrectnessTool(
+  args: unknown,
+  context: AgentToolContext,
+): Promise<AgentToolResult<ReviewCircuitCorrectnessData>> {
+  const subject = await resolveCorrectnessReviewSubject(args, context)
+  if (!subject.documentInput) {
+    const item = issue('error', subject.code, subject.summary, null, subject.path ?? null)
+    const format = buildFormatReport(false, false, [item])
+    return result('review_circuit_correctness', false, subject.summary, [item], {
+      reviewed: false,
+      format,
+      report: unknownCorrectnessReport(subject.summary, [subject.summary], ['Provide candidate, document, json, or blueprintId.']),
+    })
+  }
+
+  const formatResult = subject.candidate
+    ? await checkBlueprintFormatValue({ candidate: subject.candidate }, context)
+    : { format: (await checkDocumentFormatValue(subject.documentInput, 'review_circuit_correctness', context)).data!.format }
+  if (!formatResult.format.ok) {
+    return result('review_circuit_correctness', false, 'Circuit correctness review skipped because hard format checks failed.', formatResult.format.issues, {
+      reviewed: false,
+      format: formatResult.format,
+      report: unknownCorrectnessReport(
+        'Circuit correctness review skipped because the candidate is not valid EasyAnalyse semantic JSON.',
+        formatResult.format.issues.map((item) => item.message),
+        ['Fix hard format issues first, then call review_circuit_correctness again.'],
+      ),
+    })
+  }
+
+  const normalizedDocument = 'document' in formatResult ? formatResult.document?.normalizedDocument ?? null : null
+  const document = subject.document ?? normalizedDocument
+  if (!document) {
+    const item = issue('error', 'agent_tool.invalid_args', 'review_circuit_correctness could not resolve a normalized document.', null, null)
+    return result('review_circuit_correctness', false, item.message, [item], {
+      reviewed: false,
+      format: formatResult.format,
+      report: unknownCorrectnessReport(item.message, [item.message], ['Pass a complete semantic v4 DocumentFile.']),
+    })
+  }
+
+  if (!context.reviewCircuitCorrectness) {
+    const item = issue('error', 'agent_tool.unavailable', 'No strict circuit correctness reviewer is configured in this runtime.', null, null)
+    return result('review_circuit_correctness', false, item.message, [item], {
+      reviewed: false,
+      format: formatResult.format,
+      report: unknownCorrectnessReport(item.message, [item.message], ['Configure a reviewer provider or use the active provider with a saved API key.']),
+    })
+  }
+
+  const userRequest = getStringArg(args, 'userRequest') ?? context.userRequest ?? ''
+  const reviewFocus = getStringArg(args, 'reviewFocus') ?? undefined
+  const report = await context.reviewCircuitCorrectness({
+    userRequest,
+    ...(reviewFocus ? { reviewFocus } : {}),
+    ...(subject.candidateTitle ? { candidateTitle: subject.candidateTitle } : {}),
+    document: cloneDocument(document),
+  })
+  const reviewIssues = correctnessReportIssues(report)
+  return result(
+    'review_circuit_correctness',
+    report.verdict !== 'unknown',
+    `Circuit correctness reviewer verdict: ${report.verdict}. ${report.summary}`,
+    reviewIssues,
+    {
+      reviewed: true,
+      format: formatResult.format,
+      report,
+    },
+  )
 }
 
 async function checkBlueprintCandidateTool(
@@ -1212,6 +1318,122 @@ function buildEmptyTopologyData(source: SummarizeTopologyData['source'], bluepri
   }
 }
 
+async function resolveCorrectnessReviewSubject(
+  args: unknown,
+  context: AgentToolRuntimeContext,
+): Promise<{
+  documentInput: unknown | null
+  document: DocumentFile | null
+  candidate: AgentBlueprintCandidate | null
+  candidateTitle?: string
+  summary: string
+  code: string
+  path?: string
+}> {
+  if (isRecord(args)) {
+    const candidate = extractBlueprintCandidate(args)
+    if (candidate) {
+      return {
+        documentInput: candidate.document,
+        document: isDocumentFile(candidate.document) ? candidate.document : null,
+        candidate,
+        candidateTitle: candidate.title,
+        summary: 'Reviewing provided blueprint candidate.',
+        code: 'agent_tool.ok',
+      }
+    }
+    if (args.document !== undefined || args.json !== undefined) {
+      const documentInput = extractDocumentFormatInput(args)
+      return {
+        documentInput,
+        document: isDocumentFile(documentInput) ? documentInput : null,
+        candidate: null,
+        summary: 'Reviewing provided document.',
+        code: 'agent_tool.ok',
+      }
+    }
+  }
+
+  const workspace = await resolveBlueprintWorkspace(context)
+  const selectedBlueprintId = await resolveSelectedBlueprintId(context)
+  const requestedBlueprintId = getStringArg(args, 'blueprintId') ?? selectedBlueprintId
+  if (!workspace) {
+    return {
+      documentInput: null,
+      document: null,
+      candidate: null,
+      summary: 'review_circuit_correctness requires a candidate, document, json, or an injected blueprint workspace.',
+      code: 'agent_tool.no_blueprint_workspace',
+    }
+  }
+  if (!requestedBlueprintId) {
+    return {
+      documentInput: null,
+      document: null,
+      candidate: null,
+      summary: 'review_circuit_correctness requires a candidate, document, json, blueprintId, or selected blueprint.',
+      code: 'agent_tool.no_selected_blueprint',
+      path: 'blueprintId',
+    }
+  }
+  const record = findBlueprintRecord(workspace, requestedBlueprintId)
+  if (!record) {
+    return {
+      documentInput: null,
+      document: null,
+      candidate: null,
+      summary: `Blueprint candidate "${requestedBlueprintId}" was not found in the current workspace.`,
+      code: 'agent_tool.blueprint_not_found',
+      path: 'blueprintId',
+    }
+  }
+  return {
+    documentInput: record.document,
+    document: record.document,
+    candidate: {
+      title: record.title,
+      summary: record.description ?? record.title,
+      rationale: 'Existing blueprint candidate selected from the workspace for strict correctness review.',
+      tradeoffs: [],
+      document: record.document,
+      issues: cloneIssues(record.extensions?.agentCandidate?.issues ?? []),
+    },
+    candidateTitle: record.title,
+    summary: `Reviewing blueprint candidate "${record.title}".`,
+    code: 'agent_tool.ok',
+  }
+}
+
+function unknownCorrectnessReport(
+  summary: string,
+  reasons: string[],
+  suggestions: string[],
+): AgentCircuitCorrectnessReviewReport {
+  return {
+    schemaVersion: 'agent-circuit-correctness-review-v1',
+    semanticVersion: SEMANTIC_VERSION,
+    verdict: 'unknown',
+    confidence: 0,
+    summary: sanitize(summary),
+    reasons: reasons.map(sanitize),
+    suggestions: suggestions.map(sanitize),
+    checkedAssumptions: [],
+  }
+}
+
+function correctnessReportIssues(report: AgentCircuitCorrectnessReviewReport): ValidationIssue[] {
+  if (report.verdict === 'pass') return []
+  const severity: ValidationIssue['severity'] = 'warning'
+  return [issue(severity, `circuit_review.${report.verdict}`, report.summary, null, null, {
+    verdict: report.verdict,
+    confidence: report.confidence,
+    reasons: report.reasons,
+    suggestions: report.suggestions,
+    checkedAssumptions: report.checkedAssumptions,
+    reviewer: report.reviewer,
+  })]
+}
+
 function extractBlueprintCandidate(args: unknown): AgentBlueprintCandidate | null {
   if (!isRecord(args) || !isRecord(args.candidate)) return null
   return args.candidate as unknown as AgentBlueprintCandidate
@@ -1393,6 +1615,7 @@ function isAgentToolName(value: string): value is AgentToolName {
     || value === 'create_blueprint_candidate'
     || value === 'validate_document'
     || value === 'check_layout_overlaps'
+    || value === 'review_circuit_correctness'
     || value === 'check_blueprint_candidate'
 }
 

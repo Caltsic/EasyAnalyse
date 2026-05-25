@@ -6,7 +6,7 @@ import {
   type AppSettingsStorage,
 } from '../lib/appSettings'
 import type { SecretStore } from '../lib/secretStore'
-import type { AgentProviderPublicConfig, AppSettings } from '../types/settings'
+import type { AgentCorrectnessReviewerConfig, AgentProviderPublicConfig, AppSettings } from '../types/settings'
 
 export interface SettingsState {
   settings: AppSettings
@@ -20,6 +20,7 @@ export interface SettingsState {
   clearProviderApiKey(providerId: string, storage?: AppSettingsStorage | null, secretStore?: Pick<SecretStore, 'deleteSecret'>): Promise<void>
   selectProvider(providerId: string | undefined, storage?: AppSettingsStorage | null): void
   selectModel(modelId: string | undefined, storage?: AppSettingsStorage | null): void
+  setCorrectnessReviewer(reviewer: unknown, storage?: AppSettingsStorage | null): void
 }
 
 function defaultStorage() {
@@ -92,6 +93,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         providers: nextProviders,
         selectedProviderId,
         selectedModelId,
+        correctnessReviewer: current.agent.correctnessReviewer,
       },
     }, storage)
     set({ settings: result.settings, loaded: true, warnings: [...providerResult.warnings, ...result.warnings] })
@@ -109,6 +111,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         providers: nextProviders,
         selectedProviderId: current.agent.selectedProviderId,
         selectedModelId: current.agent.selectedModelId,
+        correctnessReviewer: current.agent.correctnessReviewer,
       },
     }, storage)
     set({ settings: result.settings, loaded: true, warnings: result.warnings })
@@ -172,6 +175,23 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       agent: {
         ...current.agent,
         selectedModelId: modelId,
+      },
+    }, storage)
+    set({ settings: result.settings, loaded: true, warnings: result.warnings })
+  },
+
+  setCorrectnessReviewer: (reviewer, storage = defaultStorage()) => {
+    const current = get().settings
+    const candidate = reviewer as Partial<AgentCorrectnessReviewerConfig>
+    const result = persistSettings({
+      ...current,
+      agent: {
+        ...current.agent,
+        correctnessReviewer: {
+          mode: candidate.mode,
+          providerId: candidate.providerId,
+          modelId: candidate.modelId,
+        },
       },
     }, storage)
     set({ settings: result.settings, loaded: true, warnings: result.warnings })

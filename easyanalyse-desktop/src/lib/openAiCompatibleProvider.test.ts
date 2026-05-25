@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AgentCircuitCorrectnessReviewReport } from '../types/agentTools'
 import type { DocumentFile } from '../types/document'
 import { AGENT_RESPONSE_SEMANTIC_VERSION } from './agentResponse'
 import {
@@ -312,6 +313,7 @@ describe('openAiCompatibleProvider', () => {
       'check_blueprint_format',
       'generate_filter_blueprint',
       'create_blueprint_candidate',
+      'review_circuit_correctness',
       'check_blueprint_candidate',
     ]))
     expect(firstBody.tool_choice).toBe('auto')
@@ -329,6 +331,63 @@ describe('openAiCompatibleProvider', () => {
     expect(result.response.kind).toBe('blueprints')
     expect(result.toolTrace).toEqual([expect.objectContaining({ toolName: 'check_blueprint_candidate' })])
     expectNoApiKey(result.toolTrace)
+  })
+
+  it('runs strict circuit reviewer tool through injected runtime context', async () => {
+    const candidate = { ...agentBlueprints(createDocument()).blueprints[0]!, issues: [] }
+    const report: AgentCircuitCorrectnessReviewReport = {
+      schemaVersion: 'agent-circuit-correctness-review-v1',
+      semanticVersion: 'easyanalyse-semantic-v4',
+      verdict: 'warning',
+      confidence: 0.7,
+      summary: 'Circuit is plausible but load assumptions are not specified.',
+      reasons: ['The output load is omitted.'],
+      suggestions: ['State the expected load impedance.'],
+      checkedAssumptions: ['High impedance load.'],
+    }
+    const reviewCircuitCorrectness = vi.fn(async () => report)
+    const toolCallBody = {
+      id: 'chatcmpl-review-tool',
+      choices: [
+        {
+          index: 0,
+          finish_reason: 'tool_calls',
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'call-review',
+                type: 'function',
+                function: { name: 'review_circuit_correctness', arguments: JSON.stringify({ candidate }) },
+              },
+            ],
+          },
+        },
+      ],
+    }
+    const finalBody = openAiChatBody(agentBlueprints(createDocument({ view: { canvas: { units: 'px' }, devices: {}, networkLines: {} } })))
+    let callCount = 0
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => jsonResponse(callCount++ === 0 ? toolCallBody : finalBody))
+
+    const result = await runOpenAiCompatibleProvider({
+      ...baseBuildInput({ userPrompt: 'Build an RC low-pass filter.' }),
+      fetch: fetchMock,
+      currentDocument: createDocument(),
+      userRequest: 'Build an RC low-pass filter.',
+      validateDocument: () => ({ detectedFormat: 'semantic-v4', schemaValid: true, semanticValid: true, issueCount: 0, issues: [] }),
+      reviewCircuitCorrectness,
+    })
+
+    expect(reviewCircuitCorrectness).toHaveBeenCalledWith(expect.objectContaining({
+      userRequest: 'Build an RC low-pass filter.',
+      candidateTitle: candidate.title,
+      document: candidate.document,
+    }))
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const secondBody = JSON.parse(fetchMock.mock.calls[1]![1].body)
+    expect(secondBody.messages.at(-1).content).toContain('"toolName":"review_circuit_correctness"')
+    expect(result.toolTrace).toEqual([expect.objectContaining({ toolName: 'review_circuit_correctness', issueCount: 1 })])
   })
 
   it('accepts final blueprints after advisory check_blueprint_candidate issues', async () => {

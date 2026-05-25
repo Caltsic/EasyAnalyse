@@ -62,6 +62,7 @@ describe('agentProviderClient M7 self-check and examples', () => {
     expect(prompt).toContain('Connectivity is defined only by exact terminal.label equality')
     expect(prompt).toContain('check_blueprint_format is the hard format gate')
     expect(prompt).toContain('For filter requests, prefer generate_filter_blueprint')
+    expect(prompt).toContain('call review_circuit_correctness')
     expect(prompt).toContain('semantic/layout issues are hints, not a requirement to reach 0 issues')
     expect(prompt).toContain('view.networkLines are optional visual rails')
     expect(prompt).toContain('layout.network-line.device-overlap')

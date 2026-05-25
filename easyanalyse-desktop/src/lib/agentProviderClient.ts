@@ -44,6 +44,7 @@ export interface RunConfiguredAgentProviderInput {
   getCurrentSelection?: AgentToolRuntimeContext['getCurrentSelection']
   getEditorFocus?: AgentToolRuntimeContext['getEditorFocus']
   getEasyAnalyseFormatRules?: AgentToolRuntimeContext['getEasyAnalyseFormatRules']
+  reviewCircuitCorrectness?: AgentToolRuntimeContext['reviewCircuitCorrectness']
   toolExecutor?: AgentToolExecutor
   progress?: AgentProviderProgressHandler
   selfCheck?: {
@@ -96,6 +97,7 @@ export function buildAgentSystemPrompt(): string {
     'Never mutate the main document directly. All circuit changes must be represented as blueprint candidates.',
     'Use tools when they help. For blueprint candidates, check_blueprint_format is the hard format gate; fix ok=false format results before returning or creating the candidate.',
     'For filter requests, prefer generate_filter_blueprint before hand-authoring JSON. It returns a complete AgentBlueprintCandidate with deterministic filter topology, component values, network labels, and a default layout; review it, then store it with create_blueprint_candidate or return it as a blueprint response.',
+    'When a generated circuit is complex, electrically suspicious, or likely to pass JSON checks while failing the user intent, call review_circuit_correctness with the candidate. Treat its report as advisory evidence: repair fail/warning results when you can, or explain the risk to the user.',
     'check_blueprint_candidate, validate_document, and check_layout_overlaps are advisory quality checks. Their semantic/layout issues are hints, not a requirement to reach 0 issues before final JSON.',
     'When calling blueprint candidate tools, the arguments MUST be exactly shaped as {"candidate":{"title":"...","summary":"...","rationale":"...","tradeoffs":[],"document":{...},"issues":[]}}. Do not pass only a document, and do not put candidate fields at the tool argument top level.',
     EASYANALYSE_SEMANTIC_V4_CONTRACT,
@@ -276,6 +278,8 @@ export async function runConfiguredAgentProvider(input: RunConfiguredAgentProvid
           getCurrentSelection: input.getCurrentSelection,
           getEditorFocus: input.getEditorFocus,
           getEasyAnalyseFormatRules: input.getEasyAnalyseFormatRules,
+          userRequest: input.prompt,
+          reviewCircuitCorrectness: input.reviewCircuitCorrectness,
           validateDocument: input.validateDocument,
           createBlueprintCandidate: input.createBlueprintCandidate,
           toolExecutor: input.toolExecutor,

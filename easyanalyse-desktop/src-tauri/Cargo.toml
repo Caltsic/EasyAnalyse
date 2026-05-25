@@ -1,6 +1,6 @@
 [package]
 name = "easyanalyse-desktop"
-version = "1.1.2-beta.3"
+version = "1.1.2"
 description = "AI Native Circuit Expression and Restoration desktop application"
 edition = "2021"
 

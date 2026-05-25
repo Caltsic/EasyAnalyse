@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.1.2] - 2026-05-25
+
+### Added
+
+- Added the Agent-side filter quick-build tool for RC low-pass/high-pass and Sallen-Key low-pass blueprint generation.
+- Added hard-format checking for Agent blueprint candidates so malformed semantic JSON is reported back to the model with actionable details.
+- Added blueprint workspace support for retaining multiple Agent-generated candidates during iterative circuit design.
+
+### Changed
+
+- Promoted the `1.1.2-beta.3` desktop Agent build to the official `1.1.2` release.
+- Improved Agent conversation flow so tool activity is traceable while final model replies remain easier to read.
+- Clarified that advisory semantic/layout issues are review hints, while hard format failures are the required repair gate.
+
+### Fixed
+
+- Fixed Agent blueprint insertion after applying one generated blueprint and requesting another in the same workspace.
+- Fixed provider finalization paths that could reject otherwise useful model replies or blueprint candidates.
+- Fixed duplicate origin-reset controls in blueprint preview and improved related blueprint panel behavior.
+
 ## [1.1.0] - 2026-04-23
 
 ### Added
@@ -26,4 +46,5 @@ All notable changes to this project are documented in this file.
 - Fixed icon generation and packaging so the final Windows installer, desktop executable, and Android launcher assets all use the same source image.
 - Fixed Android release packaging to produce a properly signed installable release APK.
 
+[1.1.2]: https://github.com/Caltsic/EasyAnalyse/releases/tag/v1.1.2
 [1.1.0]: https://github.com/Caltsic/EasyAnalyse/releases/tag/v1.1.0

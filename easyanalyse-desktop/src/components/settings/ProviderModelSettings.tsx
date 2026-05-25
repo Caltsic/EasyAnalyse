@@ -86,6 +86,7 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
   const clearProviderApiKey = useSettingsStore((state) => state.clearProviderApiKey)
   const selectProvider = useSettingsStore((state) => state.selectProvider)
   const selectModel = useSettingsStore((state) => state.selectModel)
+  const setCorrectnessReviewer = useSettingsStore((state) => state.setCorrectnessReviewer)
   const [draft, setDraft] = useState<ProviderDraft>(EMPTY_DRAFT)
   const [secretStatus, setSecretStatus] = useState<SecretStoreSecurityStatus | null>(null)
   const [secretWarning, setSecretWarning] = useState<string | null>(null)
@@ -98,6 +99,13 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
     () => settings.agent.providers.find((provider) => provider.id === settings.agent.selectedProviderId),
     [settings.agent.providers, settings.agent.selectedProviderId],
   )
+  const reviewerProvider = useMemo(
+    () => settings.agent.providers.find((provider) => provider.id === settings.agent.correctnessReviewer.providerId),
+    [settings.agent.providers, settings.agent.correctnessReviewer.providerId],
+  )
+  const reviewerModelId = settings.agent.correctnessReviewer.mode === 'custom-provider'
+    ? settings.agent.correctnessReviewer.modelId ?? reviewerProvider?.defaultModel ?? reviewerProvider?.models[0] ?? ''
+    : ''
 
   useEffect(() => {
     let cancelled = false
@@ -124,6 +132,45 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
     const existingProvider = settings.agent.providers.find((provider) => provider.id === DEEPSEEK_PROVIDER_PRESET.id)
     setOperationError(null)
     setDraft(draftFromPreset(DEEPSEEK_PROVIDER_PRESET, existingProvider))
+  }
+
+  const updateReviewerMode = (mode: 'inherit-main' | 'custom-provider') => {
+    if (mode === 'inherit-main') {
+      setCorrectnessReviewer({ mode: 'inherit-main' })
+      return
+    }
+    const provider = reviewerProvider ?? selectedProvider ?? settings.agent.providers[0]
+    if (!provider) {
+      setCorrectnessReviewer({ mode: 'inherit-main' })
+      return
+    }
+    setCorrectnessReviewer({
+      mode: 'custom-provider',
+      providerId: provider.id,
+      modelId: provider.defaultModel ?? provider.models[0],
+    })
+  }
+
+  const updateReviewerProvider = (providerId: string) => {
+    const provider = settings.agent.providers.find((item) => item.id === providerId)
+    if (!provider) {
+      setCorrectnessReviewer({ mode: 'inherit-main' })
+      return
+    }
+    setCorrectnessReviewer({
+      mode: 'custom-provider',
+      providerId: provider.id,
+      modelId: provider.defaultModel ?? provider.models[0],
+    })
+  }
+
+  const updateReviewerModel = (modelId: string) => {
+    if (!reviewerProvider) return
+    setCorrectnessReviewer({
+      mode: 'custom-provider',
+      providerId: reviewerProvider.id,
+      modelId,
+    })
   }
 
   const saveDraft = async () => {
@@ -250,6 +297,55 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
             ))}
           </select>
         </label>
+      </div>
+
+      <div className="settings-panel__section" aria-label={t('correctnessReviewer')}>
+        <div>
+          <p className="eyebrow">{t('correctnessReviewer')}</p>
+          <p className="settings-panel__note">{t('correctnessReviewerNote')}</p>
+        </div>
+        <label>
+          {t('reviewerMode')}
+          <select
+            name="correctnessReviewerMode"
+            value={settings.agent.correctnessReviewer.mode}
+            onChange={(event) => updateReviewerMode(event.target.value === 'custom-provider' ? 'custom-provider' : 'inherit-main')}
+          >
+            <option value="inherit-main">{t('reviewerInheritMain')}</option>
+            <option value="custom-provider">{t('reviewerCustomProvider')}</option>
+          </select>
+        </label>
+        {settings.agent.correctnessReviewer.mode === 'custom-provider' && (
+          <>
+            <label>
+              {t('reviewerProvider')}
+              <select
+                name="correctnessReviewerProviderId"
+                value={reviewerProvider?.id ?? ''}
+                onChange={(event) => updateReviewerProvider(event.target.value)}
+              >
+                {settings.agent.providers.length === 0 && <option value="">{t('noProvidersConfigured')}</option>}
+                {settings.agent.providers.map((provider) => (
+                  <option key={provider.id} value={provider.id}>{provider.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              {t('reviewerModel')}
+              <select
+                name="correctnessReviewerModelId"
+                value={reviewerModelId}
+                onChange={(event) => updateReviewerModel(event.target.value)}
+                disabled={!reviewerProvider}
+              >
+                {!reviewerProvider && <option value="">{t('noModelsConfigured')}</option>}
+                {reviewerProvider?.models.map((model) => (
+                  <option key={model} value={model}>{model}</option>
+                ))}
+              </select>
+            </label>
+          </>
+        )}
       </div>
 
       <div className="settings-panel__provider-list" aria-label={t('configuredProviders')}>

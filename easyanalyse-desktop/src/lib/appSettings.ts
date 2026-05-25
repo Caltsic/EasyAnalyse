@@ -1,12 +1,19 @@
 import { isRecord } from './guards'
-import type { AgentProviderKind, AgentProviderPublicConfig, AppLocalePreference, AppSettings, AppThemeMode } from '../types/settings'
+import type {
+  AgentCorrectnessReviewerConfig,
+  AgentProviderKind,
+  AgentProviderPublicConfig,
+  AppLocalePreference,
+  AppSettings,
+  AppThemeMode,
+} from '../types/settings'
 
 export const APP_SETTINGS_STORAGE_KEY = 'easyanalyse.appSettings.v1'
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   basic: { locale: 'system' },
   appearance: { theme: 'system' },
-  agent: { providers: [] },
+  agent: { providers: [], correctnessReviewer: { mode: 'inherit-main' } },
 }
 
 export interface AppSettingsNormalizationResult {
@@ -221,12 +228,58 @@ function normalizeSelection(input: unknown, providers: AgentProviderPublicConfig
   }
 }
 
+function normalizeCorrectnessReviewer(
+  input: unknown,
+  providers: AgentProviderPublicConfig[],
+  warnings: string[],
+): AgentCorrectnessReviewerConfig {
+  const agentInput = isRecord(input) && isRecord(input.agent) ? input.agent : {}
+  const reviewerInput = isRecord(agentInput.correctnessReviewer) ? agentInput.correctnessReviewer : {}
+  const mode = reviewerInput.mode
+
+  if (mode !== 'custom-provider') {
+    if (mode !== undefined && mode !== 'inherit-main') {
+      warnings.push('Ignored invalid agent.correctnessReviewer.mode; using inherit-main.')
+    }
+    return { mode: 'inherit-main' }
+  }
+
+  const providerId = nonEmptyString(reviewerInput.providerId)
+  if (providerId === undefined) {
+    warnings.push('Ignored agent.correctnessReviewer because custom-provider mode requires providerId.')
+    return { mode: 'inherit-main' }
+  }
+
+  const provider = providers.find((item) => item.id === providerId)
+  if (!provider) {
+    warnings.push('Ignored agent.correctnessReviewer.providerId because it does not match a configured provider.')
+    return { mode: 'inherit-main' }
+  }
+
+  const requestedModelId = nonEmptyString(reviewerInput.modelId)
+  const fallbackModelId = provider.defaultModel ?? provider.models[0]
+  const modelId = requestedModelId && provider.models.includes(requestedModelId)
+    ? requestedModelId
+    : fallbackModelId
+
+  if (!modelId) {
+    warnings.push('Ignored agent.correctnessReviewer because the selected provider has no models.')
+    return { mode: 'inherit-main' }
+  }
+  if (requestedModelId !== undefined && requestedModelId !== modelId) {
+    warnings.push('Ignored agent.correctnessReviewer.modelId because it is not available on the selected reviewer provider.')
+  }
+
+  return { mode: 'custom-provider', providerId: provider.id, modelId }
+}
+
 export function normalizeAppSettings(input: unknown): AppSettingsNormalizationResult {
   const warnings: string[] = []
   const locale = normalizeLocale(input, warnings)
   const theme = normalizeTheme(input, warnings)
   const providers = normalizeProviders(input, warnings)
   const selection = normalizeSelection(input, providers, warnings)
+  const correctnessReviewer = normalizeCorrectnessReviewer(input, providers, warnings)
 
   return {
     settings: {
@@ -235,6 +288,7 @@ export function normalizeAppSettings(input: unknown): AppSettingsNormalizationRe
       agent: {
         providers,
         ...selection,
+        correctnessReviewer,
       },
     },
     warnings,

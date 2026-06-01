@@ -9,8 +9,6 @@
 
 EASYAnalyse is a desktop workspace for building, reviewing, and discussing hardware circuits with AI. It stores circuit intent as semantic JSON: devices, terminals, network labels, parameters, validation results, and canvas layout are all readable by humans, the app, and large language model agents.
 
-EASYAnalyse 是一款面向硬件电路搭建、审阅与 AI 协作的桌面软件。它使用语义 JSON 表达电路：器件、端子、网络标签、参数、校验结果和画布布局都可以被人、软件和大模型 Agent 共同理解。
-
 ![EASYAnalyse workspace overview](docs/assets/readme/en-US/01-main-workspace.png)
 
 ## Start Here
@@ -47,5 +45,3 @@ EASYAnalyse 是一款面向硬件电路搭建、审阅与 AI 协作的桌面软�
 ## License
 
 EASYAnalyse is released under the [MIT License](LICENSE).
-
-[中文](README.zh-CN.md) | [English](README.en-US.md)

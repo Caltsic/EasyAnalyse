@@ -1,131 +1,258 @@
 # EASYAnalyse 中文用户指南
 
-[English](README.en-US.md) | [返回首页](README.md)
+[English](README.en-US.md) | [项目首页](README.md)
 
-EASYAnalyse 是一款面向硬件工程与 AI 协作的电路搭建、审阅和分析软件。它不是 PCB Layout 工具，也不是 SPICE 仿真器。它的核心目标是把电路意图、器件、端子、网络标签、参数和布局保存为可读、可校验、可由 AI 继续理解的语义 JSON。
+[![CI](https://github.com/Caltsic/EasyAnalyse/actions/workflows/ci.yml/badge.svg)](https://github.com/Caltsic/EasyAnalyse/actions/workflows/ci.yml)
+[![最新版本](https://img.shields.io/github/v/release/Caltsic/EasyAnalyse?label=release)](https://github.com/Caltsic/EasyAnalyse/releases/latest)
+[![下载量](https://img.shields.io/github/downloads/Caltsic/EasyAnalyse/total?label=downloads)](https://github.com/Caltsic/EasyAnalyse/releases)
+[![MIT License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-你可以把它理解为一个硬件电路工作台：工程师提出目标、审阅结果并做最终判断；AI Agent 负责辅助生成蓝图、检查当前电路、解释结构、提出修改建议，并在需要时通过工具把候选电路写入蓝图工作区。
+EASYAnalyse 是一款面向硬件工程与 AI 协作的电路搭建、审阅和分析软件。它不是 PCB Layout 工具，也不是 SPICE 仿真器；它的核心目标是把电路意图、器件、端子、网络标签、参数和布局保存为可读、可校验、可由 AI 继续理解的语义 JSON。
 
-## 适合场景
+> Agent、蓝图和严格电路审阅能力仍在快速迭代中。README 按当前本地最新版截图和流程编写，正式 Release 页面会标明稳定版本与预览版本。
 
-- 快速搭建语义电路图：电源、MCU、运放、滤波器、接口电路、驱动电路、基础模拟/数字模块等。
-- 让 AI 根据需求生成电路候选，例如“做一个截止频率 5 kHz 的低通滤波器”。
-- 让 AI 阅读当前电路 JSON，解释设计、排查显示异常或结构问题。
-- 在不覆盖主文档的前提下保存多个蓝图候选，逐个预览、校验、比较和应用。
-- 用统一 JSON 表达电路，让电路图可以被人、软件和大模型共同理解。
-- 在中文和英文 UI 之间切换。
+![EASYAnalyse 主界面](docs/assets/readme/zh-CN/01-main-workspace.png)
 
-## 基本使用流程
+## 目录
 
-1. 打开 EASYAnalyse 后，新建电路或打开已有 `.json` 电路文件。
-2. 在顶部工具栏选择器件模板，点击“添加器件”并放到画布。
-3. 在右侧检查器中编辑器件名称、类型、参数、端子、方向、位置和网络标签。
-4. 用相同的端子 `label` 表示连接关系。两个端子共享同一个非空 label 时，会被视为同一网络。
-5. 使用校验功能检查当前 JSON 是否能被软件正确理解和显示。
-6. 使用蓝图工作区创建当前文档快照，或让 Agent 生成新的候选。
-7. 应用蓝图前，先查看校验报告、差异摘要和原始 JSON 预览。
+- [安装](#安装)
+- [快速开始](#快速开始)
+- [配置 AI Provider](#配置-ai-provider)
+- [使用 Agent 生成并应用蓝图](#使用-agent-生成并应用蓝图)
+- [手动搭建电路](#手动搭建电路)
+- [端子线与连接规则](#端子线与连接规则)
+- [蓝图工作区](#蓝图工作区)
+- [校验与问题提示](#校验与问题提示)
+- [移动端只读分享](#移动端只读分享)
+- [语义 JSON 格式](#语义-json-格式)
+- [开发环境](#开发环境)
+- [架构图](#架构图)
+- [示例文件](#示例文件)
+- [常见问题](#常见问题)
+- [贡献入口](#贡献入口)
 
-## 画布与检查器
+## 安装
 
-画布用于查看和调整电路结构，检查器用于编辑选中对象。
+1. 打开 [GitHub Releases](https://github.com/Caltsic/EasyAnalyse/releases/latest)。
+2. 下载 Windows 安装包 `EASYAnalyse.Desktop_<version>_x64-setup.exe`。
+3. 运行安装包并启动 EASYAnalyse Desktop。
 
-画布支持：
+Release 页面会显示每个安装包的实时下载量；README 顶部的 `downloads` 徽章统计所有 GitHub Release 资产的累计下载量。
 
-- 拖动器件调整布局。
-- 多选器件后一并拖动。
-- 旋转选中器件。
-- 聚焦某个器件或网络，查看上下游关系。
-- 查看独立网络线、器件端子和标签关系。
+## 快速开始
 
-检查器支持：
+1. 启动 EASYAnalyse，打开示例 JSON 或新建空白文档。
+2. 在画布中查看器件与网络标签；连接事实来自端子 `label`，不是导线几何形状。
+3. 选择一个器件，在右侧 Inspector 中编辑名称、类型、参数、端子和网络标签。
+4. 打开 Agent 侧边栏，配置 Provider 后输入需求，例如“生成一个 5 kHz 低通滤波器”。
+5. Agent 生成的候选会进入蓝图工作区；先预览和校验，再点击应用。
 
-- 修改器件名称、类型、位号、封装和参数。
-- 添加输入/输出端子。
-- 设置端子的方向、位置、顺序、引脚名和网络标签。
-- 为电阻、电容、电感、晶振、电源、运放、稳压器等器件补充电气参数。
+![快速开始总览](docs/assets/readme/zh-CN/02-quick-start.png)
 
-## 连接规则
+## 配置 AI Provider
 
-EASYAnalyse 的核心连接规则是端子标签，而不是传统导线对象。
-
-- MCU 的 `SCL` 端子和传感器的 `SCL` 端子都写成 label `I2C_SCL`，它们就属于同一网络。
-- 电源输出端和芯片供电脚都写成 label `3V3`，它们就属于 3.3 V 电源网络。
-- 如果一个端子没有 label，软件会把它视为未连接或连接语义不完整。
-
-这种方式让 AI 不必猜测导线几何形状，也让工程师可以直接从 JSON 读出电路语义。
-
-## 校验应该怎么理解
-
-校验分为两类：
-
-- 硬格式检查：JSON 是否有必需字段、字段类型是否正确、是否存在无法显示的格式错误。
-- 语义提示：电路是否缺少参数、是否有未连接端子、电源标签是否不明确、方向是否可疑等。
-
-硬格式问题通常必须修复，因为它可能导致文档无法打开或器件无法显示。语义提示不等于电路错误，它更像工程审阅提醒。是否修改应由工程师或 Agent 根据上下文判断。
-
-## Agent 怎么用
-
-右侧 AI 对话区首先是正常对话窗口，其次才是在需要时调用工具的硬件开发助手。
+EASYAnalyse 支持 DeepSeek 预设和 OpenAI-compatible Provider。Provider 设置只保存公开元数据，例如名称、Base URL、模型列表和默认模型；API key 会写入本地 SecretStore，普通设置中只保留不可读的引用。
 
 推荐流程：
 
-1. 在模型设置中配置 Provider、模型和 API key。
-2. 在 Agent 输入框中描述目标，例如“设计一个 5 kHz 高 Q 低通滤波器”。
-3. 如果希望 Agent 读取当前电路，勾选 `Context`。
-4. Agent 会根据需要自主调用工具，例如读取当前文档、检查蓝图格式、检查候选电路、生成蓝图候选。
-5. 工具调用过程默认折叠；排查时可以展开查看。
-6. 如果 Agent 生成了蓝图候选，它们会进入蓝图面板，不会直接覆盖主画布。
+1. 打开模型设置。
+2. 选择 DeepSeek 预设，或添加自定义 OpenAI-compatible Provider。
+3. 填写 Base URL、模型名和默认模型。
+4. 保存 API key。截图和文档示例必须使用假 key，不要提交真实密钥。
+5. 选择 Agent 使用的模型；如已启用严格电路审阅器，可让审阅模型继承主模型，也可单独选择 Provider 和模型。
 
-`Context` 的含义是把当前电路 JSON 一起发给模型。它适合用于“检查当前电路”“基于已有设计继续修改”“解释这个结构”等场景。若只是问通用知识或从零生成方案，可以不勾选。
+`Context` 表示把当前电路 JSON 一起发给模型。检查当前电路、基于已有设计继续修改、解释拓扑时建议勾选；从零问通用问题时可以不勾选。
+
+![Provider 设置](docs/assets/readme/zh-CN/03-provider-settings.png)
+
+## 使用 Agent 生成并应用蓝图
+
+Agent 侧边栏首先是正常对话窗口，其次才是在需要时调用工具的硬件开发助手。模型可以自主调用读取当前文档、生成滤波器蓝图、检查蓝图格式、检查布局重叠、严格审阅电路正确性等工具。
+
+一次推荐流程：
+
+1. 在 Agent 输入框描述目标，例如“做一个高品质因数低通滤波器，截止频率 5 kHz”。
+2. 如果需要基于当前画布继续设计，勾选 `Context`。
+3. 等待模型回复。工具调用记录默认折叠；调试 Provider 或蓝图问题时再展开。
+4. 如果模型生成蓝图，候选会存入蓝图工作区，不会直接覆盖主画布。
+5. 在蓝图工作区预览候选，查看校验结果和差异摘要。
+6. 确认后点击应用，把候选写入当前主文档。
+
+![Agent 蓝图生成](docs/assets/readme/zh-CN/04-agent-blueprint.png)
+
+## 手动搭建电路
+
+手动搭建适合快速修正 AI 候选、整理布局或从零画一个语义电路：
+
+- 从顶部工具栏选择器件模板并放置模块。
+- 拖动模块调整位置，多选后可以一起移动。
+- 选中模块后在 Inspector 中编辑 `name`、`kind`、`reference`、封装和电气参数。
+- 添加或调整端子，设置方向、所在边、顺序和引脚名。
+- 为端子填写相同 `label` 来建立连接关系。
+
+![手动放置模块](docs/assets/readme/zh-CN/05-manual-canvas.png)
+
+## 端子线与连接规则
+
+EASYAnalyse 的连接真相来自端子 `label`：
+
+- MCU 的 `SCL` 端子和传感器的 `SCL` 端子都写成 `I2C_SCL`，它们属于同一网络。
+- 稳压器输出端和芯片供电脚都写成 `3V3`，它们属于 3.3 V 电源网络。
+- 未填写 label 的端子会被视为未连接或语义不完整。
+
+画布上的网络线是视觉辅助，用来帮助人阅读布局；它不创建连接，也不替代端子 label。AI 生成电路时也遵守同一规则：不要添加旧式 `wires`、`nodes`、`junctions` 或 `signalId` 字段。
+
+![端子与网络标签](docs/assets/readme/zh-CN/06-terminals-labels.png)
 
 ## 蓝图工作区
 
-蓝图是候选电路或历史快照，用来保护主文档不被 AI 或实验性修改直接覆盖。
-
-你可以在蓝图面板中：
+蓝图是候选电路或历史快照，用来保护主文档不被 AI 或实验性修改直接覆盖。你可以：
 
 - 为当前主文档创建快照。
-- 查看 Agent 生成的蓝图候选。
-- 预览蓝图中的电路图。
-- 重新校验蓝图。
-- 查看蓝图与当前主文档之间的差异。
-- 应用蓝图，把它替换为当前主文档。
-- 归档或删除不需要的候选。
+- 查看 Agent 生成的多个候选。
+- 预览候选电路。
+- 重新校验候选。
+- 比较候选与当前主文档的差异。
+- 应用、归档或删除候选。
 
-如果 Agent 显示运行完成但主画布没有变化，请先切到蓝图面板。候选默认进入蓝图列表，不会直接覆盖主画布。
+如果 Agent 显示完成但主画布没有变化，请先打开蓝图工作区。候选默认进入蓝图列表，确认后才会应用。
 
-## Provider 与 API Key
+![蓝图工作区](docs/assets/readme/zh-CN/07-blueprint-workspace.png)
 
-模型设置中只保存公开 Provider 元数据，例如 Provider 名称、API 地址、模型列表和默认模型。
+## 校验与问题提示
 
-API key 会写入本地 SecretStore，普通设置中只保留不可读的 `apiKeyRef`。这样可以避免 key 直接出现在项目配置或电路 JSON 中。
+校验分为两类：
 
-当你勾选 `Context` 并调用外部模型时，当前电路 JSON 会发送给对应 Provider。涉及未公开硬件设计时，请确认模型服务和数据策略符合你的要求。
+- **硬格式检查**：缺少必需字段、字段类型错误、未知字段、格式导致器件无法显示。这类问题通常必须修。
+- **语义提示**：缺少参数、未连接端子、电源标签不明确、方向可疑、布局文字重叠。这类提示是工程审阅线索，不等于电路一定错误。
 
-## 手机查看
+Agent 工具会把详细错误返回给模型。格式错误写得越具体，模型越容易自动修复；语义提示则由模型和工程师结合需求判断是否需要修改。
 
-桌面端可以生成当前电路快照的只读链接，供同一局域网内的手机浏览器或 Android 查看器打开。
+![校验结果](docs/assets/readme/zh-CN/08-validation.png)
 
-这个功能适合：
+## 移动端只读分享
 
-- 在手机上快速查看当前电路。
-- 横屏浏览较大的电路图。
-- 把电路快照临时分享给同事。
+桌面端可以生成当前电路快照的局域网只读链接和二维码，供手机浏览器或 Android 查看器打开。移动端适合审阅和展示，不会同步后续编辑，也不会修改桌面端文档。
 
-手机端是只读视图，不会同步后续编辑，也不会修改桌面端文档。
+![移动端分享](docs/assets/readme/zh-CN/09-mobile-share.png)
 
-## 当前边界
+## 语义 JSON 格式
 
-EASYAnalyse 当前不替代：
+最小语义 v4 文档示例：
 
-- PCB Layout 工具。
-- SPICE 电路仿真器。
-- 器件选型数据库。
-- 生产级 DRC/ERC 系统。
+```json
+{
+  "schemaVersion": "4.0.0",
+  "document": {
+    "id": "rc-low-pass-demo",
+    "title": "RC Low-Pass Demo"
+  },
+  "devices": [
+    {
+      "id": "r1",
+      "name": "R1",
+      "kind": "resistor",
+      "properties": { "value": "3.3k" },
+      "terminals": [
+        { "id": "r1-a", "name": "A", "direction": "input", "label": "VIN" },
+        { "id": "r1-b", "name": "B", "direction": "output", "label": "VOUT" }
+      ]
+    },
+    {
+      "id": "c1",
+      "name": "C1",
+      "kind": "capacitor",
+      "properties": { "value": "10nF" },
+      "terminals": [
+        { "id": "c1-a", "name": "A", "direction": "input", "label": "VOUT" },
+        { "id": "c1-b", "name": "B", "direction": "output", "label": "GND" }
+      ]
+    }
+  ],
+  "view": {
+    "canvas": { "units": "px", "grid": { "enabled": true, "size": 16 } },
+    "devices": {
+      "r1": { "position": { "x": 160, "y": 160 } },
+      "c1": { "position": { "x": 360, "y": 160 } }
+    },
+    "networkLines": {}
+  }
+}
+```
 
-Agent 生成的电路应视为候选方案。它可以显著提高搭建和审阅效率，但最终电气正确性仍需要工程师确认，尤其是高 Q 滤波器、开关电源、高速接口、保护电路和安全相关设计。
+关键点：
 
-## 参与贡献
+- 顶层必需字段是 `schemaVersion`、`document`、`devices`、`view`。
+- 每个器件必须有 `id`、`name`、`kind`、`terminals`。
+- 每个端子必须有 `id`、`name`、`direction`，通常还应有 `label`。
+- 连接只由相同 `terminal.label` 表示。
+- `view.networkLines` 只负责可读性，不创建连接。
 
-请阅读 [贡献指南](CONTRIBUTING.md)。项目采用 trunk-based development，`main` 是主干，短分支通过 PR 合并；bug、feature 和 discussion issue 使用结构化模板。
+## 开发环境
 
+桌面端基于 Vite、React、TypeScript、Tauri 和 Rust。
+
+```powershell
+cd easyanalyse-desktop
+npm install
+npm run dev
+```
+
+常用命令：
+
+```powershell
+npm run typecheck
+npm run lint
+npm test
+npm run verify
+npm run tauri:build
+```
+
+发布前请参考 [Release Policy](docs/governance/release-policy.md)。普通开发通过短分支和 PR 进入 `main`，不要直接推送主干。
+
+## 架构图
+
+```mermaid
+flowchart LR
+  UI[Desktop UI] --> JSON[Semantic v4 JSON]
+  JSON --> Canvas[Canvas and Inspector]
+  JSON --> Blueprints[Blueprint Workspace]
+  UI --> Agent[Agent Sidebar]
+  Agent --> Tools[Agent Tools]
+  Tools --> Provider[Model Provider]
+  Tools --> Validation[Format and Layout Checks]
+  Provider --> Blueprints
+  Validation --> Blueprints
+  JSON --> Mobile[Read-only Mobile Share]
+```
+
+## 示例文件
+
+- [RC 低通滤波器](testJson/rc-low-pass-filter.json)
+- [语义 v4 演示](testJson/semantic-v4-demo.json)
+- [STM32F103C8T6 最小系统](testJson/stm32f103c8t6-minimum-system.json)
+- [4 阶 Butterworth 低通滤波器](testJson/butterworth-4th-order-lowpass.json)
+
+## 常见问题
+
+**为什么 Agent 完成后主画布没有变化？**
+生成结果默认进入蓝图工作区。先预览候选，再应用到主文档。
+
+**校验有 warning 是否一定要修改？**
+不一定。硬格式错误通常必须修；语义 warning 是工程审阅提示。
+
+**EASYAnalyse 可以替代 PCB 或 SPICE 吗？**
+不能。它关注电路语义表达、AI 协作和结构审阅，不替代 PCB Layout、SPICE 仿真、器件选型数据库或生产级 DRC/ERC。
+
+**Context 会发送什么？**
+勾选 `Context` 后，当前电路 JSON 会随用户消息发送给模型 Provider。涉及未公开硬件设计时，请确认 Provider 的数据策略。
+
+## 贡献入口
+
+- [提交 bug](https://github.com/Caltsic/EasyAnalyse/issues/new?template=bug_report.yml)：请包含复现步骤、环境、版本和截图。
+- [提出需求](https://github.com/Caltsic/EasyAnalyse/issues/new?template=feature_request.yml)：先讨论可行性和范围。
+- [发起讨论](https://github.com/Caltsic/EasyAnalyse/issues/new?template=discussion.yml)：适合架构、交互和格式设计。
+- [贡献指南](CONTRIBUTING.md)：分支、提交、PR 和 review 规则。
+- [标签列表](.github/labels.yml)：`bug`、`feature`、`discussion`、`docs`、`agent`、`desktop`、`mobile` 等。
+
+[English](README.en-US.md) | [项目首页](README.md)

@@ -1,41 +1,51 @@
 # EASYAnalyse
 
-Languages: [中文](README.zh-CN.md) | [English](README.en-US.md)
+[中文](README.zh-CN.md) | [English](README.en-US.md)
 
-EASYAnalyse is a hardware circuit construction, review, and AI-assisted analysis workspace. It focuses on semantic circuit JSON rather than PCB layout or SPICE simulation: devices, terminals, network labels, parameters, and canvas layout are stored in a format that humans, software, and AI agents can read and validate.
+[![CI](https://github.com/Caltsic/EasyAnalyse/actions/workflows/ci.yml/badge.svg)](https://github.com/Caltsic/EasyAnalyse/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/Caltsic/EasyAnalyse?label=release)](https://github.com/Caltsic/EasyAnalyse/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/Caltsic/EasyAnalyse/total?label=downloads)](https://github.com/Caltsic/EasyAnalyse/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-EASYAnalyse 是一款面向硬件工程与 AI 协作的电路搭建、审阅和分析软件。它关注语义电路 JSON，而不是传统 PCB Layout 或 SPICE 仿真：器件、端子、网络标签、参数和画布布局都会保存为人、软件和 AI Agent 都能读取与校验的结构。
+EASYAnalyse is a desktop workspace for building, reviewing, and discussing hardware circuits with AI. It stores circuit intent as semantic JSON: devices, terminals, network labels, parameters, validation results, and canvas layout are all readable by humans, the app, and large language model agents.
 
-## What You Can Do
+EASYAnalyse 是一款面向硬件电路搭建、审阅与 AI 协作的桌面软件。它使用语义 JSON 表达电路：器件、端子、网络标签、参数、校验结果和画布布局都可以被人、软件和大模型 Agent 共同理解。
 
-- Build semantic circuit diagrams for power, MCU, filters, op-amp blocks, interfaces, drivers, and mixed analog/digital modules.
-- Ask the Agent to design blueprint candidates, inspect the current circuit, explain topology, or diagnose display and format problems.
-- Keep generated circuits in the blueprint workspace before applying them to the main document.
-- Validate whether JSON can be opened and rendered, while treating semantic issues as engineering hints rather than hard blockers.
-- Share read-only mobile snapshots on the local network.
-- Switch the app UI between Chinese and English.
+![EASYAnalyse workspace overview](docs/assets/readme/en-US/01-main-workspace.png)
 
-## 用户可以做什么
+## Start Here
 
-- 搭建电源、MCU、滤波器、运放、接口、驱动和基础模拟/数字模块等语义电路图。
-- 让 Agent 生成蓝图候选、检查当前电路、解释拓扑，或排查显示与格式问题。
-- 在应用蓝图前，把 AI 生成的候选先保存在蓝图工作区中预览、校验和比较。
-- 校验 JSON 是否能被打开和渲染，同时把语义 issue 作为工程提示而不是强制阻断。
-- 在局域网内分享只读手机快照。
-- 在中文和英文界面之间切换。
+| I want to... | Go to |
+| --- | --- |
+| Install and use EASYAnalyse | [English User Guide](README.en-US.md) / [中文用户指南](README.zh-CN.md) |
+| Download the latest installer | [GitHub Releases](https://github.com/Caltsic/EasyAnalyse/releases/latest) |
+| Configure an AI Provider | [Agent and Provider guide](README.en-US.md#configure-an-ai-provider) / [Agent 与 Provider](README.zh-CN.md#配置-ai-provider) |
+| Generate and apply a circuit blueprint | [Blueprint workflow](README.en-US.md#generate-a-blueprint-with-the-agent) / [蓝图生成流程](README.zh-CN.md#使用-agent-生成并应用蓝图) |
+| Understand the JSON format | [Semantic JSON](README.en-US.md#semantic-json-format) / [语义-json-格式](README.zh-CN.md#语义-json-格式) |
+| Report a bug or propose a feature | [Issues](https://github.com/Caltsic/EasyAnalyse/issues/new/choose) |
+| Contribute code or docs | [Contributing](CONTRIBUTING.md) |
 
-## Guides
+## What EASYAnalyse Does
+
+- Build semantic circuit diagrams for power supplies, MCUs, filters, op-amp stages, connectors, drivers, sensors, and mixed analog/digital modules.
+- Use the Agent sidebar as a normal chat surface first, then let the model call tools when it needs to read the current document, generate blueprints, validate JSON, or review candidate circuits.
+- Keep AI-generated circuit candidates in the blueprint workspace before applying them to the main canvas.
+- Validate whether JSON can be opened and rendered; treat semantic issues as engineering review hints rather than automatic blockers.
+- Share a read-only mobile snapshot on the local network.
+
+## Documentation Map
 
 - [中文用户指南](README.zh-CN.md)
 - [English User Guide](README.en-US.md)
 - [Contributing / 贡献指南](CONTRIBUTING.md)
-- [Code Management Standard](docs/governance/code-management.md)
+- [Security Policy](SECURITY.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Release Policy](docs/governance/release-policy.md)
 - [Branching and Permissions](docs/governance/branching-and-permissions.md)
 - [Issue and Commit Policy](docs/governance/issue-and-commit-policy.md)
-- [Security Policy](SECURITY.md)
-- [Code of Conduct](CODE_OF_CONDUCT.md)
 
 ## License
 
 EASYAnalyse is released under the [MIT License](LICENSE).
+
+[中文](README.zh-CN.md) | [English](README.en-US.md)

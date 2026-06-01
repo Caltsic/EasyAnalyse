@@ -13,6 +13,8 @@ EASYAnalyse is a desktop workspace for hardware circuit construction, review, an
 
 ![EASYAnalyse workspace](docs/assets/readme/en-US/01-main-workspace.png)
 
+Callouts: `1` file title, path, validation, and save state; `2` main canvas and coordinate grid; `3` right-side Agent, Inspector, and blueprint workspace entry points.
+
 ## Contents
 
 - [Install](#install)
@@ -49,6 +51,8 @@ The Release page shows live download counts for each asset. The `downloads` badg
 
 ![Quick start overview](docs/assets/readme/en-US/02-quick-start.png)
 
+Callouts: `1` example circuit and network labels; `2` top-level file, validation, model settings, and device-template controls; `3` Agent input area for design requests after a Provider is configured.
+
 ## Configure an AI Provider
 
 EASYAnalyse supports the DeepSeek preset and custom OpenAI-compatible Providers. Provider settings store only public metadata such as name, Base URL, model list, and default model. API keys are saved in the local SecretStore, while normal settings keep only an opaque reference.
@@ -65,6 +69,8 @@ Recommended flow:
 
 ![Provider settings](docs/assets/readme/en-US/03-provider-settings.png)
 
+Callouts: `1` Provider settings note and SecretStore backend; `2` active Provider and model selectors; `3` Provider metadata, model list, and API-key save area.
+
 ## Generate a Blueprint with the Agent
 
 The Agent sidebar is a normal chat surface first. Tool use is available when the model needs to read the current document, generate a filter blueprint, check blueprint format, inspect layout overlap, or request a stricter circuit-correctness review.
@@ -80,6 +86,8 @@ Recommended flow:
 
 ![Agent blueprint generation](docs/assets/readme/en-US/04-agent-blueprint.png)
 
+Callouts: `1` Agent conversation, model, and view controls; `2` message input, Context toggle, and send button; `3` candidate circuit area generated or referenced by the Agent.
+
 ## Build Circuits Manually
 
 Manual editing is useful when refining AI candidates, cleaning up layout, or creating a semantic circuit from scratch:
@@ -92,6 +100,8 @@ Manual editing is useful when refining AI candidates, cleaning up layout, or cre
 
 ![Manual canvas editing](docs/assets/readme/en-US/05-manual-canvas.png)
 
+Callouts: `1` devices, selection state, and terminal labels on the canvas; `2` right-side Inspector for properties, terminals, and templates; `3` top toolbar for save, validation, model settings, and device templates.
+
 ## Terminals and Connectivity
 
 EASYAnalyse uses terminal `label` values as the source of connectivity truth:
@@ -103,6 +113,8 @@ EASYAnalyse uses terminal `label` values as the source of connectivity truth:
 Network lines on the canvas are visual aids for readability. They do not create connectivity and do not replace terminal labels. Agent-generated JSON follows the same rule: do not add legacy `wires`, `nodes`, `junctions`, or `signalId` fields.
 
 ![Terminals and labels](docs/assets/readme/en-US/06-terminals-labels.png)
+
+Callouts: `1` input-side terminal and `SIG_IN` label; `2` output and ground labels such as `LPF_OUT` and `GND`; `3` terminal list in the Inspector, where `label` values define connectivity.
 
 ## Blueprint Workspace
 
@@ -119,6 +131,8 @@ If an Agent run completes but the main canvas does not change, open the blueprin
 
 ![Blueprint workspace](docs/assets/readme/en-US/07-blueprint-workspace.png)
 
+Callouts: `1` blueprint workspace controls for snapshots and workspace persistence; `2` candidate card with select, validate, apply, archive, and delete actions; `3` candidate preview area, which does not overwrite the main canvas.
+
 ## Validation and Issues
 
 Validation has two categories:
@@ -130,11 +144,15 @@ Agent tools return detailed errors back to the model. The more concrete a format
 
 ![Validation results](docs/assets/readme/en-US/08-validation.png)
 
+Callouts: `1` top-level validation state; `2` manual validation entry point; `3` issue count and validation action on a blueprint candidate.
+
 ## Read-only Mobile Sharing
 
 The desktop app can create a local-network read-only link and QR code for the current circuit snapshot. Mobile viewing is useful for review and presentation. It does not sync later edits and cannot modify the desktop document.
 
 ![Mobile sharing](docs/assets/readme/en-US/09-mobile-share.png)
+
+Callouts: `1` QR code for a mobile browser; `2` snapshot title, creation time, expiry time, and validation state; `3` copy link, refresh snapshot, and stop sharing actions.
 
 ## Semantic JSON Format
 

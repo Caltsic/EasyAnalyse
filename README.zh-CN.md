@@ -13,6 +13,8 @@ EASYAnalyse 是一款面向硬件工程与 AI 协作的电路搭建、审阅和�
 
 ![EASYAnalyse 主界面](docs/assets/readme/zh-CN/01-main-workspace.png)
 
+图中标注：`1` 文件标题、路径、校验和保存状态；`2` 主画布与坐标网格；`3` 右侧 Agent、Inspector 和蓝图工作区入口。
+
 ## 目录
 
 - [安装](#安装)
@@ -49,6 +51,8 @@ Release 页面会显示每个安装包的实时下载量；README 顶部的 `dow
 
 ![快速开始总览](docs/assets/readme/zh-CN/02-quick-start.png)
 
+图中标注：`1` 示例电路和网络标签；`2` 顶部文件、校验、模型设置和器件模板入口；`3` Agent 对话输入区，配置 Provider 后可直接提出设计需求。
+
 ## 配置 AI Provider
 
 EASYAnalyse 支持 DeepSeek 预设和 OpenAI-compatible Provider。Provider 设置只保存公开元数据，例如名称、Base URL、模型列表和默认模型；API key 会写入本地 SecretStore，普通设置中只保留不可读的引用。
@@ -65,6 +69,8 @@ EASYAnalyse 支持 DeepSeek 预设和 OpenAI-compatible Provider。Provider 设�
 
 ![Provider 设置](docs/assets/readme/zh-CN/03-provider-settings.png)
 
+图中标注：`1` Provider 设置说明和 SecretStore 后端；`2` 当前 Provider 与当前模型选择；`3` Provider 元数据、模型列表和 API key 保存入口。
+
 ## 使用 Agent 生成并应用蓝图
 
 Agent 侧边栏首先是正常对话窗口，其次才是在需要时调用工具的硬件开发助手。模型可以自主调用读取当前文档、生成滤波器蓝图、检查蓝图格式、检查布局重叠、严格审阅电路正确性等工具。
@@ -80,6 +86,8 @@ Agent 侧边栏首先是正常对话窗口，其次才是在需要时调用工�
 
 ![Agent 蓝图生成](docs/assets/readme/zh-CN/04-agent-blueprint.png)
 
+图中标注：`1` Agent 会话、模型和视图切换区；`2` 消息输入、Context 和发送按钮；`3` Agent 生成或参考的候选电路区域。
+
 ## 手动搭建电路
 
 手动搭建适合快速修正 AI 候选、整理布局或从零画一个语义电路：
@@ -92,6 +100,8 @@ Agent 侧边栏首先是正常对话窗口，其次才是在需要时调用工�
 
 ![手动放置模块](docs/assets/readme/zh-CN/05-manual-canvas.png)
 
+图中标注：`1` 画布中的器件、选中状态和端子标签；`2` 右侧 Inspector，用来编辑属性、端子和模板；`3` 顶部工具栏，用来保存、校验、切换模型设置和选择器件模板。
+
 ## 端子线与连接规则
 
 EASYAnalyse 的连接真相来自端子 `label`：
@@ -103,6 +113,8 @@ EASYAnalyse 的连接真相来自端子 `label`：
 画布上的网络线是视觉辅助，用来帮助人阅读布局；它不创建连接，也不替代端子 label。AI 生成电路时也遵守同一规则：不要添加旧式 `wires`、`nodes`、`junctions` 或 `signalId` 字段。
 
 ![端子与网络标签](docs/assets/readme/zh-CN/06-terminals-labels.png)
+
+图中标注：`1` 输入侧端子和 `SIG_IN` 标签；`2` 输出侧与地端子标签，例如 `LPF_OUT`、`GND`；`3` Inspector 中的端子列表，连接事实来自这里的 `label`。
 
 ## 蓝图工作区
 
@@ -119,6 +131,8 @@ EASYAnalyse 的连接真相来自端子 `label`：
 
 ![蓝图工作区](docs/assets/readme/zh-CN/07-blueprint-workspace.png)
 
+图中标注：`1` 蓝图工作区入口、快照和工作区保存操作；`2` 候选卡片，可选择、校验、应用、归档或删除；`3` 候选预览区域，预览不会直接覆盖主画布。
+
 ## 校验与问题提示
 
 校验分为两类：
@@ -130,11 +144,15 @@ Agent 工具会把详细错误返回给模型。格式错误写得越具体，�
 
 ![校验结果](docs/assets/readme/zh-CN/08-validation.png)
 
+图中标注：`1` 顶部校验状态；`2` 手动触发校验的入口；`3` 蓝图候选中的问题数量和候选校验入口。
+
 ## 移动端只读分享
 
 桌面端可以生成当前电路快照的局域网只读链接和二维码，供手机浏览器或 Android 查看器打开。移动端适合审阅和展示，不会同步后续编辑，也不会修改桌面端文档。
 
 ![移动端分享](docs/assets/readme/zh-CN/09-mobile-share.png)
+
+图中标注：`1` 手机浏览器可扫描的二维码；`2` 快照标题、生成时间、过期时间和校验状态；`3` 复制链接、刷新快照和停止分享操作。
 
 ## 语义 JSON 格式
 

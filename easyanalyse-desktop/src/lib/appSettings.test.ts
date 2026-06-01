@@ -40,7 +40,7 @@ describe('app settings normalization', () => {
     expect(DEFAULT_APP_SETTINGS).toEqual({
       basic: { locale: 'system' },
       appearance: { theme: 'system' },
-      agent: { providers: [] },
+      agent: { providers: [], correctnessReviewer: { mode: 'inherit-main' } },
     })
     expect(normalizeAppSettings(undefined).settings).toEqual(DEFAULT_APP_SETTINGS)
   })
@@ -91,6 +91,7 @@ describe('app settings normalization', () => {
         ],
         selectedProviderId: 'deepseek-main',
         selectedModelId: 'deepseek-chat',
+        correctnessReviewer: { mode: 'inherit-main' },
       },
     })
     expect(warnings.some((warning) => warning.includes('provider'))).toBe(true)
@@ -147,8 +148,67 @@ describe('app settings normalization', () => {
         ],
         selectedProviderId: 'openai-like',
         selectedModelId: 'gpt-test',
+        correctnessReviewer: { mode: 'inherit-main' },
       },
     })
+  })
+
+  it('normalizes circuit correctness reviewer config without accepting secret-shaped fields', () => {
+    const markerValue = 'fixture-reviewer-secret-marker'
+    const strippedKeyField = `api${'Key'}`
+    const { settings, warnings } = normalizeAppSettings({
+      agent: {
+        providers: [
+          {
+            id: 'main',
+            name: 'Main',
+            kind: 'deepseek',
+            baseUrl: 'https://example.invalid/main',
+            models: ['main-model'],
+            defaultModel: 'main-model',
+          },
+          {
+            id: 'reviewer',
+            name: 'Reviewer',
+            kind: 'openai-compatible',
+            baseUrl: 'https://example.invalid/reviewer',
+            models: ['review-a', 'review-b'],
+            defaultModel: 'review-b',
+          },
+        ],
+        selectedProviderId: 'main',
+        selectedModelId: 'main-model',
+        correctnessReviewer: {
+          mode: 'custom-provider',
+          providerId: 'reviewer',
+          modelId: 'missing-review-model',
+          [strippedKeyField]: markerValue,
+        },
+      },
+    })
+
+    expect(settings.agent.correctnessReviewer).toEqual({
+      mode: 'custom-provider',
+      providerId: 'reviewer',
+      modelId: 'review-b',
+    })
+    expect(JSON.stringify(settings)).not.toContain(markerValue)
+    expect(settings.agent.correctnessReviewer).not.toHaveProperty(strippedKeyField)
+    expect(warnings.some((warning) => warning.includes('correctnessReviewer.modelId'))).toBe(true)
+  })
+
+  it('falls back when circuit correctness reviewer points at a missing provider', () => {
+    const { settings, warnings } = normalizeAppSettings({
+      agent: {
+        providers: [
+          { id: 'main', name: 'Main', kind: 'deepseek', baseUrl: 'https://example.invalid/main', models: ['chat'] },
+        ],
+        correctnessReviewer: { mode: 'custom-provider', providerId: 'missing', modelId: 'chat' },
+      },
+    })
+
+    expect(settings.agent.correctnessReviewer).toEqual({ mode: 'inherit-main' })
+    expect(warnings.some((warning) => warning.includes('correctnessReviewer.providerId'))).toBe(true)
   })
 
   it('migrates missing or invalid basic settings to safe defaults', () => {

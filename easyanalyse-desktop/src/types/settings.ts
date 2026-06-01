@@ -14,6 +14,14 @@ export interface AgentProviderPublicConfig {
   apiKeyRef?: string
 }
 
+export type AgentCorrectnessReviewerMode = 'inherit-main' | 'custom-provider'
+
+export interface AgentCorrectnessReviewerConfig {
+  mode: AgentCorrectnessReviewerMode
+  providerId?: string
+  modelId?: string
+}
+
 export interface AppSettings {
   basic: {
     locale: AppLocalePreference
@@ -25,5 +33,6 @@ export interface AppSettings {
     providers: AgentProviderPublicConfig[]
     selectedProviderId?: string
     selectedModelId?: string
+    correctnessReviewer: AgentCorrectnessReviewerConfig
   }
 }

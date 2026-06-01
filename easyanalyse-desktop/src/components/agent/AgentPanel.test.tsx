@@ -115,7 +115,7 @@ beforeEach(() => {
     locale: 'en-US',
   })
   useSettingsStore.setState({
-    settings: { basic: { locale: 'system' }, appearance: { theme: 'system' }, agent: { providers: [] } },
+    settings: { basic: { locale: 'system' }, appearance: { theme: 'system' }, agent: { providers: [], correctnessReviewer: { mode: 'inherit-main' } } },
     loaded: true,
     warnings: [],
   })
@@ -233,7 +233,7 @@ describe('AgentPanel', () => {
       settings: {
         basic: { locale: 'system' },
         appearance: { theme: 'system' },
-        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat', correctnessReviewer: { mode: 'inherit-main' } },
       },
       loaded: true,
       warnings: [],
@@ -294,7 +294,7 @@ describe('AgentPanel', () => {
       settings: {
         basic: { locale: 'system' },
         appearance: { theme: 'system' },
-        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat', correctnessReviewer: { mode: 'inherit-main' } },
       },
       loaded: true,
       warnings: [],
@@ -334,7 +334,7 @@ describe('AgentPanel', () => {
       settings: {
         basic: { locale: 'system' },
         appearance: { theme: 'system' },
-        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat', correctnessReviewer: { mode: 'inherit-main' } },
       },
       loaded: true,
       warnings: [],
@@ -353,7 +353,7 @@ describe('AgentPanel', () => {
       settings: {
         basic: { locale: 'system' },
         appearance: { theme: 'system' },
-        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat', correctnessReviewer: { mode: 'inherit-main' } },
       },
       loaded: true,
       warnings: [],
@@ -380,7 +380,7 @@ describe('AgentPanel', () => {
       settings: {
         basic: { locale: 'system' },
         appearance: { theme: 'system' },
-        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat', correctnessReviewer: { mode: 'inherit-main' } },
       },
       loaded: true,
       warnings: [],

@@ -108,7 +108,38 @@ describe('settings store storage warnings', () => {
 
     await useSettingsStore.getState().deleteProvider('p1', null, secretStore)
     expect(deletedRefs).toEqual(['secret-ref:p2', 'secret-ref:p1'])
-    expect(useSettingsStore.getState().settings.agent).toEqual({ providers: [] })
+    expect(useSettingsStore.getState().settings.agent).toEqual({ providers: [], correctnessReviewer: { mode: 'inherit-main' } })
+  })
+
+  it('updates reviewer config and normalizes it when the referenced provider is deleted', async () => {
+    useSettingsStore.getState().replaceSettings({
+      agent: {
+        providers: [
+          { id: 'p1', name: 'Provider 1', kind: 'deepseek', baseUrl: 'https://deepseek.invalid', models: ['chat'], defaultModel: 'chat' },
+          { id: 'reviewer', name: 'Reviewer', kind: 'openai-compatible', baseUrl: 'https://reviewer.invalid/v1', models: ['review-a', 'review-b'], defaultModel: 'review-b' },
+        ],
+        selectedProviderId: 'p1',
+        selectedModelId: 'chat',
+      },
+    }, null)
+
+    useSettingsStore.getState().setCorrectnessReviewer({
+      mode: 'custom-provider',
+      providerId: 'reviewer',
+      modelId: 'review-a',
+      apiKey: 'fixture-plaintext-should-drop',
+    }, null)
+
+    expect(useSettingsStore.getState().settings.agent.correctnessReviewer).toEqual({
+      mode: 'custom-provider',
+      providerId: 'reviewer',
+      modelId: 'review-a',
+    })
+    expect(JSON.stringify(useSettingsStore.getState().settings)).not.toContain('fixture-plaintext-should-drop')
+
+    await useSettingsStore.getState().deleteProvider('reviewer', null)
+
+    expect(useSettingsStore.getState().settings.agent.correctnessReviewer).toEqual({ mode: 'inherit-main' })
   })
 
   it('clears only a provider apiKeyRef and deletes the secret ref while preserving metadata', async () => {

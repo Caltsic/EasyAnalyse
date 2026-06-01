@@ -17,6 +17,7 @@ export type AgentToolName =
   | 'create_blueprint_candidate'
   | 'validate_document'
   | 'check_layout_overlaps'
+  | 'review_circuit_correctness'
   | 'check_blueprint_candidate'
 
 export interface AgentToolResult<TData = unknown> {
@@ -94,6 +95,8 @@ export interface AgentToolRuntimeContext {
   getEditorFocus?: () => Promise<AgentEditorFocus | null> | AgentEditorFocus | null
   getEasyAnalyseFormatRules?: () => Promise<string> | string
   validateDocument?: (document: DocumentFile) => Promise<ValidationReport> | ValidationReport
+  userRequest?: string
+  reviewCircuitCorrectness?: (input: AgentCircuitCorrectnessReviewInput) => Promise<AgentCircuitCorrectnessReviewReport>
   createBlueprintCandidate?: (
     candidate: AgentBlueprintCandidate,
     context: {
@@ -121,7 +124,7 @@ export type AgentToolInput =
     }
   | { document?: DocumentFile | string; json?: string; options?: LayoutOverlapCheckOptions }
   | { document: DocumentFile; options?: LayoutOverlapCheckOptions }
-  | { candidate: AgentBlueprintCandidate | { document: DocumentFile }; options?: LayoutOverlapCheckOptions }
+  | { candidate: AgentBlueprintCandidate | { document: DocumentFile }; options?: LayoutOverlapCheckOptions; reviewFocus?: string; userRequest?: string }
   | {
       blueprintId?: string
       includeDocument?: boolean
@@ -267,6 +270,36 @@ export interface GenerateFilterBlueprintData {
   assumptions: string[]
   calculatedValues: Record<string, number | string>
   warnings: string[]
+}
+
+export type AgentCircuitCorrectnessVerdict = 'pass' | 'warning' | 'fail' | 'unknown'
+
+export interface AgentCircuitCorrectnessReviewInput {
+  userRequest: string
+  reviewFocus?: string
+  candidateTitle?: string
+  document: DocumentFile
+}
+
+export interface AgentCircuitCorrectnessReviewReport {
+  schemaVersion: 'agent-circuit-correctness-review-v1'
+  semanticVersion: 'easyanalyse-semantic-v4'
+  verdict: AgentCircuitCorrectnessVerdict
+  confidence: number
+  summary: string
+  reasons: string[]
+  suggestions: string[]
+  checkedAssumptions: string[]
+  reviewer?: {
+    providerId: string
+    modelId: string
+  }
+}
+
+export interface ReviewCircuitCorrectnessData {
+  reviewed: boolean
+  format: AgentFormatCheckReport
+  report: AgentCircuitCorrectnessReviewReport
 }
 
 export interface CheckDocumentFormatData {

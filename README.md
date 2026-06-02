@@ -31,6 +31,16 @@ EASYAnalyse is a desktop workspace for building, reviewing, and discussing hardw
 - Validate whether JSON can be opened and rendered; treat semantic issues as engineering review hints rather than automatic blockers.
 - Share a read-only mobile snapshot on the local network.
 
+## Star History
+
+<a href="https://www.star-history.com/#Caltsic/EasyAnalyse&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Caltsic/EasyAnalyse&type=date&theme=dark&legend=top-left" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Caltsic/EasyAnalyse&type=date&legend=top-left" />
+    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Caltsic/EasyAnalyse&type=date&legend=top-left" />
+  </picture>
+</a>
+
 ## Documentation Map
 
 - [中文用户指南](README.zh-CN.md)

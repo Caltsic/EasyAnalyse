@@ -36,6 +36,8 @@ describe('agentTools', () => {
       'summarize_topology',
       'get_easyanalyse_format_rules',
       'generate_filter_blueprint',
+      'generate_voltage_divider',
+      'generate_opamp_circuit',
       'check_document_format',
       'check_blueprint_format',
       'create_blueprint_candidate',
@@ -301,5 +303,77 @@ describe('agentTools', () => {
     const reports = await selfCheckBlueprintCandidates([{ title: 'C', summary: 'S', rationale: 'R', tradeoffs: [], document: documentAt(300, 0), issues: [] }], { validateDocument: () => validReport(documentAt(300, 0)) })
     expect(reports).toHaveLength(1)
     expect(reports[0]!.schemaVersion).toBe('agent-self-check-v1')
+  })
+
+  it('generates a deterministic voltage divider blueprint and passes format check', async () => {
+    const mainDocument = documentAt()
+    const validateDocument = vi.fn((document: DocumentFile) => validReport(document))
+    const result = await runAgentTool(
+      'generate_voltage_divider',
+      { vin: 5, vout: 3.3 },
+      { currentDocument: mainDocument, validateDocument },
+    )
+
+    expect(result).toMatchObject({ ok: true, toolName: 'generate_voltage_divider', issueCount: 0 })
+    const data = result.data as { candidate: AgentBlueprintCandidate; calculatedValues: Record<string, number | string> }
+    expect(data.candidate.document.schemaVersion).toBe('4.0.0')
+    expect(data.candidate.document.devices.map((d) => d.id)).toEqual(expect.arrayContaining(['r1', 'r2', 'j1', 'tp1', 'gnd1']))
+    expect(data.candidate.document.devices.flatMap((d) => d.terminals.map((t) => t.label))).toEqual(expect.arrayContaining(['VIN', 'VOUT', 'GND']))
+    expect(mainDocument.document.title).toBe('Tool test')
+    expect(validateDocument).toHaveBeenCalledTimes(1)
+  })
+
+  it('generates op-amp circuits for all three topologies', async () => {
+    const configs = [
+      { circuitType: 'non-inverting-amplifier' as const, gain: 10 },
+      { circuitType: 'inverting-amplifier' as const, gain: 5 },
+      { circuitType: 'voltage-follower' as const },
+    ]
+    for (const config of configs) {
+      const result = await runAgentTool(
+        'generate_opamp_circuit',
+        config,
+        { validateDocument: () => validReport(documentAt()) },
+      )
+      expect(result.ok).toBe(true)
+      const data = result.data as { candidate: AgentBlueprintCandidate }
+      expect(data.candidate.document.devices.map((d) => d.id)).toContain('u1')
+      expect(data.candidate.document.schemaVersion).toBe('4.0.0')
+    }
+  })
+
+  it('returns detailed errors for invalid voltage divider arguments', async () => {
+    const result1 = await runAgentTool('generate_voltage_divider', { vin: 5, vout: 10 })
+    expect(result1.ok).toBe(false)
+    expect(result1.issues.some((i) => i.path === 'vout')).toBe(true)
+
+    const result2 = await runAgentTool('generate_voltage_divider', { vin: 5 })
+    expect(result2.ok).toBe(false)
+  })
+
+  it('returns detailed errors for invalid op-amp circuit arguments', async () => {
+    const result1 = await runAgentTool('generate_opamp_circuit', { circuitType: 'non-inverting-amplifier' })
+    expect(result1.ok).toBe(false)
+    expect(result1.issues.some((i) => i.message.includes('gain'))).toBe(true)
+
+    const result2 = await runAgentTool('generate_opamp_circuit', { circuitType: 'differential-amplifier', gain: 5 })
+    expect(result2.ok).toBe(false)
+    expect(result2.issues.some((i) => i.path === 'circuitType')).toBe(true)
+  })
+
+  it('voltage divider schema is present in tool schemas with voltage labels', async () => {
+    const schemas = getAgentToolSchemas()
+    const schema = schemas.find((s) => s.function.name === 'generate_voltage_divider')
+    expect(schema).toBeDefined()
+    expect(JSON.stringify(schema)).toContain('vin')
+    expect(JSON.stringify(schema)).toContain('vout')
+  })
+
+  it('op-amp circuit schema is present in tool schemas with topology enum', async () => {
+    const schemas = getAgentToolSchemas()
+    const schema = schemas.find((s) => s.function.name === 'generate_opamp_circuit')
+    expect(schema).toBeDefined()
+    expect(JSON.stringify(schema)).toContain('non-inverting-amplifier')
+    expect(JSON.stringify(schema)).toContain('voltage-follower')
   })
 })

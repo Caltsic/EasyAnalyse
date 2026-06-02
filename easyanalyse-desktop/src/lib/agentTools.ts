@@ -4,6 +4,8 @@ import { diffBlueprintDocument } from './blueprintDiff'
 import { deriveCircuitInsights } from './circuitDescription'
 import { isRecord } from './guards'
 import { generateFilterBlueprint, type GenerateFilterBlueprintInput } from './filterBlueprintGenerator'
+import { generateVoltageDivider, type GenerateVoltageDividerInput } from './voltageDividerGenerator'
+import { generateOpAmpCircuit, type GenerateOpAmpCircuitInput } from './opampCircuitGenerator'
 import type { AgentBlueprintCandidate } from '../types/agent'
 import type { DocumentFile, ValidationIssue } from '../types/document'
 import type { BlueprintRecord, BlueprintWorkspaceFile } from '../types/blueprint'
@@ -25,6 +27,8 @@ import type {
   CompareBlueprintCandidateData,
   CreateBlueprintCandidateData,
   GenerateFilterBlueprintData,
+  GenerateVoltageDividerData,
+  GenerateOpAmpCircuitData,
   GetBlueprintCandidateData,
   GetBlueprintWorkspaceData,
   GetCurrentDocumentData,
@@ -240,6 +244,95 @@ export function getAgentToolSchemas() {
     {
       type: 'function' as const,
       function: {
+        name: 'generate_voltage_divider',
+        description:
+          [
+            'Generate a deterministic resistive voltage divider blueprint candidate as standard EasyAnalyse semantic v4 JSON.',
+            'Use this before hand-authoring a voltage divider. The tool selects E24 resistor values, designs terminal labels, network names, and provides a default layout.',
+            'It returns an AgentBlueprintCandidate but does not mutate the main document. Store it with create_blueprint_candidate after reviewing the result.',
+          ].join(' '),
+        parameters: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['vin'],
+          properties: {
+            vin: {
+              type: 'number',
+              exclusiveMinimum: 0,
+              description: 'Input voltage in volts.',
+            },
+            vout: {
+              type: 'number',
+              exclusiveMinimum: 0,
+              description: 'Desired output voltage in volts. Provide this OR both r1Ohms and r2Ohms.',
+            },
+            r1Ohms: {
+              type: 'number',
+              exclusiveMinimum: 0,
+              description: 'Optional R1 (top resistor) value in ohms.',
+            },
+            r2Ohms: {
+              type: 'number',
+              exclusiveMinimum: 0,
+              description: 'Optional R2 (bottom resistor) value in ohms.',
+            },
+            title: { type: 'string', description: 'Optional blueprint title.' },
+            vinLabel: { type: 'string', description: 'Input network label, defaults to VIN.' },
+            voutLabel: { type: 'string', description: 'Output network label, defaults to VOUT.' },
+            groundLabel: { type: 'string', description: 'Ground network label, defaults to GND.' },
+          },
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
+        name: 'generate_opamp_circuit',
+        description:
+          [
+            'Generate a deterministic op-amp circuit blueprint candidate as standard EasyAnalyse semantic v4 JSON.',
+            'Supports non-inverting amplifier, inverting amplifier, and voltage follower topologies.',
+            'The tool selects E24 gain resistor values, designs terminal labels, network names, and power rails.',
+            'It returns an AgentBlueprintCandidate but does not mutate the main document. Store it with create_blueprint_candidate after reviewing the result.',
+          ].join(' '),
+        parameters: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['circuitType'],
+          properties: {
+            circuitType: {
+              type: 'string',
+              enum: ['non-inverting-amplifier', 'inverting-amplifier', 'voltage-follower'],
+              description: 'Op-amp circuit topology.',
+            },
+            gain: {
+              type: 'number',
+              exclusiveMinimum: 0,
+              description: 'Voltage gain in V/V (magnitude for inverting). Required for non-inverting and inverting. Not used for voltage follower.',
+            },
+            r1Ohms: {
+              type: 'number',
+              exclusiveMinimum: 0,
+              description: 'Optional R1 (gain-setting or input resistor) value in ohms.',
+            },
+            rfOhms: {
+              type: 'number',
+              exclusiveMinimum: 0,
+              description: 'Optional Rf (feedback resistor) value in ohms.',
+            },
+            title: { type: 'string', description: 'Optional blueprint title.' },
+            positiveSupplyLabel: { type: 'string', description: 'Positive supply label, defaults to VCC.' },
+            negativeSupplyLabel: { type: 'string', description: 'Negative supply label, defaults to GND.' },
+            groundLabel: { type: 'string', description: 'Ground label, defaults to GND.' },
+            vinLabel: { type: 'string', description: 'Input network label, defaults to VIN.' },
+            voutLabel: { type: 'string', description: 'Output network label, defaults to VOUT.' },
+          },
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
         name: 'check_document_format',
         description:
           [
@@ -360,6 +453,8 @@ export async function runAgentTool(
     if (toolName === 'summarize_topology') return summarizeTopologyTool(args, context)
     if (toolName === 'get_easyanalyse_format_rules') return getEasyAnalyseFormatRulesTool(context)
     if (toolName === 'generate_filter_blueprint') return generateFilterBlueprintTool(args, context)
+    if (toolName === 'generate_voltage_divider') return generateVoltageDividerTool(args, context)
+    if (toolName === 'generate_opamp_circuit') return generateOpAmpCircuitTool(args, context)
     if (toolName === 'check_document_format') return checkDocumentFormatTool(args, context)
     if (toolName === 'check_blueprint_format') return checkBlueprintFormatTool(args, context)
     if (toolName === 'create_blueprint_candidate') return createBlueprintCandidateTool(args, context)
@@ -623,6 +718,74 @@ async function generateFilterBlueprintTool(
     checked.format.ok
       ? `Filter blueprint candidate "${generated.candidate.title}" generated.`
       : 'Filter blueprint was generated but failed hard format checks.',
+    checked.format.issues,
+    {
+      candidate: generated.candidate,
+      format: checked.format,
+      assumptions: generated.assumptions,
+      calculatedValues: generated.calculatedValues,
+      warnings: generated.warnings,
+    },
+  )
+}
+
+async function generateVoltageDividerTool(
+  args: unknown,
+  context: AgentToolRuntimeContext,
+): Promise<AgentToolResult<GenerateVoltageDividerData>> {
+  const input = parseGenerateVoltageDividerInput(args)
+  if (!input.ok) {
+    return result('generate_voltage_divider', false, 'Voltage divider blueprint was not generated because arguments were invalid.', input.issues, {
+      candidate: null,
+      format: null,
+      assumptions: [],
+      calculatedValues: {},
+      warnings: [],
+    })
+  }
+
+  const generated = generateVoltageDivider(input.value)
+  const checked = await checkBlueprintFormatValue({ candidate: generated.candidate }, context)
+  return result(
+    'generate_voltage_divider',
+    checked.format.ok,
+    checked.format.ok
+      ? `Voltage divider blueprint candidate "${generated.candidate.title}" generated.`
+      : 'Voltage divider blueprint was generated but failed hard format checks.',
+    checked.format.issues,
+    {
+      candidate: generated.candidate,
+      format: checked.format,
+      assumptions: generated.assumptions,
+      calculatedValues: generated.calculatedValues,
+      warnings: generated.warnings,
+    },
+  )
+}
+
+async function generateOpAmpCircuitTool(
+  args: unknown,
+  context: AgentToolRuntimeContext,
+): Promise<AgentToolResult<GenerateOpAmpCircuitData>> {
+  const input = parseGenerateOpAmpCircuitInput(args)
+  if (!input.ok) {
+    return result('generate_opamp_circuit', false, 'Op-amp circuit blueprint was not generated because arguments were invalid.', input.issues, {
+      candidate: null,
+      format: null,
+      assumptions: [],
+      calculatedValues: {},
+      warnings: [],
+    })
+  }
+
+  const generated = generateOpAmpCircuit(input.value)
+  const checked = await checkBlueprintFormatValue({ candidate: generated.candidate }, context)
+  return result(
+    'generate_opamp_circuit',
+    checked.format.ok,
+    checked.format.ok
+      ? `Op-amp circuit blueprint candidate "${generated.candidate.title}" generated.`
+      : 'Op-amp circuit blueprint was generated but failed hard format checks.',
     checked.format.issues,
     {
       candidate: generated.candidate,
@@ -1347,6 +1510,109 @@ function parseGenerateFilterBlueprintInput(args: unknown): { ok: true; value: Ge
   }
 }
 
+function parseGenerateVoltageDividerInput(args: unknown): { ok: true; value: GenerateVoltageDividerInput } | { ok: false; issues: ValidationIssue[] } {
+  if (!isRecord(args)) {
+    return {
+      ok: false,
+      issues: [issue('error', 'agent_tool.invalid_args', 'generate_voltage_divider requires an object argument.', null, null, {
+        expected: '{ vin, vout? } or { vin, r1Ohms, r2Ohms }',
+        actualType: describeType(args),
+      })],
+    }
+  }
+
+  const issues: ValidationIssue[] = []
+  const vin = args.vin
+  if (!isPositiveFiniteNumber(vin)) {
+    issues.push(issue('error', 'agent_tool.invalid_args', 'vin must be a positive finite number.', null, 'vin', expectedDetails('positive number in volts', vin, 'Pass input voltage in volts, e.g. 5.')))
+  }
+
+  const vout = optionalPositiveNumber(args, 'vout', issues)
+  const r1Ohms = optionalPositiveNumber(args, 'r1Ohms', issues)
+  const r2Ohms = optionalPositiveNumber(args, 'r2Ohms', issues)
+  const hasBothResistors = r1Ohms !== undefined && r2Ohms !== undefined
+  const hasVout = vout !== undefined
+
+  if (!hasBothResistors && !hasVout) {
+    issues.push(issue('error', 'agent_tool.invalid_args', 'Provide vout OR both r1Ohms and r2Ohms.', null, null, {
+      fix: 'Pass { vin, vout } to calculate the resistor ratio, or { vin, r1Ohms, r2Ohms } for explicit values.',
+    }))
+  }
+
+  const hasOneResistorOnly = (r1Ohms !== undefined && r2Ohms === undefined) || (r1Ohms === undefined && r2Ohms !== undefined)
+  if (hasOneResistorOnly && !hasVout) {
+    issues.push(issue('error', 'agent_tool.invalid_args', 'When only one of r1Ohms/r2Ohms is provided, vout is required to calculate the other.', null, null, {
+      fix: 'Provide vout or both r1Ohms and r2Ohms together.',
+    }))
+  }
+
+  if (hasVout && vout !== undefined && vin !== undefined && isPositiveFiniteNumber(vin) && vout >= vin) {
+    issues.push(issue('error', 'agent_tool.invalid_args', 'vout must be less than vin for a passive resistive divider.', null, 'vout', expectedDetails('number less than vin', vout, 'A resistive divider can only produce output voltage less than input voltage.')))
+  }
+
+  if (issues.length > 0) return { ok: false, issues }
+
+  return {
+    ok: true,
+    value: {
+      vin: vin as number,
+      ...(vout === undefined ? {} : { vout }),
+      ...(r1Ohms === undefined ? {} : { r1Ohms }),
+      ...(r2Ohms === undefined ? {} : { r2Ohms }),
+      ...(typeof args.title === 'string' && args.title.trim().length > 0 ? { title: args.title.trim() } : {}),
+      ...(typeof args.vinLabel === 'string' && args.vinLabel.trim().length > 0 ? { vinLabel: args.vinLabel.trim() } : {}),
+      ...(typeof args.voutLabel === 'string' && args.voutLabel.trim().length > 0 ? { voutLabel: args.voutLabel.trim() } : {}),
+      ...(typeof args.groundLabel === 'string' && args.groundLabel.trim().length > 0 ? { groundLabel: args.groundLabel.trim() } : {}),
+    },
+  }
+}
+
+function parseGenerateOpAmpCircuitInput(args: unknown): { ok: true; value: GenerateOpAmpCircuitInput } | { ok: false; issues: ValidationIssue[] } {
+  if (!isRecord(args)) {
+    return {
+      ok: false,
+      issues: [issue('error', 'agent_tool.invalid_args', 'generate_opamp_circuit requires an object argument.', null, null, {
+        expected: '{ circuitType, gain? }',
+        actualType: describeType(args),
+      })],
+    }
+  }
+
+  const issues: ValidationIssue[] = []
+  const circuitType = args.circuitType
+  const validCircuitTypes = ['non-inverting-amplifier', 'inverting-amplifier', 'voltage-follower']
+  if (typeof circuitType !== 'string' || !validCircuitTypes.includes(circuitType)) {
+    issues.push(issue('error', 'agent_tool.invalid_args', 'circuitType must be "non-inverting-amplifier", "inverting-amplifier", or "voltage-follower".', null, 'circuitType', expectedDetails('"non-inverting-amplifier" | "inverting-amplifier" | "voltage-follower"', circuitType, 'Choose a supported op-amp circuit topology.')))
+  }
+
+  const gain = optionalPositiveNumber(args, 'gain', issues)
+  const needsGain = circuitType === 'non-inverting-amplifier' || circuitType === 'inverting-amplifier'
+  if (needsGain && gain === undefined) {
+    issues.push(issue('error', 'agent_tool.invalid_args', 'gain is required for non-inverting-amplifier and inverting-amplifier.', null, 'gain', expectedDetails('positive number', args.gain, 'Pass gain as a positive number in V/V, e.g. 10.')))
+  }
+
+  const r1Ohms = optionalPositiveNumber(args, 'r1Ohms', issues)
+  const rfOhms = optionalPositiveNumber(args, 'rfOhms', issues)
+
+  if (issues.length > 0) return { ok: false, issues }
+
+  return {
+    ok: true,
+    value: {
+      circuitType: circuitType as GenerateOpAmpCircuitInput['circuitType'],
+      ...(gain === undefined ? {} : { gain }),
+      ...(r1Ohms === undefined ? {} : { r1Ohms }),
+      ...(rfOhms === undefined ? {} : { rfOhms }),
+      ...(typeof args.title === 'string' && args.title.trim().length > 0 ? { title: args.title.trim() } : {}),
+      ...(typeof args.positiveSupplyLabel === 'string' && args.positiveSupplyLabel.trim().length > 0 ? { positiveSupplyLabel: args.positiveSupplyLabel.trim() } : {}),
+      ...(typeof args.negativeSupplyLabel === 'string' && args.negativeSupplyLabel.trim().length > 0 ? { negativeSupplyLabel: args.negativeSupplyLabel.trim() } : {}),
+      ...(typeof args.groundLabel === 'string' && args.groundLabel.trim().length > 0 ? { groundLabel: args.groundLabel.trim() } : {}),
+      ...(typeof args.vinLabel === 'string' && args.vinLabel.trim().length > 0 ? { vinLabel: args.vinLabel.trim() } : {}),
+      ...(typeof args.voutLabel === 'string' && args.voutLabel.trim().length > 0 ? { voutLabel: args.voutLabel.trim() } : {}),
+    },
+  }
+}
+
 function optionalPositiveNumber(args: Record<string, unknown>, key: string, issues: ValidationIssue[]): number | undefined {
   const value = args[key]
   if (value === undefined) return undefined
@@ -1388,6 +1654,8 @@ function isAgentToolName(value: string): value is AgentToolName {
     || value === 'summarize_topology'
     || value === 'get_easyanalyse_format_rules'
     || value === 'generate_filter_blueprint'
+    || value === 'generate_voltage_divider'
+    || value === 'generate_opamp_circuit'
     || value === 'check_document_format'
     || value === 'check_blueprint_format'
     || value === 'create_blueprint_candidate'

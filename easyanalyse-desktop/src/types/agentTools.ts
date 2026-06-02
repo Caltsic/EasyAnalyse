@@ -12,6 +12,8 @@ export type AgentToolName =
   | 'summarize_topology'
   | 'get_easyanalyse_format_rules'
   | 'generate_filter_blueprint'
+  | 'generate_voltage_divider'
+  | 'generate_opamp_circuit'
   | 'check_document_format'
   | 'check_blueprint_format'
   | 'create_blueprint_candidate'
@@ -262,6 +264,22 @@ export interface GetEasyAnalyseFormatRulesData {
 }
 
 export interface GenerateFilterBlueprintData {
+  candidate: AgentBlueprintCandidate | null
+  format: AgentFormatCheckReport | null
+  assumptions: string[]
+  calculatedValues: Record<string, number | string>
+  warnings: string[]
+}
+
+export interface GenerateVoltageDividerData {
+  candidate: AgentBlueprintCandidate | null
+  format: AgentFormatCheckReport | null
+  assumptions: string[]
+  calculatedValues: Record<string, number | string>
+  warnings: string[]
+}
+
+export interface GenerateOpAmpCircuitData {
   candidate: AgentBlueprintCandidate | null
   format: AgentFormatCheckReport | null
   assumptions: string[]

@@ -6,7 +6,7 @@ import {
   type AppSettingsStorage,
 } from '../lib/appSettings'
 import type { SecretStore } from '../lib/secretStore'
-import type { AgentProviderPublicConfig, AppSettings } from '../types/settings'
+import type { AgentProviderPublicConfig, AppSettings, DeepSeekV4ThinkingMode } from '../types/settings'
 
 export interface SettingsState {
   settings: AppSettings
@@ -20,6 +20,7 @@ export interface SettingsState {
   clearProviderApiKey(providerId: string, storage?: AppSettingsStorage | null, secretStore?: Pick<SecretStore, 'deleteSecret'>): Promise<void>
   selectProvider(providerId: string | undefined, storage?: AppSettingsStorage | null): void
   selectModel(modelId: string | undefined, storage?: AppSettingsStorage | null): void
+  setDeepSeekV4Thinking(mode: DeepSeekV4ThinkingMode, storage?: AppSettingsStorage | null): void
 }
 
 function defaultStorage() {
@@ -89,6 +90,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const result = persistSettings({
       ...current,
       agent: {
+        deepSeekV4Thinking: current.agent.deepSeekV4Thinking,
         providers: nextProviders,
         selectedProviderId,
         selectedModelId,
@@ -106,6 +108,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const result = persistSettings({
       ...current,
       agent: {
+        deepSeekV4Thinking: current.agent.deepSeekV4Thinking,
         providers: nextProviders,
         selectedProviderId: current.agent.selectedProviderId,
         selectedModelId: current.agent.selectedModelId,
@@ -172,6 +175,18 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       agent: {
         ...current.agent,
         selectedModelId: modelId,
+      },
+    }, storage)
+    set({ settings: result.settings, loaded: true, warnings: result.warnings })
+  },
+
+  setDeepSeekV4Thinking: (mode, storage = defaultStorage()) => {
+    const current = get().settings
+    const result = persistSettings({
+      ...current,
+      agent: {
+        ...current.agent,
+        deepSeekV4Thinking: mode,
       },
     }, storage)
     set({ settings: result.settings, loaded: true, warnings: result.warnings })

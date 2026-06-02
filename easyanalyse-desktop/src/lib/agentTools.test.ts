@@ -3,6 +3,7 @@ import { runAgentTool, getAgentToolSchemas, selfCheckBlueprintCandidates } from 
 import type { DocumentFile, ValidationReport } from '../types/document'
 import type { AgentBlueprintCandidate } from '../types/agent'
 import type { BlueprintWorkspaceFile } from '../types/blueprint'
+import { SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION } from '../types/simulation'
 
 function documentAt(x = 0, y = 0): DocumentFile {
   return {
@@ -25,7 +26,7 @@ function validReport(document = documentAt()): ValidationReport {
 }
 
 describe('agentTools', () => {
-  it('exposes hard-format, creation, context, and advisory OpenAI-compatible tool schemas', () => {
+  it('exposes format diagnostics, generation handshake, creation, context, and advisory OpenAI-compatible tool schemas', () => {
     const schemas = getAgentToolSchemas()
     expect(schemas.map((schema) => schema.function.name)).toEqual([
       'get_current_document',
@@ -35,6 +36,7 @@ describe('agentTools', () => {
       'get_current_selection',
       'summarize_topology',
       'get_easyanalyse_format_rules',
+      'begin_blueprint_generation',
       'generate_filter_blueprint',
       'check_document_format',
       'check_blueprint_format',
@@ -48,7 +50,10 @@ describe('agentTools', () => {
     expect(JSON.stringify(schemas)).toContain('wires, nodes, junctions')
     expect(JSON.stringify(schemas)).toContain('visual network lines crossing device bounds')
     expect(JSON.stringify(schemas)).toContain('Return the current blueprint workspace summary')
+    expect(JSON.stringify(schemas)).toContain('Declare that you intend to start generating a new circuit blueprint')
     expect(JSON.stringify(schemas)).toContain('deterministic filter blueprint candidate')
+    expect(JSON.stringify(schemas)).toContain('candidate.simulation')
+    expect(JSON.stringify(schemas)).toContain('easyanalyse-simulation-v1')
     expect(JSON.stringify(schemas)).not.toMatch(/Authorization|apiKey|sk-/i)
   })
 
@@ -71,10 +76,25 @@ describe('agentTools', () => {
     expect(data.candidate.document.schemaVersion).toBe('4.0.0')
     expect(data.candidate.document.devices.map((device) => device.id)).toEqual(expect.arrayContaining(['r1', 'r2', 'c1', 'c2', 'u1']))
     expect(data.candidate.document.devices.flatMap((device) => device.terminals.map((terminal) => terminal.label))).toEqual(expect.arrayContaining(['VIN', 'VOUT', 'GND', 'SK_N1', 'SK_N2']))
+    expect(data.candidate.simulation).toMatchObject({
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+      manifest: {
+        schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+      },
+      scriptLanguage: 'javascript',
+    })
+    expect(data.candidate.simulation?.workerScript).toContain('function run')
+    const runSimulation = new Function(`${data.candidate.simulation?.workerScript ?? ''}; return run;`)() as (input: unknown) => { points: Array<Record<string, number>>; summary?: string }
+    const simulationOutput = runSimulation(data.candidate.simulation?.defaultInput)
+    expect(simulationOutput.points.length).toBeGreaterThan(10)
+    expect(simulationOutput.points[0]).toHaveProperty('frequencyHz')
+    expect(simulationOutput.points[0]).toHaveProperty('magnitudeDb')
+    const formatResult = await runAgentTool('check_blueprint_format', { candidate: data.candidate }, { validateDocument })
+    expect(formatResult.ok).toBe(true)
     expect(data.calculatedValues.topology).toBe('sallen-key')
     expect(data.assumptions.join(' ')).toContain('Sallen-Key')
     expect(mainDocument.document.title).toBe('Tool test')
-    expect(validateDocument).toHaveBeenCalledTimes(1)
+    expect(validateDocument).toHaveBeenCalledTimes(2)
   })
 
   it('returns detailed errors for invalid filter blueprint arguments', async () => {
@@ -237,7 +257,7 @@ describe('agentTools', () => {
     expect(topologyData.devices.map((device) => device.id).sort()).toEqual(['a', 'b'])
   })
 
-  it('create_blueprint_candidate gates storage on hard format and uses injected callback after a pass', async () => {
+  it('create_blueprint_candidate stores recoverable format diagnostics and uses injected callback', async () => {
     const createBlueprintCandidate = vi.fn(async (candidate: AgentBlueprintCandidate) => {
       void candidate
       return { id: 'bp-1' }
@@ -247,8 +267,13 @@ describe('agentTools', () => {
       { candidate: { title: 'C', summary: 'S', rationale: 'R', tradeoffs: [], document: { ...documentAt(), schemaVersion: '3.0.0' }, issues: [] } },
       { validateDocument: () => validReport(documentAt()), createBlueprintCandidate },
     )
-    expect(invalid.ok).toBe(false)
-    expect(createBlueprintCandidate).not.toHaveBeenCalled()
+    expect(invalid).toMatchObject({
+      ok: true,
+      toolName: 'create_blueprint_candidate',
+      data: { created: true, format: expect.objectContaining({ ok: false }) },
+    })
+    expect(invalid.issues.map((issue) => issue.code)).toContain('format.schema_version')
+    expect(createBlueprintCandidate).toHaveBeenCalledTimes(1)
 
     const candidate: AgentBlueprintCandidate = { title: 'C', summary: 'S', rationale: 'R', tradeoffs: [], document: documentAt(300, 0), issues: [] }
     const created = await runAgentTool('create_blueprint_candidate', { candidate }, {
@@ -256,8 +281,8 @@ describe('agentTools', () => {
       createBlueprintCandidate,
     })
     expect(created).toMatchObject({ ok: true, toolName: 'create_blueprint_candidate', data: { created: true, result: { id: 'bp-1' } } })
-    expect(createBlueprintCandidate).toHaveBeenCalledTimes(1)
-    expect(createBlueprintCandidate.mock.calls[0]![0]).toEqual(candidate)
+    expect(createBlueprintCandidate).toHaveBeenCalledTimes(2)
+    expect(createBlueprintCandidate.mock.calls[1]![0]).toEqual(candidate)
   })
 
   it('surfaces runtime rejections from create_blueprint_candidate without storing', async () => {

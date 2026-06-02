@@ -1,5 +1,9 @@
 # Contributing To EASYAnalyse / 贡献指南
 
+> Agent branch note: `agent` is the experimental integration branch for Agent-related attempts. It is where we collect live blueprint generation, tool-assisted circuit review, simulation preview, provider adaptation, and other ideas before they are stable enough for `main`.
+>
+> Agent 分支说明：`agent` 是所有关于 Agent 的实验性尝试分支。它用于汇集蓝图直播生成、工具辅助电路审阅、仿真预览、Provider 适配等仍在探索中的能力。欢迎大家一起测试、讨论、提交 PR，帮助这个方向从期望变成可靠功能。
+
 Languages: [中文](#中文) | [English](#english)
 
 ## 中文

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentBlueprintCandidate } from '../types/agent'
 import type { DocumentFile } from '../types/document'
+import { SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION } from '../types/simulation'
 import { AGENT_RESPONSE_SEMANTIC_VERSION, parseAgentResponse } from './agentResponse'
 
 function createDocument(overrides: Partial<DocumentFile> = {}): DocumentFile {
@@ -125,6 +126,78 @@ describe('parseAgentResponse', () => {
     expect(parsed.response.kind).toBe('blueprints')
     if (parsed.response.kind !== 'blueprints') throw new Error('expected blueprints')
     expect(parsed.response.blueprints[0].notes).toEqual([])
+  })
+
+  it('retains optional simulation artifacts on blueprint candidates', () => {
+    const sourceDocument = createDocument()
+    const parsed = parseAgentResponse({
+      schemaVersion: 'agent-response-v1',
+      semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
+      kind: 'blueprints',
+      summary: 'Option with simulation',
+      blueprints: [
+        {
+          title: 'Simulated option',
+          summary: 'Includes a lightweight response preview',
+          rationale: 'The circuit has a simple linear model',
+          tradeoffs: [],
+          document: sourceDocument,
+          simulation: {
+            schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+            manifest: {
+              schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+              name: 'RC response',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  resistance: { type: 'number', minimum: 100, maximum: 10000 },
+                },
+              },
+            },
+            workerScript: 'function run(input) { return { points: [{ t: 0, vout: 0 }, { t: 1, vout: 1 }] }; }',
+            defaultInput: { parameters: { resistance: 1000 } },
+          },
+        },
+      ],
+    })
+
+    expect(parsed.response.kind).toBe('blueprints')
+    if (parsed.response.kind !== 'blueprints') throw new Error('expected blueprints')
+    expect(parsed.response.blueprints[0].simulation).toMatchObject({
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+      manifest: { name: 'RC response' },
+      defaultInput: { parameters: { resistance: 1000 } },
+    })
+    expect(parsed.response.blueprints[0].simulation?.workerScript).toContain('function run')
+  })
+
+  it('keeps a blueprint candidate when an optional simulation artifact is malformed', () => {
+    const sourceDocument = createDocument()
+    const parsed = parseAgentResponse({
+      schemaVersion: 'agent-response-v1',
+      semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
+      kind: 'blueprints',
+      summary: 'Malformed simulation is advisory',
+      blueprints: [
+        {
+          title: 'Candidate',
+          summary: 'Still usable',
+          rationale: 'Simulation is optional',
+          tradeoffs: [],
+          document: sourceDocument,
+          simulation: {
+            schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+            manifest: { schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION, name: 'Broken' },
+            workerScript: '',
+          },
+        },
+      ],
+    })
+
+    expect(parsed.response.kind).toBe('blueprints')
+    if (parsed.response.kind !== 'blueprints') throw new Error('expected blueprints')
+    expect(parsed.response.blueprints[0].simulation).toBeUndefined()
+    expect(parsed.response.blueprints[0].issues.map((issue) => issue.code)).toContain('invalid-simulation-artifact')
   })
 
   it('parses question and error responses', () => {

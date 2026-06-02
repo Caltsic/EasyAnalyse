@@ -1,9 +1,15 @@
-import { selfCheckBlueprintCandidates } from './agentTools'
+import { runAgentTool, selfCheckBlueprintCandidates } from './agentTools'
 import { selectAgentReferenceExamples, formatAgentReferenceExamplesForPrompt } from './agentExampleLibrary'
 import { runAnthropicProvider, type AnthropicFetch } from './anthropicProvider'
 import { checkAgentContextBudget, runProviderWithControls, type ProviderRetryOptions } from './agentProviderRuntime'
+import { AGENT_RESPONSE_SCHEMA_VERSION, AGENT_RESPONSE_SEMANTIC_VERSION } from './agentResponse'
+import { getErrorMessage } from './errors'
+import { isRecord } from './guards'
 import {
+  OPENAI_CHAT_COMPLETIONS_REQUEST_FORMAT,
+  OPENAI_COMPATIBLE_ADAPTER_ID,
   AgentProviderError,
+  inferGenerateFilterBlueprintArgsFromPrompt,
   runOpenAiCompatibleProvider,
   type AgentModelConfig,
   type AgentProviderConfig,
@@ -13,8 +19,9 @@ import {
   type ProviderGenerationOptions,
   type ProviderParseResult,
 } from './openAiCompatibleProvider'
+import type { AgentBlueprintCandidate } from '../types/agent'
 import type { DocumentFile, ValidationIssue } from '../types/document'
-import type { AgentToolExecutor, AgentToolRuntimeContext } from '../types/agentTools'
+import type { AgentToolExecutor, AgentToolRuntimeContext, AgentToolTraceEntry } from '../types/agentTools'
 import type { AgentThreadMessage } from '../types/agentThread'
 import type { AgentProviderPublicConfig } from '../types/settings'
 
@@ -37,6 +44,7 @@ export interface RunConfiguredAgentProviderInput {
   fetchImpl?: OpenAiCompatibleFetch | AnthropicFetch
   maxToolIterations?: number
   validateDocument?: AgentToolRuntimeContext['validateDocument']
+  beginBlueprintGeneration?: AgentToolRuntimeContext['beginBlueprintGeneration']
   createBlueprintCandidate?: AgentToolRuntimeContext['createBlueprintCandidate']
   getCurrentDocument?: AgentToolRuntimeContext['getCurrentDocument']
   getBlueprintWorkspace?: AgentToolRuntimeContext['getBlueprintWorkspace']
@@ -94,15 +102,20 @@ export function buildAgentSystemPrompt(): string {
     'Allowed kind values: message, question, error, blueprints, patch.',
     'For circuit generation or modification, prefer kind "blueprints" and return one or more complete semantic v4 DocumentFile candidates.',
     'Never mutate the main document directly. All circuit changes must be represented as blueprint candidates.',
-    'Use tools when they help. For blueprint candidates, check_blueprint_format is the hard format gate; fix ok=false format results before returning or creating the candidate.',
     'For filter requests, prefer generate_filter_blueprint before hand-authoring JSON. It returns a complete AgentBlueprintCandidate with deterministic filter topology, component values, network labels, and a default layout; review it, then store it with create_blueprint_candidate or return it as a blueprint response.',
+    'For filter requests, call generate_filter_blueprint before begin_blueprint_generation. begin_blueprint_generation is for hand-authored streamed blueprint JSON; do not let it replace deterministic generation tools.',
+    'When you decide to hand-author a new circuit blueprint without a deterministic generator, call begin_blueprint_generation once before emitting blueprint JSON so the app can handle the current canvas.',
+    'After begin_blueprint_generation returns continue/saved/discarded, start your streamed answer with BEGIN_EASYANALYSE_BLUEPRINT_JSON on its own line, then output the final AgentResponse JSON. The app extracts the first blueprint document from that JSON for live preview while you are still streaming.',
+    'Use tools when they help. For blueprint candidates, check_blueprint_format reports display/openability diagnostics; ok=false results are recoverable and should be repaired or explained instead of ending the conversation.',
     'check_blueprint_candidate, validate_document, and check_layout_overlaps are advisory quality checks. Their semantic/layout issues are hints, not a requirement to reach 0 issues before final JSON.',
     'When calling blueprint candidate tools, the arguments MUST be exactly shaped as {"candidate":{"title":"...","summary":"...","rationale":"...","tradeoffs":[],"document":{...},"issues":[]}}. Do not pass only a document, and do not put candidate fields at the tool argument top level.',
     EASYANALYSE_SEMANTIC_V4_CONTRACT,
     EASYANALYSE_LAYOUT_AUTHORING_RULES,
     'For kind "blueprints", the top-level "blueprints" property MUST be an array, even when returning exactly one candidate. Never use a singular "blueprint" object.',
     'Each candidate MUST include title, summary, rationale, tradeoffs array, complete document, and issues array. Use view.canvas.units "px".',
-    'candidate.issues is for human-visible caveats and advisory validation/layout findings; it is not a substitute for fixing hard format errors from check_blueprint_format.',
+    'candidate.issues is for human-visible caveats, recoverable format diagnostics, and advisory validation/layout findings; it is not a substitute for making the blueprint displayable when you can repair it.',
+    'A candidate may include optional simulation when you can build a lightweight preview model: {"schemaVersion":"easyanalyse-simulation-v1","manifest":{"schemaVersion":"easyanalyse-simulation-v1","name":"..."},"workerScript":"function run(input, context) { return { points: [...] }; }","defaultInput":{"parameters":{}}}. The workerScript must be plain JavaScript, must not use DOM, fetch, network, files, API keys, Tauri, or imports, and should return {points, summary?, logs?, metadata?}.',
+    'If the user explicitly asks for simulation, parameter preview, sliders, graph preview, frequency response, or a worker script, put the structured artifact at blueprints[n].simulation. Do not merely mention simulation in summary, rationale, notes, issues, or document metadata.',
     'On repair turns, keep the already-valid semantic circuit intact. Make the smallest possible changes needed by hard format errors. Prefer editing view.devices positions and view.networkLines coordinates only when you choose to address advisory layout hints.',
     'If a hard format tool reports missing required device/terminal fields or invalid terminal.direction, repair those fields. If advisory layout tools report layout.device.overlap, layout.network-line.device-overlap, or layout.text.device-overlap, treat that as a readability hint and improve it when feasible.',
     'If the user asks for a generated circuit from scratch, produce a complete standalone document. If the user asks to modify the current document and context is provided, return a complete modified document candidate, not a patch.',
@@ -140,7 +153,10 @@ export function buildAgentUserPrompt(input: {
     '- Use only terminal.label equality for connectivity; do not create wires/nodes/junctions/signalId/ports/components.',
     '- Ensure every device and terminal has id/name, every terminal direction is input or output, and value/frequency/voltage properties exist where the part type requires them.',
     '- Use check_blueprint_format to verify hard persisted JSON format when uncertain.',
+    '- If format checks report errors, continue by repairing the candidate or clearly explaining what remains blocked; do not stop with a provider-level error.',
     '- Place devices on a wide top-left coordinate grid and keep view.networkLines outside device bounds or omit them.',
+    '- If a lightweight mathematical model is clear, include candidate.simulation with an easyanalyse-simulation-v1 manifest and sandboxed JavaScript workerScript; otherwise omit simulation instead of inventing unreliable math.',
+    '- When the user explicitly requests simulation or a worker script, candidate.simulation belongs at blueprints[n].simulation and should not be replaced by summary text.',
     '- For any repair after a hard format tool result, change only the fields needed by the reported issues whenever possible.',
   )
   if (input.includeDocumentContext && input.currentDocument) {
@@ -249,9 +265,9 @@ export async function runConfiguredAgentProvider(input: RunConfiguredAgentProvid
             provider,
             model,
             apiKey,
-          systemPrompt,
-          userPrompt: nextUserPrompt,
-          currentDocument: input.currentDocument ?? null,
+            systemPrompt,
+            userPrompt: nextUserPrompt,
+            currentDocument: input.currentDocument ?? null,
             generation: input.generation,
             fetch: fetchImpl as AnthropicFetch,
             signal,
@@ -265,6 +281,7 @@ export async function runConfiguredAgentProvider(input: RunConfiguredAgentProvid
           apiKey,
           systemPrompt,
           userPrompt: nextUserPrompt,
+          originalUserPrompt: input.prompt,
           currentDocument: input.currentDocument ?? null,
           generation: input.generation,
           fetch: fetchImpl as OpenAiCompatibleFetch,
@@ -277,14 +294,25 @@ export async function runConfiguredAgentProvider(input: RunConfiguredAgentProvid
           getEditorFocus: input.getEditorFocus,
           getEasyAnalyseFormatRules: input.getEasyAnalyseFormatRules,
           validateDocument: input.validateDocument,
+          beginBlueprintGeneration: input.beginBlueprintGeneration,
           createBlueprintCandidate: input.createBlueprintCandidate,
           toolExecutor: input.toolExecutor,
           progress: input.progress,
         })
       }
 
-      let checked = await applyPostProviderSelfCheck(await runOnce(userPrompt), selfCheckOptions, input.validateDocument, input.progress)
+      let initialResult: ProviderParseResult
+      try {
+        initialResult = await runOnce(userPrompt)
+      } catch (error) {
+        const fallback = await buildConfiguredFilterFallback(input, provider, model, error)
+        if (!fallback) throw error
+        initialResult = fallback
+      }
+
+      let checked = await applyPostProviderSelfCheck(initialResult, selfCheckOptions, input.validateDocument, input.progress)
       if (!selfCheckOptions.enabled || !selfCheckOptions.repairOnIssues || checked.response.kind !== 'blueprints') {
+        checked = await ensureConfiguredFilterSimulationArtifacts(checked, input)
         emitProgress(input.progress, { phase: 'complete', message: 'Agent provider run completed.', detail: { kind: checked.response.kind } })
         return checked
       }
@@ -294,7 +322,21 @@ export async function runConfiguredAgentProvider(input: RunConfiguredAgentProvid
         if (!blueprintResponseHasSelfCheckIssues(checked)) break
         emitProgress(input.progress, { phase: 'repair', message: `Requesting self-check repair attempt ${attempt}.`, detail: { attempt } })
         const repairPrompt = buildSelfCheckRepairPrompt(input.prompt, checked)
-        const repaired = await applyPostProviderSelfCheck(await runOnce(repairPrompt), { ...selfCheckOptions, repairOnIssues: false }, input.validateDocument, input.progress)
+        let repaired: ProviderParseResult
+        try {
+          repaired = await applyPostProviderSelfCheck(
+            preserveBlueprintSimulationArtifacts(checked, await runOnce(repairPrompt)),
+            { ...selfCheckOptions, repairOnIssues: false },
+            input.validateDocument,
+            input.progress,
+          )
+        } catch (error) {
+          const message = `Self-check repair attempt ${attempt} failed; keeping the last usable provider result. ${getErrorMessage(error)}`
+          emitProgress(input.progress, { phase: 'repair', message, detail: { attempt } })
+          repairTrace.push({ attempt, ok: false, summary: message })
+          checked = { ...checked, repairTrace: [...(checked.repairTrace ?? []), ...repairTrace] }
+          break
+        }
         const repairedOk = repaired.response.kind === 'blueprints' && !blueprintResponseHasSelfCheckIssues(repaired)
         repairTrace.push({
           attempt,
@@ -304,10 +346,166 @@ export async function runConfiguredAgentProvider(input: RunConfiguredAgentProvid
         checked = { ...repaired, repairTrace: [...(repaired.repairTrace ?? []), ...repairTrace] }
         if (repairedOk) break
       }
+      checked = await ensureConfiguredFilterSimulationArtifacts(checked, input)
       emitProgress(input.progress, { phase: 'complete', message: 'Agent provider run completed.', detail: { kind: checked.response.kind } })
       return checked
     },
   })
+}
+
+async function buildConfiguredFilterFallback(
+  input: RunConfiguredAgentProviderInput,
+  provider: AgentProviderConfig,
+  model: AgentModelConfig,
+  error: unknown,
+): Promise<ProviderParseResult | null> {
+  const providerErrorCode = recoverableProviderContentErrorCode(error)
+  if (!providerErrorCode) return null
+  const args = inferGenerateFilterBlueprintArgsFromPrompt(input.prompt)
+  if (!args) return null
+
+  emitProgress(input.progress, {
+    phase: 'tool',
+    message: 'Provider response was not usable; running tool generate_filter_blueprint from inferred filter parameters.',
+    detail: { toolName: 'generate_filter_blueprint', inferred: true, providerErrorCode },
+  })
+  const toolExecutor = input.toolExecutor ?? runAgentTool
+  const toolResult = await toolExecutor('generate_filter_blueprint', args, buildConfiguredToolRuntimeContext(input))
+  const toolTrace: AgentToolTraceEntry[] = [{
+    toolName: 'generate_filter_blueprint',
+    ok: toolResult.ok,
+    summary: toolResult.summary,
+    issueCount: toolResult.issueCount,
+  }]
+  const candidate = extractToolCandidate(toolResult.data)
+  if (!candidate) return null
+
+  return {
+    ok: true,
+    issues: [],
+    response: {
+      schemaVersion: AGENT_RESPONSE_SCHEMA_VERSION,
+      semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
+      kind: 'blueprints',
+      summary: 'Returned a deterministic filter blueprint candidate after the provider response could not be used directly.',
+      warnings: [
+        `Provider output was not usable (${providerErrorCode}); EasyAnalyse used generate_filter_blueprint for this explicit filter request.`,
+      ],
+      blueprints: [candidate],
+    },
+    metadata: {
+      adapterId: OPENAI_COMPATIBLE_ADAPTER_ID,
+      requestFormat: OPENAI_CHAT_COMPLETIONS_REQUEST_FORMAT,
+      providerId: provider.id,
+      modelId: model.id,
+      responseId: 'easyanalyse-configured-filter-fallback',
+      finishReason: `configured-filter-fallback-${providerErrorCode}`,
+    },
+    toolTrace,
+  }
+}
+
+function recoverableProviderContentErrorCode(error: unknown): string | null {
+  const code = error instanceof AgentProviderError
+    ? error.code
+    : isRecord(error) && typeof error.code === 'string'
+      ? error.code
+      : null
+  if (
+    code === 'AGENT_PROVIDER_PROTOCOL_ERROR'
+    || code === 'AGENT_PROVIDER_PARSE_ERROR'
+    || code === 'AGENT_PROVIDER_SCHEMA_ERROR'
+  ) {
+    return code
+  }
+
+  const message = getErrorMessage(error)
+  if (/choices\[0\]\.message\.content|invalid AgentResponse|final AgentResponse JSON|invalid JSON/i.test(message)) {
+    return code ?? 'AGENT_PROVIDER_CONTENT_UNUSABLE'
+  }
+  return null
+}
+
+function buildConfiguredToolRuntimeContext(input: RunConfiguredAgentProviderInput): AgentToolRuntimeContext {
+  return {
+    currentDocument: input.currentDocument ?? null,
+    ...(input.getCurrentDocument ? { getCurrentDocument: input.getCurrentDocument } : {}),
+    ...(input.getBlueprintWorkspace ? { getBlueprintWorkspace: input.getBlueprintWorkspace } : {}),
+    ...(input.getSelectedBlueprintId ? { getSelectedBlueprintId: input.getSelectedBlueprintId } : {}),
+    ...(input.getCurrentSelection ? { getCurrentSelection: input.getCurrentSelection } : {}),
+    ...(input.getEditorFocus ? { getEditorFocus: input.getEditorFocus } : {}),
+    ...(input.getEasyAnalyseFormatRules ? { getEasyAnalyseFormatRules: input.getEasyAnalyseFormatRules } : {}),
+    ...(input.validateDocument ? { validateDocument: input.validateDocument } : {}),
+    ...(input.beginBlueprintGeneration ? { beginBlueprintGeneration: input.beginBlueprintGeneration } : {}),
+    ...(input.createBlueprintCandidate ? { createBlueprintCandidate: input.createBlueprintCandidate } : {}),
+  }
+}
+
+function extractToolCandidate(data: unknown): AgentBlueprintCandidate | null {
+  if (!isRecord(data) || !isRecord(data.candidate) || !isRecord(data.candidate.document)) return null
+  return cloneJson(data.candidate as unknown as AgentBlueprintCandidate)
+}
+
+async function ensureConfiguredFilterSimulationArtifacts(
+  result: ProviderParseResult,
+  input: RunConfiguredAgentProviderInput,
+): Promise<ProviderParseResult> {
+  if (result.response.kind !== 'blueprints') return result
+  if (result.response.blueprints.every((candidate) => candidate.simulation !== undefined)) return result
+  if (!shouldAttachConfiguredFilterSimulation(input.prompt, result.toolTrace ?? [])) return result
+
+  const args = inferGenerateFilterBlueprintArgsFromPrompt(input.prompt)
+  if (!args) return result
+  emitProgress(input.progress, {
+    phase: 'tool',
+    message: 'Running tool generate_filter_blueprint to preserve missing filter simulation artifact.',
+    detail: { toolName: 'generate_filter_blueprint', inferred: true },
+  })
+  const toolExecutor = input.toolExecutor ?? runAgentTool
+  const toolResult = await toolExecutor('generate_filter_blueprint', args, buildConfiguredToolRuntimeContext(input))
+  const trace: AgentToolTraceEntry = {
+    toolName: 'generate_filter_blueprint',
+    ok: toolResult.ok,
+    summary: toolResult.summary,
+    issueCount: toolResult.issueCount,
+  }
+  const generated = extractToolCandidate(toolResult.data)
+  if (!generated?.simulation) {
+    return {
+      ...result,
+      toolTrace: [...(result.toolTrace ?? []), trace],
+    }
+  }
+
+  let changed = false
+  const blueprints = result.response.blueprints.map((candidate) => {
+    if (candidate.simulation !== undefined) return candidate
+    const shouldAttach = result.response.kind === 'blueprints' && result.response.blueprints.length === 1
+      ? true
+      : blueprintCandidatesShareIdentity(candidate, generated)
+    if (!shouldAttach) return candidate
+    changed = true
+    return {
+      ...candidate,
+      simulation: cloneJson(generated.simulation),
+    }
+  })
+
+  return {
+    ...result,
+    response: changed
+      ? {
+          ...result.response,
+          blueprints,
+        }
+      : result.response,
+    toolTrace: [...(result.toolTrace ?? []), trace],
+  }
+}
+
+function shouldAttachConfiguredFilterSimulation(prompt: string, toolTrace: readonly AgentToolTraceEntry[]): boolean {
+  if (toolTrace.some((entry) => entry.toolName === 'generate_filter_blueprint' && entry.ok)) return true
+  return /generate_filter_blueprint|仿真|simulation|worker|frequency\s*response|频率响应|图表|预览/i.test(prompt)
 }
 
 async function applyPostProviderSelfCheck(
@@ -347,6 +545,49 @@ function blueprintResponseHasSelfCheckIssues(result: ProviderParseResult): boole
   return result.response.blueprints.some((candidate) => (candidate.toolIssues ?? []).some(isHardFormatIssue))
 }
 
+function preserveBlueprintSimulationArtifacts(source: ProviderParseResult, target: ProviderParseResult): ProviderParseResult {
+  if (source.response.kind !== 'blueprints' || target.response.kind !== 'blueprints') return target
+  const sourceCandidates = source.response.blueprints.filter((candidate) => candidate.simulation !== undefined)
+  if (sourceCandidates.length === 0) return target
+
+  let changed = false
+  const blueprints = target.response.blueprints.map((candidate) => {
+    const matched = sourceCandidates.find((sourceCandidate) => blueprintCandidatesShareIdentity(candidate, sourceCandidate))
+      ?? (sourceCandidates.length === 1 && target.response.kind === 'blueprints' && target.response.blueprints.length === 1 ? sourceCandidates[0] : undefined)
+    if (matched?.simulation === undefined) return candidate
+    changed = true
+    return {
+      ...candidate,
+      simulation: cloneJson(matched.simulation),
+    }
+  })
+
+  if (!changed) return target
+  return {
+    ...target,
+    response: {
+      ...target.response,
+      blueprints,
+    },
+  }
+}
+
+type ParsedBlueprintCandidate = Extract<ProviderParseResult['response'], { kind: 'blueprints' }>['blueprints'][number]
+
+function blueprintCandidatesShareIdentity(left: ParsedBlueprintCandidate, right: ParsedBlueprintCandidate): boolean {
+  const leftDocumentId = left.document.document.id
+  const rightDocumentId = right.document.document.id
+  if (leftDocumentId && rightDocumentId && leftDocumentId === rightDocumentId) return true
+  if (left.title.trim() !== right.title.trim()) return false
+  const leftDeviceIds = left.document.devices.map((device) => device.id).sort().join('|')
+  const rightDeviceIds = right.document.devices.map((device) => device.id).sort().join('|')
+  return leftDeviceIds.length > 0 && leftDeviceIds === rightDeviceIds
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
 function isHardFormatIssue(issue: ValidationIssue): boolean {
   return issue.severity === 'error' && (issue.code.startsWith('schema.') || issue.code.startsWith('format.'))
 }
@@ -368,6 +609,7 @@ function buildSelfCheckRepairPrompt(originalPrompt: string, checked: ProviderPar
       tradeoffs: candidate.tradeoffs,
       document: candidate.document,
       issues: candidate.issues,
+      ...(candidate.simulation === undefined ? {} : { simulation: candidate.simulation }),
     }))
     : []
   return [
@@ -377,6 +619,7 @@ function buildSelfCheckRepairPrompt(originalPrompt: string, checked: ProviderPar
     'Repair the existing candidate with the smallest possible edit. If the circuit semantics are already correct, do not redesign the circuit.',
     'Fix schema/format errors that can prevent the document from opening. Semantic and layout findings in the report are advisory and are not blockers by themselves.',
     'Only change devices, terminals, labels, or topology when a hard format issue directly requires it.',
+    'If a previous candidate includes simulation and the original user request asked for simulation or parameter preview, preserve candidate.simulation unless the simulation itself is invalid or impossible to repair.',
     '',
     `Original user request:\n${originalPrompt.trim()}`,
     '',

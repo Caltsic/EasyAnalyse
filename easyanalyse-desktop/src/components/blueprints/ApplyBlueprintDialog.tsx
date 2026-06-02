@@ -31,6 +31,7 @@ function formatValidationBoolean(value: boolean | undefined, t: ApplyBlueprintDi
 function formatValidationState(state: BlueprintRecord['validationState'], t: ApplyBlueprintDialogProps['t']) {
   if (state === 'valid') return t('valid')
   if (state === 'invalid') return t('invalid')
+  if (state === 'format-blocked') return 'format-blocked'
   return t('unknown')
 }
 
@@ -134,7 +135,7 @@ export function ApplyBlueprintDialog({
   const diff = useMemo(() => diffBlueprintDocument(mainDocument, record.document), [mainDocument, record.document])
   const riskyValidation = record.validationState !== 'valid'
   const baseMismatch = hasBaseMismatch(record, currentMainHash)
-  const hasErrors = countIssues(record.validationReport, 'error') > 0 || record.validationState === 'invalid'
+  const hasErrors = countIssues(record.validationReport, 'error') > 0 || record.validationState === 'invalid' || record.validationState === 'format-blocked'
 
   const handleCancel = () => {
     if (!applying) {

@@ -1,12 +1,12 @@
 import { isRecord } from './guards'
-import type { AgentProviderKind, AgentProviderPublicConfig, AppLocalePreference, AppSettings, AppThemeMode } from '../types/settings'
+import type { AgentProviderKind, AgentProviderPublicConfig, AppLocalePreference, AppSettings, AppThemeMode, DeepSeekV4ThinkingMode } from '../types/settings'
 
 export const APP_SETTINGS_STORAGE_KEY = 'easyanalyse.appSettings.v1'
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   basic: { locale: 'system' },
   appearance: { theme: 'system' },
-  agent: { providers: [] },
+  agent: { providers: [], deepSeekV4Thinking: 'auto' },
 }
 
 export interface AppSettingsNormalizationResult {
@@ -23,6 +23,7 @@ export interface AppSettingsStorage {
 const VALID_THEMES = new Set<AppThemeMode>(['system', 'light', 'dark'])
 const VALID_LOCALES = new Set<AppLocalePreference>(['system', 'zh-CN', 'en-US'])
 const VALID_PROVIDER_KINDS = new Set<AgentProviderKind>(['openai-compatible', 'anthropic', 'deepseek'])
+const VALID_DEEPSEEK_V4_THINKING = new Set<DeepSeekV4ThinkingMode>(['disabled', 'auto', 'high', 'max'])
 
 function nonEmptyString(value: unknown): string | undefined {
   if (typeof value !== 'string') {
@@ -105,6 +106,23 @@ function normalizeLocale(input: unknown, warnings: string[]): AppLocalePreferenc
     warnings.push('Ignored invalid basic.locale; using system locale.')
   }
   return DEFAULT_APP_SETTINGS.basic.locale
+}
+
+function normalizeDeepSeekV4Thinking(input: unknown, warnings: string[]): DeepSeekV4ThinkingMode {
+  if (!isRecord(input)) {
+    return DEFAULT_APP_SETTINGS.agent.deepSeekV4Thinking ?? 'auto'
+  }
+
+  const agent = isRecord(input.agent) ? input.agent : undefined
+  const candidate = agent?.deepSeekV4Thinking
+  if (typeof candidate === 'string' && VALID_DEEPSEEK_V4_THINKING.has(candidate as DeepSeekV4ThinkingMode)) {
+    return candidate as DeepSeekV4ThinkingMode
+  }
+
+  if (candidate !== undefined) {
+    warnings.push('Ignored invalid agent.deepSeekV4Thinking; using auto.')
+  }
+  return DEFAULT_APP_SETTINGS.agent.deepSeekV4Thinking ?? 'auto'
 }
 
 function normalizeModels(value: unknown): string[] {
@@ -227,6 +245,7 @@ export function normalizeAppSettings(input: unknown): AppSettingsNormalizationRe
   const theme = normalizeTheme(input, warnings)
   const providers = normalizeProviders(input, warnings)
   const selection = normalizeSelection(input, providers, warnings)
+  const deepSeekV4Thinking = normalizeDeepSeekV4Thinking(input, warnings)
 
   return {
     settings: {
@@ -235,6 +254,7 @@ export function normalizeAppSettings(input: unknown): AppSettingsNormalizationRe
       agent: {
         providers,
         ...selection,
+        deepSeekV4Thinking,
       },
     },
     warnings,

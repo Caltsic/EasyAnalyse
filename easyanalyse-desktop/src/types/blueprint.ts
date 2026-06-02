@@ -1,10 +1,11 @@
 import type { DocumentFile, ValidationIssue, ValidationReport } from './document'
 import type { AgentSelfCheckReport } from './agentTools'
 import type { AgentThreadWorkspace } from './agentThread'
+import type { SimulationArtifact } from './simulation'
 
 export type BlueprintWorkspaceVersion = '1.0.0'
 export type BlueprintLifecycleStatus = 'active' | 'archived' | 'deleted'
-export type BlueprintValidationState = 'unknown' | 'valid' | 'invalid'
+export type BlueprintValidationState = 'unknown' | 'valid' | 'invalid' | 'format-blocked'
 export type BlueprintSource = 'manual_snapshot' | 'manual_import' | 'agent' | 'agent_derived'
 export type BlueprintHashAlgorithm = 'easyanalyse-document-canonical-sha256-v1'
 
@@ -52,6 +53,7 @@ export interface BlueprintRecord {
 }
 
 export interface BlueprintRecordExtensions extends Record<string, unknown> {
+  simulation?: SimulationArtifact
   agentCandidate?: {
     highlightedLabels?: string[]
     issues?: ValidationIssue[]

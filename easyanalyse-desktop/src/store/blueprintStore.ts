@@ -12,6 +12,9 @@ import {
   validateDocumentCommand,
 } from '../lib/tauri'
 import { getErrorMessage } from '../lib/errors'
+import { isRecord } from '../lib/guards'
+import type { LiveBlueprintDraftResult } from '../lib/liveBlueprintDraft'
+import { SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION, type SimulationArtifact } from '../types/simulation'
 import type {
   AgentBlueprintCandidate,
   AgentResponseParseIssue,
@@ -21,6 +24,7 @@ import type {
   BlueprintAppliedInfo,
   BlueprintMainDocumentRef,
   BlueprintRecord,
+  BlueprintValidationState,
   BlueprintWorkspaceFile,
 } from '../types/blueprint'
 import type { DocumentFile, ValidationReport } from '../types/document'
@@ -31,6 +35,18 @@ interface AgentCandidateInsertionContext {
   issues?: AgentResponseParseIssue[]
 }
 
+export interface BlueprintLiveDraftState {
+  status: 'idle' | LiveBlueprintDraftResult['status']
+  raw: string
+  markerFound: boolean
+  hasCompleteJson: boolean
+  displayDocument: DocumentFile | null
+  lastGoodDocument: DocumentFile | null
+  updatedAt: string | null
+  title?: string
+  error?: LiveBlueprintDraftResult['error']
+}
+
 export interface BlueprintState {
   workspace: BlueprintWorkspaceFile | null
   sidecarPath: string | null
@@ -39,6 +55,10 @@ export interface BlueprintState {
   loadError: string | null
   saveError: string | null
   validationError: string | null
+  liveDraft: BlueprintLiveDraftState
+  startLiveBlueprintDraft(options?: { title?: string }): void
+  updateLiveBlueprintDraft(result: LiveBlueprintDraftResult, raw: string): void
+  clearLiveBlueprintDraft(): void
   setWorkspaceAgentThreads(agentThreads: AgentThreadWorkspace): void
   addAgentBlueprintCandidates(
     candidates: AgentBlueprintCandidate[],
@@ -51,6 +71,11 @@ export interface BlueprintState {
     document: DocumentFile,
     options?: { title?: string; description?: string },
   ): Promise<BlueprintRecord>
+  updateBlueprintFromDocument(
+    id: string,
+    document: DocumentFile,
+    options?: { title?: string; description?: string },
+  ): Promise<BlueprintRecord | null>
   validateBlueprint(id: string): Promise<void>
   archiveBlueprint(id: string): void
   deleteBlueprint(id: string): void
@@ -137,6 +162,22 @@ function isReportValid(report: ValidationReport): boolean {
   return schemaValid === true && semanticValid === true
 }
 
+function cloneDocumentSnapshot(document: DocumentFile): DocumentFile {
+  return JSON.parse(JSON.stringify(document)) as DocumentFile
+}
+
+function createIdleLiveDraft(): BlueprintLiveDraftState {
+  return {
+    status: 'idle',
+    raw: '',
+    markerFound: false,
+    hasCompleteJson: false,
+    displayDocument: null,
+    lastGoodDocument: null,
+    updatedAt: null,
+  }
+}
+
 function isDefinitelyDifferentMainDocument(
   workspace: BlueprintWorkspaceFile,
   context: AgentCandidateInsertionContext,
@@ -149,6 +190,58 @@ function isDefinitelyDifferentMainDocument(
   const workspacePath = workspace.mainDocument?.path ?? null
   const contextPath = context.filePath ?? null
   return workspacePath !== contextPath
+}
+
+function getAgentCandidateValidationState(candidate: AgentBlueprintCandidate): BlueprintValidationState {
+  const issues = [...candidate.issues, ...(candidate.toolIssues ?? [])]
+  if (issues.some((issue) => issue.severity === 'error' && (issue.code.startsWith('schema.') || issue.code.startsWith('format.')))) {
+    return 'format-blocked'
+  }
+  if (issues.some((issue) => issue.severity === 'error')) {
+    return 'invalid'
+  }
+  if (issues.some((issue) => issue.code.startsWith('recoverable.schema.') || issue.code.startsWith('recoverable.format.'))) {
+    return 'format-blocked'
+  }
+  return 'unknown'
+}
+
+function getCandidateSimulationArtifact(candidate: AgentBlueprintCandidate): SimulationArtifact | undefined {
+  if (candidate.simulation !== undefined) return cloneJson(candidate.simulation)
+  return normalizeSimulationArtifact(candidate.document.extensions?.simulation)
+}
+
+function normalizeSimulationArtifact(value: unknown): SimulationArtifact | undefined {
+  if (!isRecord(value)) return undefined
+  if (value.schemaVersion !== SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION) return undefined
+  const manifest = isRecord(value.manifest) ? value.manifest : null
+  if (!manifest || manifest.schemaVersion !== SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION || typeof manifest.name !== 'string' || manifest.name.trim().length === 0) {
+    return undefined
+  }
+  const workerScript = typeof value.workerScript === 'string'
+    ? value.workerScript
+    : typeof value.script === 'string'
+      ? value.script
+      : undefined
+  if (!workerScript?.trim() || workerScript.length > 80_000) return undefined
+  if (value.scriptLanguage !== undefined && value.scriptLanguage !== 'javascript') return undefined
+
+  return {
+    schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+    manifest: {
+      ...cloneJson(manifest),
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+      name: manifest.name,
+    } as SimulationArtifact['manifest'],
+    workerScript,
+    ...(value.scriptLanguage === undefined ? {} : { scriptLanguage: 'javascript' as const }),
+    ...(value.defaultInput === undefined ? {} : { defaultInput: cloneJson(value.defaultInput) as SimulationArtifact['defaultInput'] }),
+    ...(Array.isArray(value.notes) && value.notes.every((note) => typeof note === 'string') ? { notes: [...value.notes] } : {}),
+  }
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
 }
 
 let loadRequestVersion = 0
@@ -164,6 +257,47 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
   loadError: null,
   saveError: null,
   validationError: null,
+  liveDraft: createIdleLiveDraft(),
+
+  startLiveBlueprintDraft: (options) => {
+    set({
+      liveDraft: {
+        ...createIdleLiveDraft(),
+        status: 'waiting-for-json',
+        markerFound: true,
+        title: options?.title,
+        updatedAt: new Date().toISOString(),
+      },
+    })
+  },
+
+  updateLiveBlueprintDraft: (result, raw) => {
+    set((state) => {
+      const displayDocument = result.displayDocument
+        ? cloneDocumentSnapshot(result.displayDocument)
+        : state.liveDraft.displayDocument
+      const lastGoodDocument = result.lastGood
+        ? cloneDocumentSnapshot(result.lastGood)
+        : state.liveDraft.lastGoodDocument
+      return {
+        liveDraft: {
+          ...state.liveDraft,
+          status: result.status,
+          raw,
+          markerFound: result.markerFound,
+          hasCompleteJson: result.hasCompleteJson,
+          displayDocument,
+          lastGoodDocument,
+          updatedAt: new Date().toISOString(),
+          ...(result.error === undefined ? { error: undefined } : { error: result.error }),
+        },
+      }
+    })
+  },
+
+  clearLiveBlueprintDraft: () => {
+    set({ liveDraft: createIdleLiveDraft() })
+  },
 
   setWorkspaceAgentThreads: (agentThreads) => {
     set((state) => {
@@ -186,19 +320,21 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
     }
 
     const records = await Promise.all(
-      candidates.map((candidate, index) =>
-        createBlueprintFromDocument({
+      candidates.map((candidate, index) => {
+        const simulation = getCandidateSimulationArtifact(candidate)
+        return createBlueprintFromDocument({
           document: candidate.document,
           title: candidate.title,
           description: candidate.summary,
           baseMainDocumentHash: mainHash,
           source: 'agent',
-          validationState: candidate.issues.some((issue) => issue.severity === 'error') ? 'invalid' : 'unknown',
+          validationState: getAgentCandidateValidationState(candidate),
           tags: ['agent'],
           notes: [candidate.rationale, ...candidate.tradeoffs.map((tradeoff) => `Tradeoff: ${tradeoff}`), ...(candidate.notes ?? [])]
             .filter(Boolean)
             .join('\n'),
           extensions: {
+            ...(simulation === undefined ? {} : { simulation }),
             agentCandidate: {
               highlightedLabels: candidate.highlightedLabels ?? [],
               issues: candidate.issues,
@@ -207,8 +343,8 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
               toolIssues: candidate.toolIssues ?? [],
             },
           },
-        }),
-      ),
+        })
+      }),
     )
     if (insertionVersion !== candidateInsertionVersion) {
       return []
@@ -257,6 +393,7 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
         dirty: false,
         selectedBlueprintId: null,
         loadError: null,
+        liveDraft: createIdleLiveDraft(),
       })
       return
     }
@@ -279,6 +416,7 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
         dirty: false,
         selectedBlueprintId: null,
         loadError: null,
+        liveDraft: createIdleLiveDraft(),
       })
     } catch (error) {
       if (requestVersion !== loadRequestVersion) {
@@ -290,6 +428,7 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
         dirty: false,
         selectedBlueprintId: null,
         loadError: getErrorMessage(error),
+        liveDraft: createIdleLiveDraft(),
       })
     }
   },
@@ -317,6 +456,7 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
         loadError: null,
         saveError: null,
         selectedBlueprintId: state.selectedBlueprintId,
+        liveDraft: createIdleLiveDraft(),
       }
     })
   },
@@ -382,6 +522,43 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
     })
 
     return blueprint
+  },
+
+  updateBlueprintFromDocument: async (id, document, options) => {
+    const documentSnapshot = cloneDocumentSnapshot(document)
+    const documentHash = await hashDocument(documentSnapshot)
+    let updatedRecord: BlueprintRecord | null = null
+
+    set((state) => {
+      if (state.workspace === null) {
+        return {}
+      }
+      const current = state.workspace.blueprints.find((record) => record.id === id)
+      if (!current || current.lifecycleStatus === 'deleted') {
+        return {}
+      }
+      const nextRecord: BlueprintRecord = {
+        ...current,
+        title: options?.title ?? current.title,
+        validationState: 'unknown',
+        document: documentSnapshot,
+        documentHash,
+        baseMainDocumentHash: documentHash,
+        updatedAt: new Date().toISOString(),
+      }
+      if (options?.description !== undefined) {
+        nextRecord.description = options.description
+      }
+      delete nextRecord.validationReport
+      updatedRecord = nextRecord
+      return {
+        workspace: updateBlueprint(state.workspace, id, () => nextRecord),
+        selectedBlueprintId: id,
+        dirty: true,
+      }
+    })
+
+    return updatedRecord
   },
 
   validateBlueprint: async (id) => {

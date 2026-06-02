@@ -34,6 +34,7 @@ function formatLifecycleStatus(status: BlueprintRecord['lifecycleStatus'], t: Bl
 function formatValidationState(state: BlueprintRecord['validationState'], t: BlueprintCardProps['t']) {
   if (state === 'valid') return t('valid')
   if (state === 'invalid') return t('invalid')
+  if (state === 'format-blocked') return 'format-blocked'
   return t('unknown')
 }
 
@@ -65,6 +66,7 @@ export function BlueprintCard({
   const isDeleted = record.lifecycleStatus === 'deleted'
   const canArchive = record.lifecycleStatus === 'active'
   const canDelete = record.lifecycleStatus !== 'deleted'
+  const hasSimulation = record.extensions?.simulation !== undefined
 
   return (
     <article
@@ -86,6 +88,7 @@ export function BlueprintCard({
         <span>{t('sourceLabel')}: {formatSource(record.source, t)}</span>
         <span>{t('issuesLabel')}: {issueCount}</span>
         <span>{t('warningsLabel')}: {warningCount}</span>
+        {hasSimulation ? <span>{t('simulationAvailable')}</span> : null}
       </div>
 
       <div className="blueprint-card__runtime">

@@ -4,6 +4,8 @@ export type AppLocalePreference = 'system' | 'zh-CN' | 'en-US'
 
 export type AgentProviderKind = 'openai-compatible' | 'anthropic' | 'deepseek'
 
+export type DeepSeekV4ThinkingMode = 'disabled' | 'auto' | 'high' | 'max'
+
 export interface AgentProviderPublicConfig {
   id: string
   name: string
@@ -25,5 +27,6 @@ export interface AppSettings {
     providers: AgentProviderPublicConfig[]
     selectedProviderId?: string
     selectedModelId?: string
+    deepSeekV4Thinking?: DeepSeekV4ThinkingMode
   }
 }

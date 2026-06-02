@@ -42,6 +42,10 @@ export async function saveBlueprintWorkspaceToPath(path: string, workspace: Blue
   return invoke<void>('save_blueprint_workspace_to_path', { path, workspace })
 }
 
+export async function writeLiveBlueprintDraftPartial(projectPath: string, content: string) {
+  return invoke<string>('write_live_blueprint_draft_partial', { projectPath, content })
+}
+
 export async function startMobileShare(document: DocumentFile, snapshot: MobileRenderSnapshot) {
   return invoke<MobileShareSession>('start_mobile_share', { document, snapshot })
 }

@@ -5,9 +5,15 @@ import { cloneProviderPreset, DEEPSEEK_PROVIDER_PRESET, type ProviderPreset } fr
 import { defaultSecretStore, maskSecretRef, type SecretStore, type SecretStoreSecurityStatus } from '../../lib/secretStore'
 import { useEditorStore } from '../../store/editorStore'
 import { useSettingsStore } from '../../store/settingsStore'
-import type { AgentProviderKind, AgentProviderPublicConfig } from '../../types/settings'
+import type { AgentProviderKind, AgentProviderPublicConfig, DeepSeekV4ThinkingMode } from '../../types/settings'
 
 const PROVIDER_KINDS: AgentProviderKind[] = ['openai-compatible', 'anthropic', 'deepseek']
+const DEEPSEEK_V4_THINKING_OPTIONS: Array<{ value: DeepSeekV4ThinkingMode; label: string }> = [
+  { value: 'disabled', label: 'Off' },
+  { value: 'auto', label: 'Auto' },
+  { value: 'high', label: 'High' },
+  { value: 'max', label: 'Max' },
+]
 
 interface ProviderDraft {
   id: string
@@ -86,6 +92,7 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
   const clearProviderApiKey = useSettingsStore((state) => state.clearProviderApiKey)
   const selectProvider = useSettingsStore((state) => state.selectProvider)
   const selectModel = useSettingsStore((state) => state.selectModel)
+  const setDeepSeekV4Thinking = useSettingsStore((state) => state.setDeepSeekV4Thinking)
   const [draft, setDraft] = useState<ProviderDraft>(EMPTY_DRAFT)
   const [secretStatus, setSecretStatus] = useState<SecretStoreSecurityStatus | null>(null)
   const [secretWarning, setSecretWarning] = useState<string | null>(null)
@@ -247,6 +254,19 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
             {!selectedProvider && <option value="">{t('noModelsConfigured')}</option>}
             {selectedProvider?.models.map((model) => (
               <option key={model} value={model}>{model}</option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          DeepSeek v4 thinking
+          <select
+            name="deepSeekV4Thinking"
+            value={settings.agent.deepSeekV4Thinking ?? 'auto'}
+            onChange={(event) => setDeepSeekV4Thinking(event.target.value as DeepSeekV4ThinkingMode)}
+          >
+            {DEEPSEEK_V4_THINKING_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>
         </label>

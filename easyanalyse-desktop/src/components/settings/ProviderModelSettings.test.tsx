@@ -176,6 +176,18 @@ describe('ProviderModelSettings', () => {
     expect(JSON.stringify(settings)).not.toMatch(/(?:apiKey|apiKeyRef|secret-ref:|keychain:\/\/|Bearer\s+)/i)
   })
 
+  it('edits the global DeepSeek v4 thinking setting', async () => {
+    await act(async () => {
+      root.render(<ProviderModelSettings />)
+    })
+
+    expect(field(container, 'deepSeekV4Thinking').value).toBe('auto')
+    await changeField(container, 'deepSeekV4Thinking', 'max')
+
+    expect(useSettingsStore.getState().settings.agent.deepSeekV4Thinking).toBe('max')
+    expect(field(container, 'deepSeekV4Thinking').value).toBe('max')
+  })
+
   it('preserves an existing DeepSeek apiKeyRef when saving preset metadata without a new API key', async () => {
     const secretStore = {
       saveSecret: vi.fn(async () => ({ ref: 'secret-ref:unexpected-new-key', security: { kind: 'native-keychain' as const } })),

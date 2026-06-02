@@ -418,6 +418,19 @@ pub fn save_blueprint_workspace_to_path(path: String, workspace: Value) -> Resul
     fs::write(&path, content).map_err(error_to_string)
 }
 
+#[tauri::command]
+pub fn write_live_blueprint_draft_partial(
+    project_path: String,
+    content: String,
+) -> Result<String, String> {
+    let project_dir = ensure_project_directory(&project_path)?;
+    let target = project_dir
+        .join("working-copy")
+        .join("live-draft.raw.json.partial");
+    atomic_write_text(&target, &content)?;
+    Ok(target.to_string_lossy().to_string())
+}
+
 fn decode_json_text(bytes: &[u8]) -> Result<String, String> {
     if bytes.is_empty() {
         return Err("Selected file is empty".to_string());
@@ -490,6 +503,29 @@ fn ensure_blueprint_sidecar_path(path: &str) -> Result<(), String> {
     Err("Blueprint sidecar path must end with .easyanalyse-blueprints.json".to_string())
 }
 
+fn ensure_project_directory(path: &str) -> Result<PathBuf, String> {
+    let project_dir = Path::new(path);
+    if project_dir
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("easyanalyse"))
+    {
+        return Ok(project_dir.to_path_buf());
+    }
+
+    Err("EasyAnalyse project path must end with .easyanalyse".to_string())
+}
+
+fn atomic_write_text(path: &Path, content: &str) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Target path has no parent directory".to_string())?;
+    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    let tmp_path = path.with_extension("partial.tmp");
+    fs::write(&tmp_path, content).map_err(|error| error.to_string())?;
+    fs::rename(&tmp_path, path).map_err(|error| error.to_string())
+}
+
 fn error_to_string<E>(error: E) -> String
 where
     E: Into<CoreError>,
@@ -521,6 +557,7 @@ mod tests {
     use super::{
         decode_json_text, get_blueprint_sidecar_path, load_blueprint_workspace_from_path,
         save_blueprint_workspace_to_path, secret_store_status_for_native_availability,
+        write_live_blueprint_draft_partial,
     };
     #[cfg(unix)]
     use super::write_secret_map_to_path;
@@ -608,6 +645,40 @@ mod tests {
 
         assert!(load_error.contains(".easyanalyse-blueprints.json"), "{load_error}");
         assert!(save_error.contains(".easyanalyse-blueprints.json"), "{save_error}");
+    }
+
+    #[test]
+    fn live_blueprint_partial_writes_inside_project_directory() {
+        let project_path = unique_temp_path("demo.easyanalyse");
+        let written = write_live_blueprint_draft_partial(
+            project_path.to_string_lossy().to_string(),
+            "{\"partial\":true}".to_string(),
+        )
+        .expect("project partial should write");
+
+        assert!(
+            written.ends_with("working-copy/live-draft.raw.json.partial")
+                || written.ends_with("working-copy\\live-draft.raw.json.partial"),
+            "{written}"
+        );
+        assert_eq!(
+            fs::read_to_string(&written).expect("partial should exist"),
+            "{\"partial\":true}"
+        );
+
+        let _ = fs::remove_dir_all(&project_path);
+    }
+
+    #[test]
+    fn live_blueprint_partial_rejects_non_project_path() {
+        let path = unique_temp_path("demo.json");
+        let error = write_live_blueprint_draft_partial(
+            path.to_string_lossy().to_string(),
+            "{}".to_string(),
+        )
+        .expect_err("non project path should be rejected");
+
+        assert!(error.contains(".easyanalyse"), "{error}");
     }
 
     #[test]

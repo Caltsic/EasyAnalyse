@@ -108,7 +108,34 @@ describe('settings store storage warnings', () => {
 
     await useSettingsStore.getState().deleteProvider('p1', null, secretStore)
     expect(deletedRefs).toEqual(['secret-ref:p2', 'secret-ref:p1'])
-    expect(useSettingsStore.getState().settings.agent).toEqual({ providers: [] })
+    expect(useSettingsStore.getState().settings.agent).toEqual({ providers: [], deepSeekV4Thinking: 'auto' })
+  })
+
+  it('persists and preserves the global DeepSeek v4 thinking mode', () => {
+    let persisted: unknown
+    const storage: AppSettingsStorage = {
+      load: () => ({ settings: DEFAULT_APP_SETTINGS, warnings: [] }),
+      save: (settings) => {
+        persisted = settings
+        return { settings: settings as typeof DEFAULT_APP_SETTINGS, warnings: [] }
+      },
+      clear: () => ({ settings: DEFAULT_APP_SETTINGS, warnings: [] }),
+    }
+
+    useSettingsStore.getState().setDeepSeekV4Thinking('max', storage)
+    expect(useSettingsStore.getState().settings.agent.deepSeekV4Thinking).toBe('max')
+    expect((persisted as typeof DEFAULT_APP_SETTINGS).agent.deepSeekV4Thinking).toBe('max')
+
+    useSettingsStore.getState().upsertProvider({
+      id: 'deepseek-main',
+      name: 'DeepSeek Main',
+      kind: 'deepseek',
+      baseUrl: 'https://api.deepseek.com',
+      models: ['deepseek-v4-pro'],
+      defaultModel: 'deepseek-v4-pro',
+    }, null)
+
+    expect(useSettingsStore.getState().settings.agent.deepSeekV4Thinking).toBe('max')
   })
 
   it('clears only a provider apiKeyRef and deletes the secret ref while preserving metadata', async () => {

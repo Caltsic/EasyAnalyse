@@ -11,6 +11,7 @@ export type AgentToolName =
   | 'get_current_selection'
   | 'summarize_topology'
   | 'get_easyanalyse_format_rules'
+  | 'begin_blueprint_generation'
   | 'generate_filter_blueprint'
   | 'check_document_format'
   | 'check_blueprint_format'
@@ -94,6 +95,9 @@ export interface AgentToolRuntimeContext {
   getEditorFocus?: () => Promise<AgentEditorFocus | null> | AgentEditorFocus | null
   getEasyAnalyseFormatRules?: () => Promise<string> | string
   validateDocument?: (document: DocumentFile) => Promise<ValidationReport> | ValidationReport
+  beginBlueprintGeneration?: (
+    request: BeginBlueprintGenerationRequest,
+  ) => Promise<BeginBlueprintGenerationResponse> | BeginBlueprintGenerationResponse
   createBlueprintCandidate?: (
     candidate: AgentBlueprintCandidate,
     context: {
@@ -259,6 +263,28 @@ export interface SummarizeTopologyData {
 
 export interface GetEasyAnalyseFormatRulesData {
   rules: string
+}
+
+export type BeginBlueprintGenerationDecision = 'continue' | 'saved_current' | 'saved_as_new' | 'discarded' | 'cancelled'
+
+export interface BeginBlueprintGenerationRequest {
+  title?: string
+  intent?: string
+  hasCurrentCircuit: boolean
+  currentDeviceCount: number
+}
+
+export interface BeginBlueprintGenerationResponse {
+  decision: BeginBlueprintGenerationDecision
+  message: string
+  blueprintId?: string
+}
+
+export interface BeginBlueprintGenerationData extends BeginBlueprintGenerationResponse {
+  hasCurrentCircuit: boolean
+  currentDeviceCount: number
+  formatRules: string
+  outputMarker: 'BEGIN_EASYANALYSE_BLUEPRINT_JSON'
 }
 
 export interface GenerateFilterBlueprintData {

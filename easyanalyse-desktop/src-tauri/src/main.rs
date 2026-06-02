@@ -25,6 +25,7 @@ fn run() {
             commands::get_blueprint_sidecar_path,
             commands::load_blueprint_workspace_from_path,
             commands::save_blueprint_workspace_to_path,
+            commands::write_live_blueprint_draft_partial,
             commands::secret_store_status,
             commands::secret_store_save,
             commands::secret_store_read,

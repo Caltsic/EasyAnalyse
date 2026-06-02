@@ -14,7 +14,7 @@ import { DOCUMENT_HASH_ALGORITHM, hashDocument } from './documentHash'
 
 const BLUEPRINT_WORKSPACE_VERSION = '1.0.0' satisfies BlueprintWorkspaceVersion
 const LIFECYCLE_STATUSES = new Set<BlueprintLifecycleStatus>(['active', 'archived', 'deleted'])
-const VALIDATION_STATES = new Set<BlueprintValidationState>(['unknown', 'valid', 'invalid'])
+const VALIDATION_STATES = new Set<BlueprintValidationState>(['unknown', 'valid', 'invalid', 'format-blocked'])
 const SOURCES = new Set<BlueprintSource>(['manual_snapshot', 'manual_import', 'agent', 'agent_derived'])
 
 export interface CreateEmptyBlueprintWorkspaceArgs {
@@ -308,7 +308,7 @@ function assertLifecycleStatus(value: string, label: string): asserts value is B
 
 function assertValidationState(value: string, label: string): asserts value is BlueprintValidationState {
   if (!VALIDATION_STATES.has(value as BlueprintValidationState)) {
-    throw new Error(`${label} must be unknown, valid, or invalid`)
+    throw new Error(`${label} must be unknown, valid, invalid, or format-blocked`)
   }
 }
 

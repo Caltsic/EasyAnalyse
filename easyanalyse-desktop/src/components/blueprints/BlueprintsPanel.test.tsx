@@ -9,6 +9,7 @@ import { useBlueprintStore } from '../../store/blueprintStore'
 import { useEditorStore } from '../../store/editorStore'
 import type { BlueprintRecord } from '../../types/blueprint'
 import type { DocumentFile } from '../../types/document'
+import { SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION } from '../../types/simulation'
 import { ApplyBlueprintDialog } from './ApplyBlueprintDialog'
 
 const previewCanvasMockState = vi.hoisted(() => ({ throwOnRender: false }))
@@ -78,6 +79,7 @@ function resetStores(document = createDocument()) {
     loadError: null,
     saveError: null,
     validationError: null,
+    liveDraft: useBlueprintStore.getInitialState().liveDraft,
   })
 }
 
@@ -168,6 +170,28 @@ beforeEach(() => {
 })
 
 describe('BlueprintsPanel', () => {
+  it('renders the transient live blueprint draft in the preview area without a persisted blueprint', async () => {
+    const liveDocument = createDocument({ document: { id: 'live-preview', title: 'Live Preview Draft' } })
+    useBlueprintStore.getState().startLiveBlueprintDraft({ title: 'Live' })
+    useBlueprintStore.getState().updateLiveBlueprintDraft({
+      status: 'ready',
+      markerFound: true,
+      hasCompleteJson: true,
+      updated: true,
+      displayDocument: liveDocument,
+      lastGood: liveDocument,
+      candidate: { json: JSON.stringify(liveDocument), startIndex: 0, endIndex: 1 },
+      partial: null,
+    }, JSON.stringify(liveDocument))
+
+    const host = await renderPanel()
+
+    expect(host.textContent).toContain('Live blueprint draft')
+    expect(host.querySelector('[aria-label="Blueprint preview canvas"]')?.getAttribute('data-document-title')).toBe('Live Preview Draft')
+    expect(useBlueprintStore.getState().workspace?.blueprints).toHaveLength(0)
+    expect(useBlueprintStore.getState().dirty).toBe(false)
+  })
+
   it('keeps the panel mounted when the selected blueprint preview fails to render', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     try {
@@ -199,6 +223,42 @@ describe('BlueprintsPanel', () => {
     } finally {
       consoleError.mockRestore()
     }
+  })
+
+  it('shows a simulation card for the selected blueprint when an artifact is present', async () => {
+    const main = createDocument()
+    const mainHash = await hashDocument(main)
+    const record = await createBlueprintRecord({
+      id: 'bp-with-simulation',
+      title: 'Simulated candidate',
+      baseMainDocumentHash: mainHash,
+      extensions: {
+        simulation: {
+          schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+          manifest: {
+            schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+            name: 'Step response',
+          },
+          workerScript: 'function run() { return { points: [{ t: 0, vout: 0 }, { t: 1, vout: 1 }] }; }',
+        },
+      },
+    })
+    resetStores(main)
+    useBlueprintStore.setState({
+      workspace: {
+        ...createEmptyBlueprintWorkspace({
+          mainDocument: { documentId: main.document.id, hash: mainHash },
+        }),
+        blueprints: [record],
+      },
+      selectedBlueprintId: record.id,
+    })
+
+    const host = await renderPanel()
+
+    expect(host.textContent).toContain('Step response')
+    expect(host.textContent).toContain('Run simulation')
+    expect(host.textContent).toContain('simulation')
   })
 
   it('does not focus the destructive confirm action by default or apply from root Enter/Space', async () => {

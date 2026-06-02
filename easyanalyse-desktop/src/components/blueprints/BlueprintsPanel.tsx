@@ -10,6 +10,7 @@ import { Button, EmptyState } from '../ui'
 import { ApplyBlueprintDialog } from './ApplyBlueprintDialog'
 import { BlueprintCard } from './BlueprintCard'
 import { BlueprintPreviewCanvas } from './BlueprintPreviewCanvas'
+import { BlueprintSimulationCard } from './BlueprintSimulationCard'
 
 export function BlueprintsPanel() {
   const document = useEditorStore((state) => state.document)
@@ -23,6 +24,7 @@ export function BlueprintsPanel() {
   const loadError = useBlueprintStore((state) => state.loadError)
   const saveError = useBlueprintStore((state) => state.saveError)
   const validationError = useBlueprintStore((state) => state.validationError)
+  const liveDraft = useBlueprintStore((state) => state.liveDraft)
   const loadForMainDocument = useBlueprintStore((state) => state.loadForMainDocument)
   const saveWorkspace = useBlueprintStore((state) => state.saveWorkspace)
   const createSnapshotFromDocument = useBlueprintStore((state) => state.createSnapshotFromDocument)
@@ -42,6 +44,8 @@ export function BlueprintsPanel() {
   const [currentMainHash, setCurrentMainHash] = useState<string | null>(workspace?.mainDocument?.hash ?? null)
   const [pendingApplyRecord, setPendingApplyRecord] = useState<BlueprintRecord | null>(null)
   const [applyBusy, setApplyBusy] = useState(false)
+  const t = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) =>
+    translate(locale, key, params)
 
   useEffect(() => {
     let cancelled = false
@@ -66,10 +70,23 @@ export function BlueprintsPanel() {
     () => blueprints.find((record) => record.id === selectedBlueprintId) ?? null,
     [blueprints, selectedBlueprintId],
   )
+  const livePreviewDocument = liveDraft.displayDocument
+  const previewDocument = livePreviewDocument ?? selectedBlueprint?.document ?? null
+  const previewTitle = livePreviewDocument
+    ? t('liveBlueprintPreviewTitle')
+    : selectedBlueprint
+      ? t('previewTitle', { title: selectedBlueprint.title })
+      : ''
+  const previewDescription = livePreviewDocument
+    ? t('liveBlueprintPreviewHint', { status: liveDraft.status })
+    : t('previewHint')
+  const previewResetKey = livePreviewDocument
+    ? `live:${liveDraft.updatedAt ?? liveDraft.status}`
+    : selectedBlueprint
+      ? `${selectedBlueprint.id}:${selectedBlueprint.documentHash}`
+      : 'none'
   const applyModalOpen = pendingApplyRecord !== null
   const blueprintActionsDisabled = topActionBusy || applyModalOpen || applyBusy
-  const t = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) =>
-    translate(locale, key, params)
 
   const runTopAction = async (message: string, action: () => Promise<void>) => {
     if (activeTopActionTokenRef.current !== null) {
@@ -203,6 +220,12 @@ export function BlueprintsPanel() {
         {saveError && <span>{t('saveError', { message: saveError })}</span>}
         {validationError && <span>{t('validationError', { message: validationError })}</span>}
         {actionError && <span>{t('actionError', { message: actionError })}</span>}
+        {liveDraft.status !== 'idle' && (
+          <span>{t('liveDraftStatus', { status: liveDraft.status })}</span>
+        )}
+        {liveDraft.error && (
+          <span>{t('liveDraftError', { message: liveDraft.error.message })}</span>
+        )}
       </div>
 
       {blueprints.length === 0 ? (
@@ -245,15 +268,15 @@ export function BlueprintsPanel() {
           ))}
         </div>
       )}
-      {selectedBlueprint && selectedBlueprint.lifecycleStatus !== 'deleted' && (
+      {previewDocument && (livePreviewDocument || (selectedBlueprint && selectedBlueprint.lifecycleStatus !== 'deleted')) && (
         <section className="blueprints-panel__preview" aria-label={t('selectedBlueprintPreview')}>
           <div className="blueprints-panel__preview-header">
-            <h3>{t('previewTitle', { title: selectedBlueprint.title })}</h3>
-            <p>{t('previewHint')}</p>
+            <h3>{previewTitle}</h3>
+            <p>{previewDescription}</p>
           </div>
           <AppErrorBoundary
             compact
-            resetKey={`${selectedBlueprint.id}:${selectedBlueprint.documentHash}`}
+            resetKey={previewResetKey}
             title={t('blueprintPreviewFailed')}
             description={t('blueprintPreviewFailedDescription')}
             detailsLabel={t('errorDetails')}
@@ -261,11 +284,14 @@ export function BlueprintsPanel() {
             reloadLabel={t('reload')}
           >
             <BlueprintPreviewCanvas
-              document={selectedBlueprint.document}
+              document={previewDocument}
               locale={locale}
               className="blueprints-panel__preview-canvas"
             />
           </AppErrorBoundary>
+          {!livePreviewDocument && selectedBlueprint ? (
+            <BlueprintSimulationCard record={selectedBlueprint} t={t} />
+          ) : null}
         </section>
       )}
       {pendingApplyRecord && (

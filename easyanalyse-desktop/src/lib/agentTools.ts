@@ -24,6 +24,7 @@ import type {
   CheckLayoutOverlapsData,
   CompareBlueprintCandidateData,
   CreateBlueprintCandidateData,
+  BeginBlueprintGenerationData,
   GenerateFilterBlueprintData,
   GetBlueprintCandidateData,
   GetBlueprintWorkspaceData,
@@ -38,6 +39,7 @@ import type { LayoutOverlapCheckOptions } from './layoutValidation'
 const TOOL_RESULT_SCHEMA_VERSION = 'agent-tool-result-v1' as const
 const SELF_CHECK_SCHEMA_VERSION = 'agent-self-check-v1' as const
 const SEMANTIC_VERSION = 'easyanalyse-semantic-v4' as const
+const BLUEPRINT_JSON_OUTPUT_MARKER = 'BEGIN_EASYANALYSE_BLUEPRINT_JSON' as const
 const DEFAULT_AGENT_LAYOUT_OPTIONS: LayoutOverlapCheckOptions = { includeTextDeviceOverlaps: true }
 const EASYANALYSE_FORMAT_RULES = [
   'EasyAnalyse semantic v4 hard format:',
@@ -171,12 +173,34 @@ export function getAgentToolSchemas() {
     {
       type: 'function' as const,
       function: {
+        name: 'begin_blueprint_generation',
+        description:
+          [
+            'Declare that you intend to start generating a new circuit blueprint.',
+            'Call this once before emitting blueprint JSON when the user asked for a new/generated circuit.',
+            'The runtime may ask the user how to handle the current canvas before generation continues.',
+            `After this tool returns continue/saved/discarded, output ${BLUEPRINT_JSON_OUTPUT_MARKER} and then the normal EasyAnalyse semantic v4 JSON or AgentResponse JSON.`,
+          ].join(' '),
+        parameters: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            title: { type: 'string', description: 'Optional short title for the blueprint being generated.' },
+            intent: { type: 'string', description: 'Optional natural-language generation intent.' },
+          },
+        },
+      },
+    },
+    {
+      type: 'function' as const,
+      function: {
         name: 'generate_filter_blueprint',
         description:
           [
             'Generate a deterministic filter blueprint candidate as standard EasyAnalyse semantic v4 JSON.',
             'Use this before hand-authoring filter circuits. The tool owns common filter topology, device parameters, terminal labels, network names, and default layout.',
             'It returns an AgentBlueprintCandidate but does not mutate the main document. Store it with create_blueprint_candidate after reviewing the result.',
+            'The returned candidate includes candidate.simulation for lightweight frequency-response preview; preserve that field when storing or returning the candidate.',
           ].join(' '),
         parameters: {
           type: 'object',
@@ -280,7 +304,7 @@ export function getAgentToolSchemas() {
         description:
           [
             'Create/store one AgentBlueprintCandidate through the injected EasyAnalyse runtime callback.',
-            'The runtime first runs check_blueprint_format; if hard format fails, this tool returns ok=false and does not store anything.',
+            'The runtime first runs check_blueprint_format; format issues are stored as recoverable diagnostics when the candidate has enough shape to retain as a draft.',
             'This tool cannot mutate the main document directly.',
           ].join(' '),
         parameters: buildBlueprintCandidateToolParameters(),
@@ -359,6 +383,7 @@ export async function runAgentTool(
     if (toolName === 'get_current_selection') return getCurrentSelectionTool(context)
     if (toolName === 'summarize_topology') return summarizeTopologyTool(args, context)
     if (toolName === 'get_easyanalyse_format_rules') return getEasyAnalyseFormatRulesTool(context)
+    if (toolName === 'begin_blueprint_generation') return beginBlueprintGenerationTool(args, context)
     if (toolName === 'generate_filter_blueprint') return generateFilterBlueprintTool(args, context)
     if (toolName === 'check_document_format') return checkDocumentFormatTool(args, context)
     if (toolName === 'check_blueprint_format') return checkBlueprintFormatTool(args, context)
@@ -387,6 +412,39 @@ async function getCurrentDocumentTool(context: AgentToolRuntimeContext): Promise
   return result('get_current_document', true, document ? 'Current document returned.' : 'No current document is available in this runtime context.', [], {
     hasDocument: Boolean(document),
     document: document ? cloneDocument(document) : null,
+  })
+}
+
+async function beginBlueprintGenerationTool(
+  args: unknown,
+  context: AgentToolRuntimeContext,
+): Promise<AgentToolResult<BeginBlueprintGenerationData>> {
+  const document = await resolveCurrentDocument(context)
+  const currentDeviceCount = document?.devices.length ?? 0
+  const hasCurrentCircuit = currentDeviceCount > 0
+  const request = {
+    title: isRecord(args) && typeof args.title === 'string' ? args.title : undefined,
+    intent: isRecord(args) && typeof args.intent === 'string' ? args.intent : undefined,
+    hasCurrentCircuit,
+    currentDeviceCount,
+  }
+  const response = context.beginBlueprintGeneration
+    ? await context.beginBlueprintGeneration(request)
+    : {
+        decision: 'continue' as const,
+        message: hasCurrentCircuit
+          ? 'No runtime save gate is available; continue without changing the current canvas.'
+          : 'No current circuit is present; continue generating the blueprint.',
+      }
+  const ok = response.decision !== 'cancelled'
+  return result('begin_blueprint_generation', ok, response.message, ok ? [] : [
+    issue('warning', 'agent_tool.blueprint_generation_cancelled', response.message, null, null, { decision: response.decision }),
+  ], {
+    ...response,
+    hasCurrentCircuit,
+    currentDeviceCount,
+    formatRules: EASYANALYSE_FORMAT_RULES,
+    outputMarker: BLUEPRINT_JSON_OUTPUT_MARKER,
   })
 }
 
@@ -622,7 +680,7 @@ async function generateFilterBlueprintTool(
     checked.format.ok,
     checked.format.ok
       ? `Filter blueprint candidate "${generated.candidate.title}" generated.`
-      : 'Filter blueprint was generated but failed hard format checks.',
+      : 'Filter blueprint was generated with recoverable format diagnostics.',
     checked.format.issues,
     {
       candidate: generated.candidate,
@@ -654,12 +712,6 @@ async function createBlueprintCandidateTool(
   context: AgentToolRuntimeContext,
 ): Promise<AgentToolResult<CreateBlueprintCandidateData>> {
   const checked = await checkBlueprintFormatValue(args, context)
-  if (!checked.format.ok) {
-    return result('create_blueprint_candidate', false, 'Blueprint candidate was not created because hard format checks failed.', checked.format.issues, {
-      created: false,
-      format: checked.format,
-    })
-  }
   if (!context.createBlueprintCandidate) {
     return result('create_blueprint_candidate', false, 'Blueprint candidate was not created because no runtime creation callback was injected.', [
       issue('error', 'agent_tool.missing_runtime_callback', 'create_blueprint_candidate requires an injected createBlueprintCandidate callback.', null, null),
@@ -694,7 +746,10 @@ async function createBlueprintCandidateTool(
       result: cloneDetails(createResult),
     })
   }
-  return result('create_blueprint_candidate', true, 'Blueprint candidate created.', [], {
+  const summary = checked.format.ok
+    ? 'Blueprint candidate created.'
+    : `Blueprint candidate created with ${checked.format.issueCount} recoverable format diagnostic(s).`
+  return result('create_blueprint_candidate', true, summary, checked.format.ok ? [] : checked.format.issues, {
     created: true,
     format: checked.format,
     result: cloneDetails(createResult),
@@ -802,6 +857,27 @@ function buildBlueprintCandidateToolParameters(options: { includeOptions?: boole
           issues: { type: 'array' },
           highlightedLabels: { type: 'array', items: { type: 'string' } },
           notes: { type: 'array', items: { type: 'string' } },
+          simulation: {
+            type: 'object',
+            additionalProperties: true,
+            required: ['schemaVersion', 'manifest', 'workerScript'],
+            properties: {
+              schemaVersion: { type: 'string', enum: ['easyanalyse-simulation-v1'] },
+              manifest: {
+                type: 'object',
+                additionalProperties: true,
+                required: ['schemaVersion', 'name'],
+                properties: {
+                  schemaVersion: { type: 'string', enum: ['easyanalyse-simulation-v1'] },
+                  name: { type: 'string' },
+                },
+              },
+              workerScript: { type: 'string' },
+              scriptLanguage: { type: 'string', enum: ['javascript'] },
+              defaultInput: { type: 'object', additionalProperties: true },
+              notes: { type: 'array', items: { type: 'string' } },
+            },
+          },
           document: {
             type: 'object',
             additionalProperties: true,
@@ -925,7 +1001,7 @@ function parseDocumentInput(value: unknown): { ok: true; value: unknown } | { ok
 
 function collectCandidateFormatIssues(candidate: AgentBlueprintCandidate): ValidationIssue[] {
   const issues: ValidationIssue[] = []
-  const allowedKeys = new Set(['title', 'summary', 'rationale', 'tradeoffs', 'document', 'highlightedLabels', 'notes', 'issues', 'selfCheck', 'toolIssues'])
+  const allowedKeys = new Set(['title', 'summary', 'rationale', 'tradeoffs', 'document', 'highlightedLabels', 'notes', 'issues', 'selfCheck', 'toolIssues', 'simulation'])
   Object.keys(candidate as unknown as Record<string, unknown>).forEach((key) => {
     if (!allowedKeys.has(key)) issues.push(issue('error', 'format.unknown_field', `Unknown blueprint candidate field '${key}'.`, null, `candidate.${key}`))
   })
@@ -1387,6 +1463,7 @@ function isAgentToolName(value: string): value is AgentToolName {
     || value === 'get_current_selection'
     || value === 'summarize_topology'
     || value === 'get_easyanalyse_format_rules'
+    || value === 'begin_blueprint_generation'
     || value === 'generate_filter_blueprint'
     || value === 'check_document_format'
     || value === 'check_blueprint_format'

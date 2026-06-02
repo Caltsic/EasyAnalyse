@@ -40,7 +40,7 @@ describe('app settings normalization', () => {
     expect(DEFAULT_APP_SETTINGS).toEqual({
       basic: { locale: 'system' },
       appearance: { theme: 'system' },
-      agent: { providers: [] },
+      agent: { providers: [], deepSeekV4Thinking: 'auto' },
     })
     expect(normalizeAppSettings(undefined).settings).toEqual(DEFAULT_APP_SETTINGS)
   })
@@ -70,6 +70,7 @@ describe('app settings normalization', () => {
         ],
         selectedProviderId: 'deepseek-main',
         selectedModelId: 'deepseek-chat',
+        deepSeekV4Thinking: 'max',
       },
       unknownTopLevel: true,
     })
@@ -91,6 +92,7 @@ describe('app settings normalization', () => {
         ],
         selectedProviderId: 'deepseek-main',
         selectedModelId: 'deepseek-chat',
+        deepSeekV4Thinking: 'max',
       },
     })
     expect(warnings.some((warning) => warning.includes('provider'))).toBe(true)
@@ -122,6 +124,7 @@ describe('app settings normalization', () => {
         ],
         selectedProviderId: 'openai-like',
         selectedModelId: 'gpt-test',
+        deepSeekV4Thinking: 'disabled',
       },
     })
 
@@ -147,8 +150,19 @@ describe('app settings normalization', () => {
         ],
         selectedProviderId: 'openai-like',
         selectedModelId: 'gpt-test',
+        deepSeekV4Thinking: 'disabled',
       },
     })
+  })
+
+  it('normalizes the global DeepSeek v4 thinking mode', () => {
+    expect(normalizeAppSettings({ agent: { deepSeekV4Thinking: 'high' } }).settings.agent.deepSeekV4Thinking).toBe('high')
+    expect(normalizeAppSettings({ agent: { deepSeekV4Thinking: 'max' } }).settings.agent.deepSeekV4Thinking).toBe('max')
+
+    const { settings, warnings } = normalizeAppSettings({ agent: { deepSeekV4Thinking: 'medium' } })
+
+    expect(settings.agent.deepSeekV4Thinking).toBe('auto')
+    expect(warnings.some((warning) => warning.includes('agent.deepSeekV4Thinking'))).toBe(true)
   })
 
   it('migrates missing or invalid basic settings to safe defaults', () => {

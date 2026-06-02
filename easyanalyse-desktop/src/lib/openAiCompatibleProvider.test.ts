@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DocumentFile } from '../types/document'
+import type { AgentBlueprintCandidate } from '../types/agent'
 import { AGENT_RESPONSE_SEMANTIC_VERSION } from './agentResponse'
 import {
   AgentProviderError,
@@ -11,7 +12,11 @@ import {
   type OpenAiCompatibleFetch,
   type ProviderBuildInput,
 } from './openAiCompatibleProvider'
+import { DEFAULT_APP_SETTINGS } from './appSettings'
+import { isRecord } from './guards'
 import { DEEPSEEK_PROVIDER_PRESET } from './providerPresets'
+import { useSettingsStore } from '../store/settingsStore'
+import { SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION } from '../types/simulation'
 
 const apiKey = ['sk', 'test', 'm5'].join('-')
 
@@ -98,6 +103,39 @@ function agentBlueprints(candidateDocument: DocumentFile) {
   }
 }
 
+function simulationBlueprintCandidate(): AgentBlueprintCandidate {
+  const base = agentBlueprints(createDocument({
+    document: { id: 'filter-lowpass-passive-rc-5000', title: 'RC low-pass filter 5 kHz' },
+  })).blueprints[0] as AgentBlueprintCandidate
+  return {
+    ...base,
+    title: 'RC low-pass filter 5 kHz',
+    simulation: {
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+      manifest: {
+        schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+        name: 'RC low-pass filter 5 kHz frequency response',
+      },
+      workerScript: 'function run(input) { return { points: [{ frequencyHz: 5000, magnitudeDb: -3 }] }; }',
+      scriptLanguage: 'javascript',
+      defaultInput: { parameters: { cutoffFrequencyHz: 5000 } },
+    },
+  }
+}
+
+function generatedFilterToolResult(candidate = simulationBlueprintCandidate()) {
+  return {
+    schemaVersion: 'agent-tool-result-v1' as const,
+    semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
+    ok: true,
+    toolName: 'generate_filter_blueprint' as const,
+    summary: 'Filter blueprint candidate generated.',
+    issueCount: 0,
+    issues: [],
+    data: { candidate },
+  }
+}
+
 function openAiChatBody(content: unknown) {
   return {
     id: 'chatcmpl-test',
@@ -128,6 +166,13 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
+function sseResponse(chunks: unknown[], status = 200): Response {
+  return new Response(`${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join('')}data: [DONE]\n\n`, {
+    status,
+    headers: { 'Content-Type': 'text/event-stream' },
+  })
+}
+
 function expectNoApiKey(value: unknown): void {
   expect(JSON.stringify(value)).not.toContain(apiKey)
 }
@@ -140,6 +185,7 @@ function expectSafeProviderError(error: unknown): asserts error is AgentProvider
 
 describe('openAiCompatibleProvider', () => {
   beforeEach(() => {
+    useSettingsStore.setState({ settings: DEFAULT_APP_SETTINGS, loaded: true, warnings: [] })
     vi.unstubAllGlobals()
     vi.stubGlobal(
       'fetch',
@@ -273,6 +319,43 @@ describe('openAiCompatibleProvider', () => {
     })
   })
 
+  it('coerces lenient blueprint summary fields before strict AgentResponse parsing', async () => {
+    const document = createDocument()
+    const payload = {
+      ...agentBlueprints(document),
+      summary: { text: 'Generated RC candidate' },
+      blueprints: [
+        {
+          title: { text: 'RC low-pass filter' },
+          summary: { text: '5 kHz first-order low-pass' },
+          rationale: { text: 'Uses one resistor and one capacitor.' },
+          tradeoffs: [{ text: 'Load-sensitive output node.' }],
+          notes: { text: 'Preview candidate.' },
+          document,
+        },
+      ],
+    }
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => jsonResponse(openAiChatBody(payload)))
+
+    const result = await runOpenAiCompatibleProvider({
+      ...baseBuildInput(),
+      fetch: fetchMock,
+      currentDocument: createDocument(),
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(result.response.kind).toBe('blueprints')
+    if (result.response.kind !== 'blueprints') throw new Error('expected blueprints')
+    expect(result.response.summary).toBe('Generated RC candidate')
+    expect(result.response.blueprints[0]).toMatchObject({
+      title: 'RC low-pass filter',
+      summary: '5 kHz first-order low-pass',
+      rationale: 'Uses one resistor and one capacitor.',
+      tradeoffs: ['Load-sensitive output node.'],
+      notes: ['Preview candidate.'],
+    })
+  })
+
   it('runs OpenAI-compatible tool calling loop and returns tool results to the model', async () => {
     const toolCallBody = {
       id: 'chatcmpl-tool',
@@ -329,6 +412,750 @@ describe('openAiCompatibleProvider', () => {
     expect(result.response.kind).toBe('blueprints')
     expect(result.toolTrace).toEqual([expect.objectContaining({ toolName: 'check_blueprint_candidate' })])
     expectNoApiKey(result.toolTrace)
+  })
+
+  it('streams final JSON content after the tool handshake and parses the accumulated response', async () => {
+    const toolCallBody = {
+      id: 'chatcmpl-stream-tool',
+      choices: [
+        {
+          index: 0,
+          finish_reason: 'tool_calls',
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'call-begin-blueprint',
+                type: 'function',
+                function: { name: 'begin_blueprint_generation', arguments: '{"title":"Streamed blueprint"}' },
+              },
+            ],
+          },
+        },
+      ],
+    }
+    const finalJson = `BEGIN_EASYANALYSE_BLUEPRINT_JSON\n${JSON.stringify(agentMessage('Streamed final JSON'))}`
+    let callCount = 0
+    const progress = vi.fn()
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => {
+      if (callCount++ === 0) return jsonResponse(toolCallBody)
+      return sseResponse([
+        { id: 'chatcmpl-stream-final', model: 'gpt-test', choices: [{ index: 0, delta: { role: 'assistant' } }] },
+        { id: 'chatcmpl-stream-final', model: 'gpt-test', choices: [{ index: 0, delta: { content: finalJson.slice(0, 24) } }] },
+        { id: 'chatcmpl-stream-final', model: 'gpt-test', choices: [{ index: 0, delta: { content: finalJson.slice(24) }, finish_reason: 'stop' }] },
+      ])
+    })
+
+    const result = await runOpenAiCompatibleProvider({
+      ...baseBuildInput(),
+      fetch: fetchMock,
+      currentDocument: createDocument(),
+      progress,
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body).stream).toBe(false)
+    const streamedBody = JSON.parse(fetchMock.mock.calls[1]![1].body)
+    expect(streamedBody.stream).toBe(true)
+    expect(streamedBody.response_format).toBeUndefined()
+    expect(result.response).toMatchObject({ kind: 'message', markdown: 'Streamed final JSON' })
+    expect(progress.mock.calls.some((call) => JSON.stringify(call[0]).includes('streamedContent'))).toBe(true)
+  })
+
+  it('allows a deterministic filter tool round after begin_blueprint_generation for filter prompts', async () => {
+    const generatedCandidate = simulationBlueprintCandidate()
+    const beginToolBody = {
+      id: 'chatcmpl-begin-filter',
+      choices: [
+        {
+          index: 0,
+          finish_reason: 'tool_calls',
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'call-begin-blueprint',
+                type: 'function',
+                function: { name: 'begin_blueprint_generation', arguments: '{"title":"RC low-pass"}' },
+              },
+            ],
+          },
+        },
+      ],
+    }
+    const filterToolBody = {
+      id: 'chatcmpl-filter-tool',
+      choices: [
+        {
+          index: 0,
+          finish_reason: 'tool_calls',
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'call-generate-filter',
+                type: 'function',
+                function: { name: 'generate_filter_blueprint', arguments: '{"filterType":"lowpass","topology":"passive-rc","cutoffFrequencyHz":5000}' },
+              },
+            ],
+          },
+        },
+      ],
+    }
+    const finalBody = openAiChatBody({
+      ...agentBlueprints(generatedCandidate.document),
+      blueprints: [generatedCandidate],
+    })
+    const bodies = [beginToolBody, filterToolBody, finalBody]
+    let callCount = 0
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => jsonResponse(bodies[callCount++]))
+    const toolExecutor = vi.fn(async (toolName: string) => {
+      if (toolName === 'begin_blueprint_generation') {
+        return {
+          schemaVersion: 'agent-tool-result-v1' as const,
+          semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
+          ok: true,
+          toolName: 'begin_blueprint_generation' as const,
+          summary: 'Continue blueprint generation.',
+          issueCount: 0,
+          issues: [],
+          data: { decision: 'continue', message: 'Continue blueprint generation.' },
+        }
+      }
+      return generatedFilterToolResult(generatedCandidate)
+    })
+
+    const result = await runOpenAiCompatibleProvider({
+      ...baseBuildInput({
+        userPrompt: '请使用generate_filter_blueprint工具生成一个一阶RC低通滤波器蓝图，截止频率5kHz。',
+      }),
+      fetch: fetchMock,
+      toolExecutor,
+      currentDocument: createDocument(),
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    const firstBody = JSON.parse(fetchMock.mock.calls[0]![1].body)
+    expect(firstBody.tool_choice).toEqual({ type: 'function', function: { name: 'generate_filter_blueprint' } })
+    const secondBody = JSON.parse(fetchMock.mock.calls[1]![1].body)
+    expect(secondBody.stream).toBe(false)
+    expect(secondBody.tool_choice).toEqual({ type: 'function', function: { name: 'generate_filter_blueprint' } })
+    expect(JSON.stringify(secondBody.tools)).toContain('generate_filter_blueprint')
+    const thirdBody = JSON.parse(fetchMock.mock.calls[2]![1].body)
+    expect(thirdBody.stream).toBe(true)
+    expect(result.response.kind).toBe('blueprints')
+    expect(result.response.kind === 'blueprints' ? result.response.blueprints[0]?.simulation : null).toMatchObject({
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+    })
+    expect(toolExecutor.mock.calls.map((call) => call[0])).toEqual(['begin_blueprint_generation', 'generate_filter_blueprint'])
+  })
+
+  it('accepts stream chunks that expose full choices[0].message.content snapshots', async () => {
+    const toolCallBody = {
+      id: 'chatcmpl-stream-tool',
+      choices: [
+        {
+          index: 0,
+          finish_reason: 'tool_calls',
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'call-begin-blueprint',
+                type: 'function',
+                function: { name: 'begin_blueprint_generation', arguments: '{"title":"Streamed blueprint"}' },
+              },
+            ],
+          },
+        },
+      ],
+    }
+    const finalJson = `BEGIN_EASYANALYSE_BLUEPRINT_JSON\n${JSON.stringify(agentMessage('Streamed message snapshots'))}`
+    const firstSnapshot = finalJson.slice(0, 28)
+    let callCount = 0
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => {
+      if (callCount++ === 0) return jsonResponse(toolCallBody)
+      return new Response(
+        [
+          `  data: ${JSON.stringify({
+            id: 'chatcmpl-stream-final',
+            model: 'gpt-test',
+            choices: [{ index: 0, message: { role: 'assistant', content: firstSnapshot } }],
+          })}`,
+          '',
+          ` data: ${JSON.stringify({
+            id: 'chatcmpl-stream-final',
+            model: 'gpt-test',
+            choices: [{ index: 0, message: { role: 'assistant', content: finalJson }, finish_reason: 'stop' }],
+          })}`,
+          '',
+          ' data: [DONE]',
+          '',
+        ].join('\n'),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        },
+      )
+    })
+
+    const result = await runOpenAiCompatibleProvider({
+      ...baseBuildInput(),
+      fetch: fetchMock,
+      currentDocument: createDocument(),
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(result.response).toMatchObject({ kind: 'message', markdown: 'Streamed message snapshots' })
+  })
+
+  it('falls back to non-stream finalization when the live stream response is not parseable', async () => {
+    const toolCallBody = {
+      id: 'chatcmpl-stream-tool',
+      choices: [
+        {
+          index: 0,
+          finish_reason: 'tool_calls',
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'call-begin-blueprint',
+                type: 'function',
+                function: { name: 'begin_blueprint_generation', arguments: '{"title":"Streamed blueprint"}' },
+              },
+            ],
+          },
+        },
+      ],
+    }
+    const finalBody = openAiChatBody(agentMessage('Recovered final JSON'))
+    let callCount = 0
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => {
+      callCount += 1
+      if (callCount === 1) return jsonResponse(toolCallBody)
+      if (callCount === 2) {
+        return new Response('', {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        })
+      }
+      return jsonResponse(finalBody)
+    })
+
+    const result = await runOpenAiCompatibleProvider({
+      ...baseBuildInput(),
+      fetch: fetchMock,
+      currentDocument: createDocument(),
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(JSON.parse(fetchMock.mock.calls[1]![1].body).stream).toBe(true)
+    const retryBody = JSON.parse(fetchMock.mock.calls[2]![1].body)
+    expect(retryBody.stream).toBe(false)
+    expect(retryBody.response_format).toEqual({ type: 'json_object' })
+    expect(retryBody.messages.at(-1).content).toContain('could not be parsed')
+    expect(retryBody.messages.at(-1).content).toContain('blueprints[n].simulation')
+    expect(result.response).toMatchObject({ kind: 'message', markdown: 'Recovered final JSON' })
+  })
+
+  it('preserves generated filter simulation artifacts when the final blueprint omits them', async () => {
+    const generatedCandidate = simulationBlueprintCandidate()
+    const toolCallBody = {
+      id: 'chatcmpl-generate-filter',
+      choices: [
+        {
+          index: 0,
+          finish_reason: 'tool_calls',
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'call-generate-filter',
+                type: 'function',
+                function: { name: 'generate_filter_blueprint', arguments: '{"filterType":"lowpass","topology":"passive-rc","cutoffFrequencyHz":5000}' },
+              },
+            ],
+          },
+        },
+      ],
+    }
+    const finalCandidate = {
+      ...generatedCandidate,
+      simulation: undefined,
+    }
+    delete finalCandidate.simulation
+    const finalBody = openAiChatBody({
+      ...agentBlueprints(generatedCandidate.document),
+      blueprints: [finalCandidate],
+    })
+    let callCount = 0
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => jsonResponse(callCount++ === 0 ? toolCallBody : finalBody))
+    const toolExecutor = vi.fn(async () => generatedFilterToolResult(generatedCandidate))
+
+    const result = await runOpenAiCompatibleProvider({
+      ...baseBuildInput(),
+      fetch: fetchMock,
+      toolExecutor,
+      currentDocument: createDocument(),
+    })
+
+    expect(result.response.kind).toBe('blueprints')
+    expect(result.response.kind === 'blueprints' ? result.response.blueprints[0]?.simulation : null).toMatchObject({
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+      manifest: { name: expect.stringContaining('frequency response') },
+    })
+  })
+
+  it('adds inferred filter simulation when the provider returns a filter blueprint without using the tool', async () => {
+    const generatedCandidate = simulationBlueprintCandidate()
+    const finalCandidate = {
+      ...generatedCandidate,
+      simulation: undefined,
+    }
+    delete finalCandidate.simulation
+    const finalBody = openAiChatBody({
+      ...agentBlueprints(generatedCandidate.document),
+      blueprints: [finalCandidate],
+    })
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => jsonResponse(finalBody))
+    const toolExecutor = vi.fn(async () => generatedFilterToolResult(generatedCandidate))
+
+    const result = await runOpenAiCompatibleProvider({
+      ...baseBuildInput({
+        userPrompt: 'Please use generate_filter_blueprint to generate a first-order RC low-pass filter blueprint with cutoff frequency 5kHz and preserve blueprints[0].simulation.',
+      }),
+      fetch: fetchMock,
+      toolExecutor,
+      currentDocument: createDocument(),
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(toolExecutor).toHaveBeenCalledWith(
+      'generate_filter_blueprint',
+      expect.objectContaining({
+        filterType: 'lowpass',
+        topology: 'passive-rc',
+        cutoffFrequencyHz: 5000,
+      }),
+      expect.anything(),
+    )
+    expect(result.response.kind).toBe('blueprints')
+    expect(result.response.kind === 'blueprints' ? result.response.blueprints[0]?.simulation : null).toMatchObject({
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+      manifest: { name: expect.stringContaining('frequency response') },
+    })
+  })
+
+  it('falls back to generated filter candidates when final streamed and JSON responses have no parseable content', async () => {
+    const generatedCandidate = simulationBlueprintCandidate()
+    const toolCallBody = {
+      id: 'chatcmpl-generate-filter-fallback',
+      choices: [
+        {
+          index: 0,
+          finish_reason: 'tool_calls',
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'call-generate-filter',
+                type: 'function',
+                function: { name: 'generate_filter_blueprint', arguments: '{"filterType":"lowpass","topology":"passive-rc","cutoffFrequencyHz":5000}' },
+              },
+            ],
+          },
+        },
+      ],
+    }
+    let callCount = 0
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => {
+      callCount += 1
+      if (callCount === 1) return jsonResponse(toolCallBody)
+      if (callCount === 2) return sseResponse([])
+      return jsonResponse(null)
+    })
+    const toolExecutor = vi.fn(async () => generatedFilterToolResult(generatedCandidate))
+
+    const result = await runOpenAiCompatibleProvider({
+      ...baseBuildInput(),
+      fetch: fetchMock,
+      toolExecutor,
+      currentDocument: createDocument(),
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(result.response.kind).toBe('blueprints')
+    expect(result.metadata.responseId).toBe('easyanalyse-generated-tool-fallback')
+    expect(result.response.kind === 'blueprints' ? result.response.blueprints[0]?.simulation : null).toMatchObject({
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+    })
+    expect(result.response.kind === 'blueprints' ? result.response.blueprints[0]?.title : '').toBe(generatedCandidate.title)
+  })
+
+  it('infers and runs the filter generator when a forced filter request never returns parseable final JSON', async () => {
+    const generatedCandidate = simulationBlueprintCandidate()
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => jsonResponse(null))
+    const toolExecutor = vi.fn(async () => generatedFilterToolResult(generatedCandidate))
+
+    const result = await runOpenAiCompatibleProvider({
+      ...baseBuildInput({
+        userPrompt: '请使用generate_filter_blueprint工具生成一个一阶RC低通滤波器蓝图，截止频率5kHz。',
+      }),
+      fetch: fetchMock,
+      toolExecutor,
+      currentDocument: createDocument(),
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(toolExecutor).toHaveBeenCalledWith(
+      'generate_filter_blueprint',
+      expect.objectContaining({
+        filterType: 'lowpass',
+        topology: 'passive-rc',
+        cutoffFrequencyHz: 5000,
+      }),
+      expect.anything(),
+    )
+    expect(result.response.kind).toBe('blueprints')
+    expect(result.metadata.responseId).toBe('easyanalyse-generated-tool-fallback')
+    expect(result.response.kind === 'blueprints' ? result.response.blueprints[0]?.simulation : null).toMatchObject({
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+    })
+  })
+
+  it('infers Chinese filter tool requests when provider content is not parseable', async () => {
+    const generatedCandidate = simulationBlueprintCandidate()
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => jsonResponse(null))
+    const toolExecutor = vi.fn(async () => generatedFilterToolResult(generatedCandidate))
+
+    const result = await runOpenAiCompatibleProvider({
+      ...baseBuildInput({
+        userPrompt: '请使用generate_filter_blueprint工具生成一个一阶RC低通滤波器蓝图，截止频率5kHz，并保留工具返回的blueprints[0].simulation仿真卡。只返回一个候选。',
+      }),
+      fetch: fetchMock,
+      toolExecutor,
+      currentDocument: createDocument(),
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(toolExecutor).toHaveBeenCalledWith(
+      'generate_filter_blueprint',
+      expect.objectContaining({
+        filterType: 'lowpass',
+        topology: 'passive-rc',
+        cutoffFrequencyHz: 5000,
+      }),
+      expect.anything(),
+    )
+    expect(result.response.kind).toBe('blueprints')
+    expect(result.response.kind === 'blueprints' ? result.response.blueprints[0]?.simulation : null).toMatchObject({
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+    })
+  })
+
+  it('uses originalUserPrompt for inferred filter fallback when the provider prompt is wrapped', async () => {
+    const generatedCandidate = simulationBlueprintCandidate()
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => jsonResponse(null))
+    const toolExecutor = vi.fn(async () => generatedFilterToolResult(generatedCandidate))
+
+    const result = await runOpenAiCompatibleProvider({
+      ...baseBuildInput({
+        userPrompt: 'Return the final AgentResponse JSON now.',
+      }),
+      originalUserPrompt: '请使用generate_filter_blueprint工具生成一个一阶RC低通滤波器蓝图，截止频率5kHz，并保留仿真卡。',
+      fetch: fetchMock,
+      toolExecutor,
+      currentDocument: createDocument(),
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(toolExecutor).toHaveBeenCalledWith(
+      'generate_filter_blueprint',
+      expect.objectContaining({ cutoffFrequencyHz: 5000, topology: 'passive-rc' }),
+      expect.anything(),
+    )
+    expect(result.response.kind).toBe('blueprints')
+  })
+
+  it('preserves generated filter simulation artifacts when the tool reports recoverable diagnostics', async () => {
+    const generatedCandidate = simulationBlueprintCandidate()
+    const toolCallBody = {
+      id: 'chatcmpl-generate-filter-recoverable',
+      choices: [
+        {
+          index: 0,
+          finish_reason: 'tool_calls',
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'call-generate-filter',
+                type: 'function',
+                function: { name: 'generate_filter_blueprint', arguments: '{"filterType":"lowpass","topology":"passive-rc","cutoffFrequencyHz":5000}' },
+              },
+            ],
+          },
+        },
+      ],
+    }
+    const finalCandidate = {
+      ...generatedCandidate,
+      simulation: undefined,
+    }
+    delete finalCandidate.simulation
+    const finalBody = openAiChatBody({
+      ...agentBlueprints(generatedCandidate.document),
+      blueprints: [finalCandidate],
+    })
+    let callCount = 0
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => jsonResponse(callCount++ === 0 ? toolCallBody : finalBody))
+    const recoverableToolResult = {
+      ...generatedFilterToolResult(generatedCandidate),
+      ok: false,
+      summary: 'Filter blueprint was generated with recoverable format diagnostics.',
+      issueCount: 1,
+      issues: [
+        {
+          severity: 'warning' as const,
+          code: 'layout.device.overlap',
+          message: 'Recoverable layout diagnostic.',
+          entityId: null,
+          path: null,
+        },
+      ],
+    }
+    const toolExecutor = vi.fn(async () => recoverableToolResult)
+
+    const result = await runOpenAiCompatibleProvider({
+      ...baseBuildInput(),
+      fetch: fetchMock,
+      toolExecutor,
+      currentDocument: createDocument(),
+    })
+
+    expect(result.response.kind).toBe('blueprints')
+    expect(result.response.kind === 'blueprints' ? result.response.blueprints[0]?.simulation : null).toMatchObject({
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+    })
+  })
+
+  it('preserves generated filter simulation artifacts before create_blueprint_candidate executes', async () => {
+    const generatedCandidate = simulationBlueprintCandidate()
+    const createCandidate = {
+      ...generatedCandidate,
+      simulation: undefined,
+    }
+    delete createCandidate.simulation
+    const toolBodies = [
+      {
+        id: 'chatcmpl-generate-filter',
+        choices: [
+          {
+            index: 0,
+            finish_reason: 'tool_calls',
+            message: {
+              role: 'assistant',
+              content: null,
+              tool_calls: [
+                {
+                  id: 'call-generate-filter',
+                  type: 'function',
+                  function: { name: 'generate_filter_blueprint', arguments: '{"filterType":"lowpass","topology":"passive-rc","cutoffFrequencyHz":5000}' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        id: 'chatcmpl-create-filter',
+        choices: [
+          {
+            index: 0,
+            finish_reason: 'tool_calls',
+            message: {
+              role: 'assistant',
+              content: null,
+              tool_calls: [
+                {
+                  id: 'call-create-filter',
+                  type: 'function',
+                  function: { name: 'create_blueprint_candidate', arguments: JSON.stringify({ candidate: createCandidate }) },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ]
+    let callCount = 0
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => jsonResponse(toolBodies[callCount++] ?? openAiChatBody(agentMessage('created'))))
+    const createdArgs: unknown[] = []
+    const toolExecutor = vi.fn(async (toolName: string, args: unknown) => {
+      if (toolName === 'generate_filter_blueprint') return generatedFilterToolResult(generatedCandidate)
+      createdArgs.push(args)
+      return {
+        schemaVersion: 'agent-tool-result-v1' as const,
+        semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
+        ok: true,
+        toolName: 'create_blueprint_candidate' as const,
+        summary: 'Blueprint candidate created.',
+        issueCount: 0,
+        issues: [],
+        data: { blueprintId: 'bp-filter' },
+      }
+    })
+
+    await runOpenAiCompatibleProvider({
+      ...baseBuildInput(),
+      fetch: fetchMock,
+      toolExecutor,
+      currentDocument: createDocument(),
+    })
+
+    expect(createdArgs).toHaveLength(1)
+    const createArgs = createdArgs[0]
+    expect(isRecord(createArgs) && isRecord(createArgs.candidate) ? createArgs.candidate.simulation : null).toMatchObject({
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+    })
+  })
+
+  it('uses the single generated filter candidate as a simulation fallback for rewritten create args', async () => {
+    const generatedCandidate = simulationBlueprintCandidate()
+    const rewrittenCandidate = {
+      ...generatedCandidate,
+      title: 'Model rewritten equivalent filter',
+      document: createDocument({
+        document: { id: 'rewritten-filter-doc', title: 'Model rewritten equivalent filter' },
+      }),
+      simulation: undefined,
+    }
+    delete rewrittenCandidate.simulation
+    const toolBodies = [
+      {
+        id: 'chatcmpl-generate-filter',
+        choices: [
+          {
+            index: 0,
+            finish_reason: 'tool_calls',
+            message: {
+              role: 'assistant',
+              content: null,
+              tool_calls: [
+                {
+                  id: 'call-generate-filter',
+                  type: 'function',
+                  function: { name: 'generate_filter_blueprint', arguments: '{"filterType":"lowpass","topology":"passive-rc","cutoffFrequencyHz":5000}' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        id: 'chatcmpl-create-filter',
+        choices: [
+          {
+            index: 0,
+            finish_reason: 'tool_calls',
+            message: {
+              role: 'assistant',
+              content: null,
+              tool_calls: [
+                {
+                  id: 'call-create-filter',
+                  type: 'function',
+                  function: { name: 'create_blueprint_candidate', arguments: JSON.stringify({ candidate: rewrittenCandidate }) },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ]
+    let callCount = 0
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => jsonResponse(toolBodies[callCount++] ?? openAiChatBody(agentMessage('created'))))
+    const createdArgs: unknown[] = []
+    const toolExecutor = vi.fn(async (toolName: string, args: unknown) => {
+      if (toolName === 'generate_filter_blueprint') return generatedFilterToolResult(generatedCandidate)
+      createdArgs.push(args)
+      return {
+        schemaVersion: 'agent-tool-result-v1' as const,
+        semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
+        ok: true,
+        toolName: 'create_blueprint_candidate' as const,
+        summary: 'Blueprint candidate created.',
+        issueCount: 0,
+        issues: [],
+        data: { blueprintId: 'bp-filter' },
+      }
+    })
+
+    await runOpenAiCompatibleProvider({
+      ...baseBuildInput(),
+      fetch: fetchMock,
+      toolExecutor,
+      currentDocument: createDocument(),
+    })
+
+    const createArgs = createdArgs[0]
+    expect(isRecord(createArgs) && isRecord(createArgs.candidate) ? createArgs.candidate.simulation : null).toMatchObject({
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+    })
+  })
+
+  it('returns successful generated filter tool candidates when final JSON recovery keeps returning empty responses', async () => {
+    const generatedCandidate = simulationBlueprintCandidate()
+    const toolCallBody = {
+      id: 'chatcmpl-generate-filter',
+      choices: [
+        {
+          index: 0,
+          finish_reason: 'tool_calls',
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'call-generate-filter',
+                type: 'function',
+                function: { name: 'generate_filter_blueprint', arguments: '{"filterType":"lowpass","topology":"passive-rc","cutoffFrequencyHz":5000}' },
+              },
+            ],
+          },
+        },
+      ],
+    }
+    let callCount = 0
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => {
+      callCount += 1
+      return callCount === 1 ? jsonResponse(toolCallBody) : jsonResponse(null)
+    })
+    const toolExecutor = vi.fn(async () => generatedFilterToolResult(generatedCandidate))
+
+    const result = await runOpenAiCompatibleProvider({
+      ...baseBuildInput(),
+      fetch: fetchMock,
+      toolExecutor,
+      currentDocument: createDocument(),
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(result.response.kind).toBe('blueprints')
+    expect(result.metadata.responseId).toBe('easyanalyse-generated-tool-fallback')
+    expect(result.response.kind === 'blueprints' ? result.response.blueprints[0]?.simulation : null).toMatchObject({
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+    })
+    expect(result.toolTrace).toEqual([expect.objectContaining({ toolName: 'generate_filter_blueprint', ok: true })])
   })
 
   it('accepts final blueprints after advisory check_blueprint_candidate issues', async () => {
@@ -417,7 +1244,7 @@ describe('openAiCompatibleProvider', () => {
     expect(result.toolTrace).toEqual([expect.objectContaining({ toolName: 'check_blueprint_format', issueCount: 1 })])
   })
 
-  it('rejects final blueprints only when the final local hard format check still fails', async () => {
+  it('returns final blueprints with recoverable diagnostics when final local hard format still fails', async () => {
     const hardFormatToolCallBody = {
       id: 'chatcmpl-hard-format-still-failing',
       choices: [
@@ -454,17 +1281,17 @@ describe('openAiCompatibleProvider', () => {
     let callCount = 0
     const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => jsonResponse(callCount++ === 0 ? hardFormatToolCallBody : finalBody))
 
-    await expect(
-      runOpenAiCompatibleProvider({
-        ...baseBuildInput(),
-        fetch: fetchMock,
-        currentDocument: createDocument(),
-        maxToolIterations: 1,
-      }),
-    ).rejects.toMatchObject({
-      code: 'AGENT_PROVIDER_PROTOCOL_ERROR',
-      message: expect.stringContaining('final blueprint hard format check still found'),
+    const result = await runOpenAiCompatibleProvider({
+      ...baseBuildInput(),
+      fetch: fetchMock,
+      currentDocument: createDocument(),
+      maxToolIterations: 1,
     })
+
+    expect(result.response.kind).toBe('blueprints')
+    expect(result.issues.map((issue) => issue.code)).toContain('recoverable.format.schema_version')
+    expect(result.response.kind === 'blueprints' ? result.response.blueprints[0]?.toolIssues?.[0]?.code : null)
+      .toBe('recoverable.format.schema_version')
   })
 
   it('lets the model revise and check again after tool issues before final blueprints', async () => {
@@ -644,6 +1471,7 @@ describe('openAiCompatibleProvider', () => {
     expect(retryBody.tools).toBeUndefined()
     expect(retryBody.response_format).toEqual({ type: 'json_object' })
     expect(retryBody.messages.at(-1).content).toContain('only contained reasoning_content')
+    expect(retryBody.messages.at(-1).content).toContain('blueprints[n].simulation')
     expect(JSON.stringify(retryBody.messages)).not.toContain('I checked the circuit and need to emit the final AgentResponse JSON.')
     expect(result.response.kind).toBe('blueprints')
   })
@@ -735,6 +1563,63 @@ describe('openAiCompatibleProvider', () => {
     expect(retryBody.reasoning_effort).toBeUndefined()
     expect(JSON.stringify(retryBody.messages)).not.toContain('Long DeepSeek reasoning consumed the previous response budget.')
     expect(result.response.kind).toBe('blueprints')
+  })
+
+  it('emits configured DeepSeek v4 max thinking without invalid sampling controls', () => {
+    const request = buildOpenAiCompatiblePayload({
+      ...baseBuildInput(),
+      provider: DEEPSEEK_PROVIDER_PRESET,
+      model: { id: 'deepseek-v4-pro' },
+      generation: { deepSeekV4Thinking: 'max', temperature: 0.7, topP: 0.6, maxTokens: 8192 },
+    })
+    const body = JSON.parse(request.body)
+
+    expect(body).toMatchObject({
+      model: 'deepseek-v4-pro',
+      max_tokens: 8192,
+      thinking: { type: 'enabled' },
+      reasoning_effort: 'max',
+      response_format: { type: 'json_object' },
+    })
+    expect(body.temperature).toBeUndefined()
+    expect(body.top_p).toBeUndefined()
+  })
+
+  it('uses the app setting as the DeepSeek v4 thinking default', () => {
+    useSettingsStore.getState().setDeepSeekV4Thinking('high', null)
+
+    const request = buildOpenAiCompatiblePayload({
+      ...baseBuildInput(),
+      provider: DEEPSEEK_PROVIDER_PRESET,
+      model: { id: 'deepseek-v4-pro' },
+      generation: undefined,
+    })
+    const body = JSON.parse(request.body)
+
+    expect(body.thinking).toEqual({ type: 'enabled' })
+    expect(body.reasoning_effort).toBe('high')
+    expect(body.temperature).toBeUndefined()
+    expect(body.top_p).toBeUndefined()
+  })
+
+  it('emits configured DeepSeek v4 disabled thinking and keeps explicit sampling controls valid', () => {
+    const request = buildOpenAiCompatiblePayload({
+      ...baseBuildInput(),
+      provider: DEEPSEEK_PROVIDER_PRESET,
+      model: { id: 'deepseek-v4-pro' },
+      generation: { deepSeekV4Thinking: 'disabled', temperature: 0.7, topP: 0.6, maxTokens: 8192 },
+    })
+    const body = JSON.parse(request.body)
+
+    expect(body).toMatchObject({
+      model: 'deepseek-v4-pro',
+      max_tokens: 8192,
+      thinking: { type: 'disabled' },
+      temperature: 0.7,
+      top_p: 0.6,
+      response_format: { type: 'json_object' },
+    })
+    expect(body.reasoning_effort).toBeUndefined()
   })
 
   it('replays DeepSeek v4 reasoning content when continuing after tool calls', async () => {

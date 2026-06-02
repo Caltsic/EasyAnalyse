@@ -16,11 +16,17 @@ import {
   Wrench,
 } from 'lucide-react'
 import { runMockAgentProvider } from '../../lib/agentMockProvider'
+import { runAgentTool } from '../../lib/agentTools'
 import { runConfiguredAgentProvider } from '../../lib/agentProviderClient'
 import type { AgentProviderProgressEvent } from '../../lib/agentProviderClient'
+import { AGENT_RESPONSE_SCHEMA_VERSION, AGENT_RESPONSE_SEMANTIC_VERSION } from '../../lib/agentResponse'
+import { isEasyAnalyseProjectDirectory } from '../../lib/easyAnalyseProject'
 import { getErrorMessage } from '../../lib/errors'
 import { translate, type TranslationKey } from '../../lib/i18n'
+import { parseLiveBlueprintDraft, type LiveBlueprintDraftResult } from '../../lib/liveBlueprintDraft'
+import { inferGenerateFilterBlueprintArgsFromPrompt } from '../../lib/openAiCompatibleProvider'
 import { defaultSecretStore, isManagedSecretRef, type SecretStore } from '../../lib/secretStore'
+import { writeLiveBlueprintDraftPartial } from '../../lib/tauri'
 import { useAgentThreadStore } from '../../store/agentThreadStore'
 import { useBlueprintStore } from '../../store/blueprintStore'
 import { useEditorStore } from '../../store/editorStore'
@@ -34,10 +40,11 @@ import type {
 import type { AgentRepairTraceEntry, AgentToolTraceEntry } from '../../types/agentTools'
 import type { AgentThread, AgentThreadMessage } from '../../types/agentThread'
 import type { DocumentFile } from '../../types/document'
-import type { AgentProviderPublicConfig } from '../../types/settings'
+import type { AgentProviderPublicConfig, DeepSeekV4ThinkingMode } from '../../types/settings'
 
 const MAX_ACTIVITY_ENTRIES = 40
 const DEFAULT_THREAD_ID = 'agent-thread-local'
+const LIVE_DRAFT_PARTIAL_WRITE_DELAY_MS = 350
 
 interface AgentActivityEntry {
   id: string
@@ -88,11 +95,11 @@ export interface AgentPanelProps {
   onNewThread?: () => void
 }
 
-function selectedProviderFromSettings(): { provider: AgentProviderPublicConfig | null; modelId: string | null } {
+function selectedProviderFromSettings(): { provider: AgentProviderPublicConfig | null; modelId: string | null; deepSeekV4Thinking: DeepSeekV4ThinkingMode } {
   const settings = useSettingsStore.getState().settings
   const provider = settings.agent.providers.find((item) => item.id === settings.agent.selectedProviderId) ?? null
   const modelId = settings.agent.selectedModelId ?? provider?.defaultModel ?? provider?.models[0] ?? null
-  return { provider, modelId }
+  return { provider, modelId, deepSeekV4Thinking: settings.agent.deepSeekV4Thinking ?? 'auto' }
 }
 
 export function AgentPanel({
@@ -143,6 +150,9 @@ export function AgentPanel({
   const activeAssistantMessageRef = useRef<{ threadId: string; messageId: string } | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
+  const liveDraftLastGoodRef = useRef<DocumentFile | null>(null)
+  const liveDraftWriteTimerRef = useRef<number | null>(null)
+  const liveDraftWritePayloadRef = useRef<{ projectPath: string; content: string } | null>(null)
 
   const running = runState.status === 'running'
   const provider = settings.agent.providers.find((item) => item.id === settings.agent.selectedProviderId) ?? null
@@ -202,6 +212,13 @@ export function AgentPanel({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView?.({ block: 'end' })
   }, [visibleMessages.length, running, resolvedActiveThreadId])
+
+  useEffect(() => () => {
+    if (liveDraftWriteTimerRef.current !== null) {
+      window.clearTimeout(liveDraftWriteTimerRef.current)
+      liveDraftWriteTimerRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     setThreadMenuOpen(false)
@@ -302,12 +319,76 @@ export function AgentPanel({
       }
       return { ...state, elapsedMs, activity: [...state.activity, entry].slice(-MAX_ACTIVITY_ENTRIES) }
     })
+    if (typeof event.detail?.streamedContent === 'string') {
+      return
+    }
     appendRunToolMessage(runId, {
       title: formatActivityPhase(event.phase),
       content: event.message,
       meta: formatElapsed(elapsedMs),
       tone: event.phase === 'complete' ? 'success' : 'neutral',
     })
+  }
+
+  function handleProviderProgress(
+    runId: number,
+    startedAtMs: number,
+    filePathAtStart: string | null,
+    event: AgentProviderProgressEvent,
+  ) {
+    appendActivity(runId, startedAtMs, event)
+    consumeLiveBlueprintProgress(runId, filePathAtStart, event)
+  }
+
+  function consumeLiveBlueprintProgress(
+    runId: number,
+    filePathAtStart: string | null,
+    event: AgentProviderProgressEvent,
+  ) {
+    if (activeRunRef.current !== runId) return
+    const streamedContent = typeof event.detail?.streamedContent === 'string' ? event.detail.streamedContent : null
+    if (!streamedContent) return
+
+    const result = parseLiveBlueprintDraft(streamedContent, {
+      lastGood: liveDraftLastGoodRef.current,
+    })
+    if (!result.markerFound) return
+
+    const blueprintStore = useBlueprintStore.getState()
+    if (blueprintStore.liveDraft.status === 'idle') {
+      blueprintStore.startLiveBlueprintDraft()
+    }
+    liveDraftLastGoodRef.current = result.lastGood
+    blueprintStore.updateLiveBlueprintDraft(result, streamedContent)
+
+    const projectPath = resolveLiveDraftProjectPath(filePathAtStart)
+    const rawDraft = extractLiveDraftRawJson(streamedContent, result)
+    scheduleLiveDraftPartialWrite(projectPath, rawDraft)
+  }
+
+  function scheduleLiveDraftPartialWrite(projectPath: string | null, content: string) {
+    if (projectPath === null || content.trim().length === 0) return
+    liveDraftWritePayloadRef.current = { projectPath, content }
+    if (liveDraftWriteTimerRef.current !== null) return
+    liveDraftWriteTimerRef.current = window.setTimeout(() => {
+      liveDraftWriteTimerRef.current = null
+      void flushLiveDraftPartialWrite()
+    }, LIVE_DRAFT_PARTIAL_WRITE_DELAY_MS)
+  }
+
+  async function flushLiveDraftPartialWrite() {
+    if (liveDraftWriteTimerRef.current !== null) {
+      window.clearTimeout(liveDraftWriteTimerRef.current)
+      liveDraftWriteTimerRef.current = null
+    }
+    const payload = liveDraftWritePayloadRef.current
+    liveDraftWritePayloadRef.current = null
+    if (!payload) return
+    try {
+      await writeLiveBlueprintDraftPartial(payload.projectPath, payload.content)
+    } catch {
+      // Partial persistence is best-effort; live preview must not fail provider execution.
+    }
   }
 
   async function sendPrompt() {
@@ -334,6 +415,13 @@ export function AgentPanel({
     const requestId = `agent-panel-${runId}`
     const startedAtMs = Date.now()
     activityIdRef.current = 1
+    liveDraftLastGoodRef.current = null
+    liveDraftWritePayloadRef.current = null
+    if (liveDraftWriteTimerRef.current !== null) {
+      window.clearTimeout(liveDraftWriteTimerRef.current)
+      liveDraftWriteTimerRef.current = null
+    }
+    useBlueprintStore.getState().clearLiveBlueprintDraft()
 
     setPrompt('')
     touchLocalThread(threadId, trimmedPrompt)
@@ -400,8 +488,9 @@ export function AgentPanel({
         runProvider,
         runMockProvider,
         storeBlueprintCandidates: async (candidates, options) => {
+          const candidatesToStore = await preserveRequestedFilterSimulationArtifacts(candidates, trimmedPrompt, documentAtStart)
           const insertedIds = await addAgentBlueprintCandidatesToCurrentThread(
-            candidates,
+            candidatesToStore,
             {
               mainDocument: documentAtStart,
               filePath: filePathAtStart,
@@ -422,7 +511,7 @@ export function AgentPanel({
           })
           return insertedIds
         },
-        onProgress: (progressEvent) => appendActivity(runId, startedAtMs, progressEvent),
+        onProgress: (progressEvent) => handleProviderProgress(runId, startedAtMs, filePathAtStart, progressEvent),
       })
       if (activeRunRef.current !== runId) return
 
@@ -456,8 +545,13 @@ export function AgentPanel({
 
       let insertedCount = 0
       if (result.response.kind === 'blueprints') {
-        const inserted = await addAgentBlueprintCandidatesToCurrentThread(
+        const blueprintsToStore = await preserveRequestedFilterSimulationArtifacts(
           result.response.blueprints,
+          trimmedPrompt,
+          documentAtStart,
+        )
+        const inserted = await addAgentBlueprintCandidatesToCurrentThread(
+          blueprintsToStore,
           {
             mainDocument: documentAtStart,
             filePath: filePathAtStart,
@@ -473,6 +567,10 @@ export function AgentPanel({
         insertedCount = inserted.length
         if (insertedCount === 0 && result.response.blueprints.length > 0) {
           throw new Error(t('generatedButNotStored'))
+        }
+        if (insertedCount > 0) {
+          useBlueprintStore.getState().clearLiveBlueprintDraft()
+          liveDraftLastGoodRef.current = null
         }
       }
 
@@ -516,6 +614,55 @@ export function AgentPanel({
       }
     } catch (error) {
       if (activeRunRef.current !== runId) return
+      const fallback = await buildPanelFilterFallbackResponse(trimmedPrompt, documentAtStart, error)
+      if (fallback) {
+        const latestEditor = useEditorStore.getState()
+        if (latestEditor.document === documentAtStart && latestEditor.filePath === filePathAtStart) {
+          const inserted = await addAgentBlueprintCandidatesToCurrentThread(
+            fallback.response.blueprints,
+            {
+              mainDocument: documentAtStart,
+              filePath: filePathAtStart,
+              issues: [],
+            },
+            {
+              threadId,
+              toolName: 'generate_filter_blueprint',
+              summary: fallback.toolTrace[0]?.summary ?? t('finalBlueprintsStored', { count: fallback.response.blueprints.length }),
+            },
+          )
+          if (activeRunRef.current !== runId) return
+          const elapsedMs = Math.max(0, Date.now() - startedAtMs)
+          setRunState((state) => ({
+            ...state,
+            status: 'complete',
+            response: fallback.response,
+            issues: [],
+            toolTrace: fallback.toolTrace,
+            repairTrace: [],
+            insertedCount: inserted.length,
+            error: null,
+            elapsedMs,
+          }))
+          const assistantContent = formatResponseMessage(fallback.response, inserted.length, t)
+          updateActiveAssistantMessage({
+            title: assistantTitleFromResponse(fallback.response, t),
+            content: assistantContent,
+            meta: formatElapsed(elapsedMs),
+            tone: 'success',
+          })
+          if (!externalThreads) {
+            appendAgentAssistantMessage(assistantContent, { threadId })
+          }
+          appendRunToolMessage(runId, {
+            title: t('toolChecks'),
+            content: formatToolTrace(fallback.toolTrace, []),
+            meta: `${fallback.toolTrace.length} check${fallback.toolTrace.length === 1 ? '' : 's'}`,
+            tone: 'success',
+          }, true)
+          return
+        }
+      }
       const elapsedMs = Math.max(0, Date.now() - startedAtMs)
       const message = getErrorMessage(error)
       setRunState((state) => ({
@@ -539,6 +686,7 @@ export function AgentPanel({
         appendAgentAssistantMessage(message, { threadId })
       }
     } finally {
+      void flushLiveDraftPartialWrite()
       if (activeRunRef.current === runId) {
         abortControllerRef.current = null
         activeAssistantMessageRef.current = null
@@ -746,6 +894,20 @@ function formatElapsed(elapsedMs: number): string {
   return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`
 }
 
+function resolveLiveDraftProjectPath(filePath: string | null): string | null {
+  return filePath && isEasyAnalyseProjectDirectory(filePath) ? filePath : null
+}
+
+function extractLiveDraftRawJson(buffer: string, result: LiveBlueprintDraftResult): string {
+  if (result.candidate?.json) {
+    return result.candidate.json
+  }
+  if (result.partial) {
+    return buffer.slice(result.partial.startIndex)
+  }
+  return ''
+}
+
 function formatActivityPhase(phase: string): string {
   const labels: Record<string, string> = {
     'self-check': 'Self-check',
@@ -931,7 +1093,7 @@ async function runSelectedProvider(input: {
   ) => Promise<string[]>
   onProgress?: (event: AgentProviderProgressEvent) => void
 }): Promise<AgentResponseParseResult> {
-  const { provider, modelId } = selectedProviderFromSettings()
+  const { provider, modelId, deepSeekV4Thinking } = selectedProviderFromSettings()
   if (!provider) {
     input.onProgress?.({ phase: 'request', message: 'Running local mock provider.' })
     return input.runMockProvider({
@@ -963,6 +1125,7 @@ async function runSelectedProvider(input: {
     currentDocument: input.currentDocument,
     threadMessages: input.threadMessages,
     includeDocumentContext: input.includeDocumentContext,
+    generation: { deepSeekV4Thinking },
     getCurrentDocument: () => input.currentDocument,
     getBlueprintWorkspace: () => useBlueprintStore.getState().workspace,
     getSelectedBlueprintId: () => useBlueprintStore.getState().selectedBlueprintId,
@@ -973,6 +1136,60 @@ async function runSelectedProvider(input: {
         focusedDeviceId: state.focusedDeviceId,
         focusedLabelKey: state.focusedLabelKey,
         focusedNetworkLineId: state.focusedNetworkLineId,
+      }
+    },
+    beginBlueprintGeneration: async (request) => {
+      if (!request.hasCurrentCircuit) {
+        return {
+          decision: 'continue',
+          message: 'No current circuit is present; continue blueprint generation.',
+        }
+      }
+      const selectedBlueprintId = useBlueprintStore.getState().selectedBlueprintId
+      const choice = window.prompt(
+        [
+          'The canvas already has a circuit. Before generating a new blueprint, enter one option:',
+          selectedBlueprintId ? 'current: save the current canvas into the selected blueprint, then continue' : 'current: unavailable because no blueprint is selected',
+          'new: save the current canvas as a new blueprint snapshot, then continue',
+          'discard: continue without saving the current canvas',
+          'cancel: cancel this generation',
+        ].join('\n'),
+        selectedBlueprintId ? 'current' : 'new',
+      )?.trim().toLowerCase()
+      if (choice === 'current' && selectedBlueprintId) {
+        const updated = await useBlueprintStore.getState().updateBlueprintFromDocument(selectedBlueprintId, input.currentDocument, {
+          description: `Updated before Agent generated ${request.title?.trim() || 'a new blueprint'}.`,
+        })
+        await useBlueprintStore.getState().saveWorkspace().catch(() => undefined)
+        if (updated) {
+          return {
+            decision: 'saved_current',
+            message: `Current canvas was saved into selected blueprint "${updated.title}". Continue generating the new blueprint.`,
+            blueprintId: updated.id,
+          }
+        }
+      }
+      if (choice === 'save' || choice === 'new') {
+        const snapshot = await useBlueprintStore.getState().createSnapshotFromDocument(input.currentDocument, {
+          title: `Before ${request.title?.trim() || 'Agent blueprint generation'}`,
+          description: 'Snapshot created before Agent generated a new blueprint.',
+        })
+        await useBlueprintStore.getState().saveWorkspace().catch(() => undefined)
+        return {
+          decision: 'saved_as_new',
+          message: `Current canvas was saved as blueprint snapshot "${snapshot.title}". Continue generating the new blueprint.`,
+          blueprintId: snapshot.id,
+        }
+      }
+      if (choice === 'discard') {
+        return {
+          decision: 'discarded',
+          message: 'User chose not to save the current canvas. Continue generating the new blueprint.',
+        }
+      }
+      return {
+        decision: 'cancelled',
+        message: 'User cancelled blueprint generation before replacing the current canvas preview.',
       }
     },
     createBlueprintCandidate: async (candidate) => {
@@ -996,7 +1213,7 @@ async function runSelectedProvider(input: {
         return {
           ok: false,
           code: 'agent_tool.blueprint_insert_not_stored',
-          message: 'The blueprint candidate passed format checks, but EasyAnalyse did not store it because the active blueprint workspace was not compatible with the current main document or was reloaded during insertion.',
+          message: 'EasyAnalyse could not store the blueprint candidate because the active blueprint workspace was not compatible with the current main document or was reloaded during insertion. Ask the user whether to retry against the current canvas.',
         }
       }
       return { blueprintIds }
@@ -1005,6 +1222,73 @@ async function runSelectedProvider(input: {
     signal: input.signal,
     progress: input.onProgress,
   })
+}
+
+async function preserveRequestedFilterSimulationArtifacts(
+  candidates: AgentBlueprintCandidate[],
+  prompt: string,
+  currentDocument: DocumentFile,
+): Promise<AgentBlueprintCandidate[]> {
+  if (candidates.length === 0 || candidates.every((candidate) => candidate.simulation !== undefined)) return candidates
+  if (!shouldPreserveFilterSimulationForPrompt(prompt)) return candidates
+  const args = inferGenerateFilterBlueprintArgsFromPrompt(prompt)
+  if (!args) return candidates
+
+  try {
+    const toolResult = await runAgentTool('generate_filter_blueprint', args, { currentDocument })
+    const generated = (toolResult.data as { candidate?: AgentBlueprintCandidate } | undefined)?.candidate
+    if (!generated?.simulation) return candidates
+    return candidates.map((candidate) => {
+      if (candidate.simulation !== undefined) return candidate
+      if (candidates.length !== 1) return candidate
+      return {
+        ...candidate,
+        simulation: cloneJson(generated.simulation),
+      }
+    })
+  } catch {
+    return candidates
+  }
+}
+
+async function buildPanelFilterFallbackResponse(
+  prompt: string,
+  currentDocument: DocumentFile,
+  error: unknown,
+): Promise<{ response: Extract<AgentResponse, { kind: 'blueprints' }>; toolTrace: AgentToolTraceEntry[] } | null> {
+  if (!isProviderContentErrorMessage(error)) return null
+  const args = inferGenerateFilterBlueprintArgsFromPrompt(prompt)
+  if (!args) return null
+
+  const toolResult = await runAgentTool('generate_filter_blueprint', args, { currentDocument })
+  const candidate = (toolResult.data as { candidate?: AgentBlueprintCandidate } | undefined)?.candidate
+  if (!candidate) return null
+
+  const toolTrace: AgentToolTraceEntry[] = [{
+    toolName: 'generate_filter_blueprint',
+    ok: toolResult.ok,
+    summary: toolResult.summary,
+    issueCount: toolResult.issueCount,
+  }]
+  return {
+    response: {
+      schemaVersion: AGENT_RESPONSE_SCHEMA_VERSION,
+      semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
+      kind: 'blueprints',
+      summary: 'Provider response was not usable; EasyAnalyse generated a deterministic filter blueprint locally.',
+      warnings: [`Original provider error: ${getErrorMessage(error)}`],
+      blueprints: [candidate],
+    },
+    toolTrace,
+  }
+}
+
+function isProviderContentErrorMessage(error: unknown): boolean {
+  return /choices\[0\]\.message\.content|invalid AgentResponse|final AgentResponse JSON|invalid JSON/i.test(getErrorMessage(error))
+}
+
+function shouldPreserveFilterSimulationForPrompt(prompt: string): boolean {
+  return /generate_filter_blueprint|仿真|simulation|worker|frequency\s*response|频率响应|图表|预览/i.test(prompt)
 }
 
 function assistantTitleFromResponse(
@@ -1062,4 +1346,8 @@ function formatToolTrace(toolTrace: AgentToolTraceEntry[], repairTrace: AgentRep
 
 function formatParseIssues(issues: AgentResponseParseIssue[]): string {
   return issues.map((issue) => `${issue.severity}: ${issue.message}`).join('\n')
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
 }

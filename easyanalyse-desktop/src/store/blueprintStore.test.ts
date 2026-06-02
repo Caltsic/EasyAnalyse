@@ -4,6 +4,7 @@ import type { AgentBlueprintCandidate } from '../types/agent'
 import type { AgentThreadWorkspace } from '../types/agentThread'
 import type { BlueprintWorkspaceFile } from '../types/blueprint'
 import type { DocumentFile, ValidationReport } from '../types/document'
+import { SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION } from '../types/simulation'
 import { useBlueprintStore } from './blueprintStore'
 import { useEditorStore } from './editorStore'
 import { createEmptyBlueprintWorkspace } from '../lib/blueprintWorkspace'
@@ -61,6 +62,7 @@ function resetBlueprintStore() {
     loadError: null,
     saveError: null,
     validationError: null,
+    liveDraft: useBlueprintStore.getInitialState().liveDraft,
   })
 }
 
@@ -92,6 +94,29 @@ beforeEach(() => {
 })
 
 describe('blueprintStore', () => {
+  it('updates transient live draft state without dirtying the persisted workspace', () => {
+    const document = createDocument({ document: { id: 'live-doc', title: 'Live Document' } })
+
+    useBlueprintStore.getState().startLiveBlueprintDraft({ title: 'Streaming' })
+    useBlueprintStore.getState().updateLiveBlueprintDraft({
+      status: 'ready',
+      markerFound: true,
+      hasCompleteJson: true,
+      updated: true,
+      displayDocument: document,
+      lastGood: document,
+      candidate: { json: JSON.stringify(document), startIndex: 0, endIndex: 10 },
+      partial: null,
+    }, JSON.stringify(document))
+
+    const state = useBlueprintStore.getState()
+    expect(state.liveDraft.status).toBe('ready')
+    expect(state.liveDraft.displayDocument).toEqual(document)
+    expect(state.liveDraft.displayDocument).not.toBe(document)
+    expect(state.workspace).toBeNull()
+    expect(state.dirty).toBe(false)
+  })
+
   it('createSnapshotFromDocument does not mutate the source document or change the main document hash', async () => {
     const document = createDocument()
     const beforeJson = JSON.stringify(document)
@@ -111,6 +136,29 @@ describe('blueprintStore', () => {
     expect(useBlueprintStore.getState().workspace?.blueprints).toHaveLength(1)
     expect(useBlueprintStore.getState().selectedBlueprintId).toBe(snapshot.id)
     expect(useBlueprintStore.getState().dirty).toBe(true)
+  })
+
+  it('updateBlueprintFromDocument overwrites the selected blueprint without adding another record', async () => {
+    const original = createDocument()
+    const snapshot = await useBlueprintStore.getState().createSnapshotFromDocument(original, { title: 'Selected snapshot' })
+    useBlueprintStore.setState({ dirty: false })
+    const updatedDocument = structuredClone(original)
+    updatedDocument.document.title = 'Updated canvas'
+    updatedDocument.devices[0] = { ...updatedDocument.devices[0]!, name: 'R1 updated' }
+
+    const updated = await useBlueprintStore.getState().updateBlueprintFromDocument(snapshot.id, updatedDocument, {
+      description: 'Saved before agent generation',
+    })
+
+    const state = useBlueprintStore.getState()
+    expect(updated?.id).toBe(snapshot.id)
+    expect(state.workspace?.blueprints).toHaveLength(1)
+    expect(state.workspace?.blueprints[0]?.document.document.title).toBe('Updated canvas')
+    expect(state.workspace?.blueprints[0]?.document).not.toBe(updatedDocument)
+    expect(state.workspace?.blueprints[0]?.validationState).toBe('unknown')
+    expect(state.workspace?.blueprints[0]?.description).toBe('Saved before agent generation')
+    expect(state.selectedBlueprintId).toBe(snapshot.id)
+    expect(state.dirty).toBe(true)
   })
 
   it('retains both snapshots created concurrently', async () => {
@@ -224,6 +272,65 @@ describe('blueprintStore', () => {
     expect(record?.validationState).toBe('invalid')
     expect(record?.validationReport).toBe(report)
     expect(useBlueprintStore.getState().dirty).toBe(true)
+  })
+
+  it('stores agent candidate simulation artifacts in blueprint extensions', async () => {
+    const mainDocument = createDocument()
+    const candidate = createAgentCandidate(createDocument({ document: { id: 'sim-doc', title: 'Sim Candidate' } }))
+    candidate.simulation = {
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+      manifest: {
+        schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+        name: 'Step response',
+      },
+      workerScript: 'function run() { return { points: [{ t: 0, vout: 0 }, { t: 1, vout: 1 }] }; }',
+      defaultInput: { parameters: { gain: 1 } },
+    }
+
+    const records = await useBlueprintStore.getState().addAgentBlueprintCandidates([candidate], {
+      mainDocument,
+      filePath: null,
+    })
+
+    expect(records).toHaveLength(1)
+    expect(records[0]?.extensions?.simulation).toMatchObject({
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+      manifest: { name: 'Step response' },
+      defaultInput: { parameters: { gain: 1 } },
+    })
+    expect(useBlueprintStore.getState().workspace?.blueprints[0]?.extensions?.simulation?.workerScript).toContain('function run')
+  })
+
+  it('promotes simulation artifacts from candidate document extensions into blueprint extensions', async () => {
+    const mainDocument = createDocument()
+    const candidate = createAgentCandidate(createDocument({
+      document: { id: 'sim-doc-extension', title: 'Document extension simulation candidate' },
+      extensions: {
+        simulation: {
+          schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+          manifest: {
+            schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+            name: 'Frequency response',
+          },
+          script: 'function run() { return { points: [{ frequencyHz: 5000, magnitudeDb: -3 }] }; }',
+          defaultInput: { parameters: { cutoffFrequencyHz: 5000 } },
+        },
+      },
+    }))
+
+    const records = await useBlueprintStore.getState().addAgentBlueprintCandidates([candidate], {
+      mainDocument,
+      filePath: null,
+    })
+
+    expect(records[0]?.extensions?.simulation).toMatchObject({
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+      manifest: { name: 'Frequency response' },
+      workerScript: expect.stringContaining('function run'),
+    })
+    expect(useBlueprintStore.getState().workspace?.blueprints[0]?.extensions?.simulation?.defaultInput).toMatchObject({
+      parameters: { cutoffFrequencyHz: 5000 },
+    })
   })
 
   it('normalizes loaded sidecars and updates main document reference metadata', async () => {

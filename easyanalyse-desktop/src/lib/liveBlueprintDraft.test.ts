@@ -206,6 +206,27 @@ describe('liveBlueprintDraft', () => {
     expect(result.candidate).toBeNull()
   })
 
+  it('does not synthesize an invalid partial document even when required fields are complete', () => {
+    const lastGood = createDocument({ document: { id: 'last', title: 'Last good' } })
+    const invalidDocument = createDocument({ document: { id: 'invalid-partial', title: 'Invalid partial' } })
+    invalidDocument.devices[0]!.terminals[0]!.direction = 'bad' as never
+    invalidDocument.view.canvas.units = 'mm' as never
+    const partialDirectDocument = [
+      '{',
+      '"schemaVersion":"4.0.0",',
+      `"document":${JSON.stringify(invalidDocument.document)},`,
+      `"devices":${JSON.stringify(invalidDocument.devices)},`,
+      `"view":${JSON.stringify(invalidDocument.view)},`,
+      '"extensions":{',
+    ].join('')
+
+    const result = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${partialDirectDocument}`, { lastGood })
+
+    expect(result.status).toBe('partial-json')
+    expect(result.displayDocument).toBe(lastGood)
+    expect(result.candidate).toBeNull()
+  })
+
   it('ignores document-like text in strings while extracting the first nested blueprint document', () => {
     const document = createDocument({ document: { id: 'string-safe', title: 'String safe draft' } })
     const partialWrapper = [

@@ -18,10 +18,12 @@ import {
 import { runMockAgentProvider } from '../../lib/agentMockProvider'
 import { runConfiguredAgentProvider } from '../../lib/agentProviderClient'
 import type { AgentProviderProgressEvent } from '../../lib/agentProviderClient'
+import { isEasyAnalyseProjectPath } from '../../lib/easyAnalyseProject'
 import { getErrorMessage } from '../../lib/errors'
 import { translate, type TranslationKey } from '../../lib/i18n'
 import { parseLiveBlueprintDraft } from '../../lib/liveBlueprintDraft'
 import { defaultSecretStore, isManagedSecretRef, type SecretStore } from '../../lib/secretStore'
+import { writeLiveBlueprintDraftPartialCommand } from '../../lib/tauri'
 import { useAgentThreadStore } from '../../store/agentThreadStore'
 import { useBlueprintStore } from '../../store/blueprintStore'
 import { useEditorStore } from '../../store/editorStore'
@@ -83,6 +85,7 @@ export interface AgentPanelProps {
   secretStore?: Pick<SecretStore, 'readSecret'>
   runProvider?: typeof runConfiguredAgentProvider
   runMockProvider?: typeof runMockAgentProvider
+  writeLiveBlueprintDraftPartial?: (projectPath: string, raw: string) => Promise<string | null>
   threads?: AgentThreadSummary[]
   activeThreadId?: string
   onThreadChange?: (threadId: string) => void
@@ -100,6 +103,7 @@ export function AgentPanel({
   secretStore = defaultSecretStore,
   runProvider = runConfiguredAgentProvider,
   runMockProvider = runMockAgentProvider,
+  writeLiveBlueprintDraftPartial = writeLiveBlueprintDraftPartialCommand,
   threads,
   activeThreadId,
   onThreadChange,
@@ -145,6 +149,9 @@ export function AgentPanel({
   const abortControllerRef = useRef<AbortController | null>(null)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
   const liveDraftLastGoodRef = useRef<DocumentFile | null>(null)
+  const activeRunFilePathRef = useRef<string | null>(null)
+  const liveDraftPartialTimerRef = useRef<number | null>(null)
+  const liveDraftPartialPendingRef = useRef<{ runId: number; projectPath: string; raw: string } | null>(null)
 
   const running = runState.status === 'running'
   const provider = settings.agent.providers.find((item) => item.id === settings.agent.selectedProviderId) ?? null
@@ -204,6 +211,14 @@ export function AgentPanel({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView?.({ block: 'end' })
   }, [visibleMessages.length, running, resolvedActiveThreadId])
+
+  useEffect(() => () => {
+    if (liveDraftPartialTimerRef.current !== null) {
+      window.clearTimeout(liveDraftPartialTimerRef.current)
+      liveDraftPartialTimerRef.current = null
+    }
+    liveDraftPartialPendingRef.current = null
+  }, [])
 
   useEffect(() => {
     setThreadMenuOpen(false)
@@ -336,6 +351,43 @@ export function AgentPanel({
     }
     liveDraftLastGoodRef.current = result.lastGood
     blueprintStore.updateLiveBlueprintDraft(result, streamedContent)
+    scheduleLiveBlueprintPartialWrite(runId, activeRunFilePathRef.current, streamedContent)
+  }
+
+  function clearPendingLiveBlueprintPartialWrite() {
+    if (liveDraftPartialTimerRef.current !== null) {
+      window.clearTimeout(liveDraftPartialTimerRef.current)
+      liveDraftPartialTimerRef.current = null
+    }
+    liveDraftPartialPendingRef.current = null
+  }
+
+  function scheduleLiveBlueprintPartialWrite(runId: number, projectPath: string | null, raw: string) {
+    if (!projectPath || !isEasyAnalyseProjectPath(projectPath)) return
+    liveDraftPartialPendingRef.current = { runId, projectPath, raw }
+    if (liveDraftPartialTimerRef.current !== null) {
+      window.clearTimeout(liveDraftPartialTimerRef.current)
+    }
+    liveDraftPartialTimerRef.current = window.setTimeout(() => {
+      void flushLiveBlueprintPartialWrite(runId)
+    }, 250)
+  }
+
+  async function flushLiveBlueprintPartialWrite(runId: number) {
+    const pending = liveDraftPartialPendingRef.current
+    if (pending === null || pending.runId !== runId) return
+    if (liveDraftPartialTimerRef.current !== null) {
+      window.clearTimeout(liveDraftPartialTimerRef.current)
+      liveDraftPartialTimerRef.current = null
+    }
+    liveDraftPartialPendingRef.current = null
+    if (activeRunRef.current !== runId) return
+    if (useEditorStore.getState().filePath !== pending.projectPath) return
+    try {
+      await writeLiveBlueprintDraftPartial(pending.projectPath, pending.raw)
+    } catch {
+      // Partial draft persistence is recovery data; live preview must keep running if it fails.
+    }
   }
 
   async function sendPrompt() {
@@ -358,11 +410,13 @@ export function AgentPanel({
     activeAssistantMessageRef.current = { threadId, messageId: assistantMessageId }
     const documentAtStart = document
     const filePathAtStart = filePath
+    activeRunFilePathRef.current = filePathAtStart
     const threadMessagesAtStart = agentThreads.find((thread) => thread.id === threadId)?.messages ?? []
     const requestId = `agent-panel-${runId}`
     const startedAtMs = Date.now()
     activityIdRef.current = 1
     liveDraftLastGoodRef.current = null
+    clearPendingLiveBlueprintPartialWrite()
     useBlueprintStore.getState().clearLiveBlueprintDraft()
 
     setPrompt('')
@@ -505,6 +559,7 @@ export function AgentPanel({
           throw new Error(t('generatedButNotStored'))
         }
         if (insertedCount > 0) {
+          void flushLiveBlueprintPartialWrite(runId)
           useBlueprintStore.getState().clearLiveBlueprintDraft()
           liveDraftLastGoodRef.current = null
         }
@@ -576,6 +631,7 @@ export function AgentPanel({
       if (activeRunRef.current === runId) {
         abortControllerRef.current = null
         activeAssistantMessageRef.current = null
+        activeRunFilePathRef.current = null
       }
     }
   }
@@ -597,6 +653,7 @@ export function AgentPanel({
     const cancelledRunId = activeRunRef.current
     const elapsedMs = runState.startedAtMs === null ? runState.elapsedMs : Math.max(0, Date.now() - runState.startedAtMs)
     activeRunRef.current += 1
+    clearPendingLiveBlueprintPartialWrite()
     setRunState((state) => {
       activityIdRef.current += 1
       const entry: AgentActivityEntry = {
@@ -639,6 +696,7 @@ export function AgentPanel({
     })
     abortControllerRef.current = null
     activeAssistantMessageRef.current = null
+    activeRunFilePathRef.current = null
   }
 
   function changeThread(threadId: string) {

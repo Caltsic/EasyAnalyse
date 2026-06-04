@@ -352,7 +352,13 @@ pub fn validate_document(document: Value) -> Result<ValidationReport, String> {
 
 #[tauri::command]
 pub fn open_document_from_path(path: String) -> Result<OpenDocumentResult, String> {
-    let bytes = fs::read(&path).map_err(error_to_string)?;
+    let input_path = Path::new(&path);
+    let document_path = if is_easyanalyse_project_path(input_path) {
+        easyanalyse_project_document_path(input_path)?
+    } else {
+        input_path.to_path_buf()
+    };
+    let bytes = fs::read(&document_path).map_err(error_to_string)?;
     let json = decode_json_text(&bytes)?;
     let value: Value = serde_json::from_str(&json).map_err(error_to_string)?;
     let report = validate_value(value).map_err(error_to_string)?;
@@ -374,19 +380,39 @@ pub fn save_document_to_path(path: String, document: Value) -> Result<SaveDocume
     if !report.schema_valid || !report.semantic_valid {
         return Err(validation_summary(&report));
     }
-    let final_path = ensure_json_extension(Path::new(&path));
+    let input_path = Path::new(&path);
+    let is_project = is_easyanalyse_project_path(input_path);
+    let final_path = if is_project {
+        input_path.to_path_buf()
+    } else {
+        ensure_json_extension(input_path)
+    };
     let normalized = report
         .normalized_document
         .clone()
         .ok_or_else(|| validation_summary(&report))?;
     let content = serde_json::to_string_pretty(&normalized).map_err(error_to_string)?;
 
-    fs::write(&final_path, content).map_err(error_to_string)?;
+    if is_project {
+        let document_path = easyanalyse_project_document_path(&final_path)?;
+        write_text_atomically(&document_path, &content)?;
+    } else {
+        fs::write(&final_path, content).map_err(error_to_string)?;
+    }
 
     Ok(SaveDocumentResult {
         path: final_path.to_string_lossy().to_string(),
         report,
     })
+}
+
+#[tauri::command]
+pub fn write_live_blueprint_draft_partial(project_path: String, raw: String) -> Result<String, String> {
+    let project_path = Path::new(&project_path);
+    ensure_easyanalyse_project_path(project_path)?;
+    let partial_path = easyanalyse_project_live_draft_partial_path(project_path)?;
+    write_text_atomically(&partial_path, &raw)?;
+    Ok(partial_path.to_string_lossy().to_string())
 }
 
 #[tauri::command]
@@ -415,7 +441,7 @@ pub fn load_blueprint_workspace_from_path(path: String) -> Result<Option<Value>,
 pub fn save_blueprint_workspace_to_path(path: String, workspace: Value) -> Result<(), String> {
     ensure_blueprint_sidecar_path(&path)?;
     let content = serde_json::to_string_pretty(&workspace).map_err(error_to_string)?;
-    fs::write(&path, content).map_err(error_to_string)
+    write_text_atomically(Path::new(&path), &content)
 }
 
 fn decode_json_text(bytes: &[u8]) -> Result<String, String> {
@@ -471,7 +497,67 @@ fn ensure_json_extension(path: &Path) -> PathBuf {
     owned
 }
 
+fn is_easyanalyse_project_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("easyanalyse"))
+}
+
+fn ensure_easyanalyse_project_path(path: &Path) -> Result<(), String> {
+    if is_easyanalyse_project_path(path) {
+        return Ok(());
+    }
+
+    Err("EasyAnalyse project path must end with .easyanalyse".to_string())
+}
+
+fn easyanalyse_project_working_copy_dir(project_path: &Path) -> Result<PathBuf, String> {
+    ensure_easyanalyse_project_path(project_path)?;
+    Ok(project_path.join("working-copy"))
+}
+
+fn easyanalyse_project_document_path(project_path: &Path) -> Result<PathBuf, String> {
+    Ok(easyanalyse_project_working_copy_dir(project_path)?.join("document.json"))
+}
+
+fn easyanalyse_project_live_draft_partial_path(project_path: &Path) -> Result<PathBuf, String> {
+    Ok(easyanalyse_project_working_copy_dir(project_path)?.join("live-draft.raw.json.partial"))
+}
+
+fn write_text_atomically(path: &Path, content: &str) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Target file name is invalid".to_string())?;
+    let temp_path = path.with_file_name(format!(".{file_name}.tmp"));
+    fs::write(&temp_path, content).map_err(|error| error.to_string())?;
+    match fs::rename(&temp_path, path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+            fs::remove_file(path).map_err(|remove_error| remove_error.to_string())?;
+            fs::rename(&temp_path, path).map_err(|rename_error| rename_error.to_string())
+        }
+        Err(error) => {
+            let _ = fs::remove_file(&temp_path);
+            Err(error.to_string())
+        }
+    }
+}
+
 fn derive_blueprint_sidecar_path(document_path: &str) -> String {
+    let path = Path::new(document_path);
+    if is_easyanalyse_project_path(path) {
+        return path
+            .join("blueprints")
+            .join("workspace.easyanalyse-blueprints.json")
+            .to_string_lossy()
+            .to_string();
+    }
+
     let slash_index = document_path.rfind('/');
     let (directory, file_name) = match slash_index {
         Some(index) => (&document_path[..=index], &document_path[index + 1..]),
@@ -520,10 +606,12 @@ fn validation_summary(report: &ValidationReport) -> String {
 mod tests {
     use super::{
         decode_json_text, get_blueprint_sidecar_path, load_blueprint_workspace_from_path,
-        save_blueprint_workspace_to_path, secret_store_status_for_native_availability,
+        open_document_from_path, save_blueprint_workspace_to_path, save_document_to_path,
+        secret_store_status_for_native_availability, write_live_blueprint_draft_partial,
     };
     #[cfg(unix)]
     use super::write_secret_map_to_path;
+    use easyanalyse_core::default_document;
     use serde_json::json;
     use std::fs;
     use std::path::PathBuf;
@@ -553,6 +641,16 @@ mod tests {
             get_blueprint_sidecar_path("example".to_string()).expect("sidecar path should be derived"),
             "example.easyanalyse-blueprints.json"
         );
+        let project_path = unique_temp_path("example.easyanalyse");
+        assert_eq!(
+            get_blueprint_sidecar_path(project_path.to_string_lossy().to_string())
+                .expect("project sidecar path should be derived"),
+            project_path
+                .join("blueprints")
+                .join("workspace.easyanalyse-blueprints.json")
+                .to_string_lossy()
+                .to_string()
+        );
     }
 
     #[test]
@@ -578,7 +676,7 @@ mod tests {
 
     #[test]
     fn blueprint_sidecar_save_pretty_json_and_load_round_trips_without_semantic_validation() {
-        let path = unique_temp_path("workspace.easyanalyse-blueprints.json");
+        let path = unique_temp_path("workspace").join("nested").join("workspace.easyanalyse-blueprints.json");
         let workspace = json!({
             "blueprintWorkspaceVersion": "1.0.0",
             "blueprints": [{ "intentionallyInvalidBlueprint": true }]
@@ -592,7 +690,9 @@ mod tests {
             .expect("written sidecar should load")
             .expect("written sidecar should exist");
 
-        let _ = fs::remove_file(&path);
+        if let Some(root) = path.parent().and_then(|nested| nested.parent()) {
+            let _ = fs::remove_dir_all(root);
+        }
         assert!(content.contains("\n  \"blueprintWorkspaceVersion\""), "{content}");
         assert_eq!(loaded, workspace);
     }
@@ -608,6 +708,54 @@ mod tests {
 
         assert!(load_error.contains(".easyanalyse-blueprints.json"), "{load_error}");
         assert!(save_error.contains(".easyanalyse-blueprints.json"), "{save_error}");
+    }
+
+    #[test]
+    fn project_save_and_open_round_trips_working_copy_document() {
+        let project_path = unique_temp_path("roundtrip.easyanalyse");
+        let document = default_document("Project roundtrip");
+        let saved = save_document_to_path(
+            project_path.to_string_lossy().to_string(),
+            serde_json::to_value(&document).expect("document should serialize"),
+        )
+        .expect("project document should save");
+
+        let document_path = project_path.join("working-copy").join("document.json");
+        assert_eq!(saved.path, project_path.to_string_lossy().to_string());
+        assert!(document_path.exists(), "project working copy document should exist");
+
+        let opened = open_document_from_path(project_path.to_string_lossy().to_string())
+            .expect("project document should reopen");
+        let opened_document = opened.document.expect("project should contain a document");
+
+        let _ = fs::remove_dir_all(&project_path);
+        assert_eq!(opened.path.as_deref(), Some(project_path.to_string_lossy().as_ref()));
+        assert_eq!(opened_document.document.title, "Project roundtrip");
+    }
+
+    #[test]
+    fn live_blueprint_partial_writes_inside_project_working_copy_only() {
+        let project_path = unique_temp_path("live-draft.easyanalyse");
+        let raw = "BEGIN_EASYANALYSE_BLUEPRINT_JSON\n{\"schemaVersion\":\"4.0.0\"".to_string();
+
+        let partial_path = write_live_blueprint_draft_partial(
+            project_path.to_string_lossy().to_string(),
+            raw.clone(),
+        )
+        .expect("partial draft should write under a project path");
+
+        let expected = project_path.join("working-copy").join("live-draft.raw.json.partial");
+        assert_eq!(partial_path, expected.to_string_lossy().to_string());
+        assert_eq!(fs::read_to_string(&expected).expect("partial draft should be readable"), raw);
+
+        let error = write_live_blueprint_draft_partial(
+            unique_temp_path("legacy.json").to_string_lossy().to_string(),
+            "raw".to_string(),
+        )
+        .expect_err("legacy json paths must not receive live draft partials");
+
+        let _ = fs::remove_dir_all(&project_path);
+        assert!(error.contains(".easyanalyse"), "{error}");
     }
 
     #[test]

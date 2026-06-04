@@ -301,6 +301,13 @@ describe('editorStore.saveDocumentAs blueprint rebind', () => {
 
     await useEditorStore.getState().saveDocumentAs()
 
+    expect(dialogMocks.save).toHaveBeenCalledWith(expect.objectContaining({
+      defaultPath: 'Main circuit.easyanalyse',
+      filters: expect.arrayContaining([
+        expect.objectContaining({ extensions: ['easyanalyse'] }),
+        expect.objectContaining({ extensions: ['json'] }),
+      ]),
+    }))
     expect(tauriMocks.saveDocumentToPath).toHaveBeenCalledWith(savedPath, expect.any(Object))
     expect(useEditorStore.getState().filePath).toBe(savedPath)
     expect(useBlueprintStore.getState().sidecarPath).toBe('/tmp/new-main.easyanalyse-blueprints.json')

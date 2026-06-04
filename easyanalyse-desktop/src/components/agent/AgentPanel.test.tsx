@@ -399,6 +399,58 @@ describe('AgentPanel', () => {
     expect(host.textContent).not.toContain('Streaming complete blueprint draft.')
   })
 
+  it('persists streamed live drafts only when the active document is a project directory', async () => {
+    const provider = deepseekProvider()
+    const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })
+    await secretStore.saveSecret({ providerId: provider.id, value: 'test-deepseek-key' })
+    const liveDocument = createDocument('doc-live-partial-project')
+    const streamedContent = `${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(liveDocument)}`
+    const finalResponse = parseAgentResponse(JSON.stringify({
+      schemaVersion: 'agent-response-v1',
+      semanticVersion: 'easyanalyse-semantic-v4',
+      kind: 'message',
+      summary: 'Partial persisted',
+      markdown: 'The live draft is still only a preview.',
+    }))
+    const writeLiveBlueprintDraftPartial = vi.fn(async () => '/tmp/project.easyanalyse/working-copy/live-draft.raw.json.partial')
+    providerMock.runConfiguredAgentProvider.mockImplementation(async (input) => {
+      input.progress?.({
+        phase: 'response',
+        message: 'Streaming project draft.',
+        detail: { streamedContent },
+      })
+      return finalResponse
+    })
+    useSettingsStore.setState({
+      settings: {
+        basic: { locale: 'system' },
+        appearance: { theme: 'system' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+      },
+      loaded: true,
+      warnings: [],
+    })
+    useEditorStore.setState({ filePath: '/tmp/project.easyanalyse' })
+    const host = await renderPanel({ secretStore, writeLiveBlueprintDraftPartial })
+
+    await enterPromptAndSubmit(host, 'stream into a project draft')
+
+    await act(async () => {
+      await vi.waitFor(() => expect(useBlueprintStore.getState().liveDraft.status).toBe('ready'))
+      await new Promise((resolve) => window.setTimeout(resolve, 300))
+    })
+    expect(writeLiveBlueprintDraftPartial).toHaveBeenCalledWith('/tmp/project.easyanalyse', streamedContent)
+
+    writeLiveBlueprintDraftPartial.mockClear()
+    useEditorStore.setState({ filePath: '/tmp/legacy.easyanalyse.json' })
+    await enterPromptAndSubmit(host, 'stream into a legacy json draft')
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain('Partial persisted'))
+      await new Promise((resolve) => window.setTimeout(resolve, 300))
+    })
+    expect(writeLiveBlueprintDraftPartial).not.toHaveBeenCalled()
+  })
+
   it('renders live blueprint preview from real provider-runtime SSE before the final response closes', async () => {
     const { runConfiguredAgentProvider } = await vi.importActual<typeof import('../../lib/agentProviderClient')>(
       '../../lib/agentProviderClient',

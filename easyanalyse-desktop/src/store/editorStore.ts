@@ -46,6 +46,10 @@ import type {
 
 const FILE_FILTERS = [
   {
+    name: 'EASYAnalyse Project',
+    extensions: ['easyanalyse'],
+  },
+  {
     name: 'EASYAnalyse Semantic JSON',
     extensions: ['json'],
   },
@@ -609,7 +613,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
         const path = normalizeDialogPath(
           await save({
             filters: FILE_FILTERS,
-            defaultPath: dialogState.filePath ?? `${dialogState.document.document.title || 'easyanalyse'}.json`,
+            defaultPath: dialogState.filePath ?? `${dialogState.document.document.title || 'easyanalyse'}.easyanalyse`,
           }),
         )
         if (!path) {

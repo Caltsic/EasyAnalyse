@@ -119,6 +119,7 @@ beforeEach(() => {
     validationError: null,
     liveDraft: {
       status: 'idle',
+      sessionId: null,
       raw: '',
       markerFound: false,
       hasCompleteJson: false,

@@ -39,8 +39,17 @@ interface AcceptLiveDraftContext {
   description?: string
 }
 
+interface LiveDraftSessionOptions {
+  sessionId?: string | null
+}
+
+interface ClearLiveDraftOptions {
+  suppressCurrentSession?: boolean
+}
+
 export interface BlueprintLiveDraftState {
   status: 'idle' | LiveBlueprintDraftResult['status']
+  sessionId: string | null
   raw: string
   markerFound: boolean
   hasCompleteJson: boolean
@@ -59,10 +68,12 @@ export interface BlueprintState {
   saveError: string | null
   validationError: string | null
   liveDraft: BlueprintLiveDraftState
-  startLiveBlueprintDraft(): void
-  updateLiveBlueprintDraft(result: LiveBlueprintDraftResult, raw: string): void
-  clearLiveBlueprintDraft(): void
+  suppressedLiveDraftSessionId: string | null
+  startLiveBlueprintDraft(options?: LiveDraftSessionOptions): boolean
+  updateLiveBlueprintDraft(result: LiveBlueprintDraftResult, raw: string, options?: LiveDraftSessionOptions): boolean
+  clearLiveBlueprintDraft(options?: ClearLiveDraftOptions): void
   acceptLiveBlueprintDraft(context: AcceptLiveDraftContext): Promise<BlueprintRecord | null>
+  isLiveBlueprintDraftSessionSuppressed(sessionId: string | null | undefined): boolean
   setWorkspaceAgentThreads(agentThreads: AgentThreadWorkspace): void
   addAgentBlueprintCandidates(
     candidates: AgentBlueprintCandidate[],
@@ -168,6 +179,7 @@ function cloneDocumentSnapshot(document: DocumentFile): DocumentFile {
 function createIdleLiveDraft(): BlueprintLiveDraftState {
   return {
     status: 'idle',
+    sessionId: null,
     raw: '',
     markerFound: false,
     hasCompleteJson: false,
@@ -205,20 +217,38 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
   saveError: null,
   validationError: null,
   liveDraft: createIdleLiveDraft(),
+  suppressedLiveDraftSessionId: null,
 
-  startLiveBlueprintDraft: () => {
-    set({
+  startLiveBlueprintDraft: (options = {}) => {
+    const sessionId = options.sessionId ?? null
+    if (sessionId !== null && get().suppressedLiveDraftSessionId === sessionId) {
+      return false
+    }
+    set((state) => ({
+      suppressedLiveDraftSessionId: state.suppressedLiveDraftSessionId === sessionId ? null : state.suppressedLiveDraftSessionId,
       liveDraft: {
         ...createIdleLiveDraft(),
         status: 'waiting-for-json',
+        sessionId,
         markerFound: true,
         updatedAt: new Date().toISOString(),
       },
-    })
+    }))
+    return true
   },
 
-  updateLiveBlueprintDraft: (result, raw) => {
+  updateLiveBlueprintDraft: (result, raw, options = {}) => {
+    const sessionId = options.sessionId ?? null
+    let updated = false
     set((state) => {
+      if (sessionId !== null && state.suppressedLiveDraftSessionId === sessionId) {
+        return {}
+      }
+      const activeSessionId = state.liveDraft.sessionId
+      if (activeSessionId !== null && sessionId !== null && activeSessionId !== sessionId) {
+        return {}
+      }
+      const nextSessionId = sessionId ?? activeSessionId
       const displayDocument = result.displayDocument
         ? cloneDocumentSnapshot(result.displayDocument)
         : state.liveDraft.displayDocument
@@ -226,10 +256,12 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
         ? cloneDocumentSnapshot(result.lastGood)
         : state.liveDraft.lastGoodDocument
 
+      updated = true
       return {
         liveDraft: {
           ...state.liveDraft,
           status: result.status,
+          sessionId: nextSessionId,
           raw,
           markerFound: result.markerFound,
           hasCompleteJson: result.hasCompleteJson,
@@ -240,10 +272,17 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
         },
       }
     })
+    return updated
   },
 
-  clearLiveBlueprintDraft: () => {
-    set({ liveDraft: createIdleLiveDraft() })
+  clearLiveBlueprintDraft: (options = {}) => {
+    set((state) => {
+      const sessionId = state.liveDraft.sessionId
+      return {
+        liveDraft: createIdleLiveDraft(),
+        suppressedLiveDraftSessionId: options.suppressCurrentSession && sessionId !== null ? sessionId : null,
+      }
+    })
   },
 
   acceptLiveBlueprintDraft: async (context) => {
@@ -277,6 +316,7 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
         return {}
       }
 
+      const sessionId = state.liveDraft.sessionId
       const currentWorkspace = state.workspace ?? createWorkspaceForDocument(context.filePath, context.mainDocument, mainHash)
       const reboundWorkspace = withUpdatedMainDocumentRef(currentWorkspace, context.filePath, context.mainDocument, mainHash)
       accepted = record
@@ -289,10 +329,15 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
         selectedBlueprintId: record.id,
         dirty: true,
         liveDraft: createIdleLiveDraft(),
+        suppressedLiveDraftSessionId: sessionId,
       }
     })
 
     return accepted
+  },
+
+  isLiveBlueprintDraftSessionSuppressed: (sessionId) => {
+    return sessionId !== null && sessionId !== undefined && get().suppressedLiveDraftSessionId === sessionId
   },
 
   setWorkspaceAgentThreads: (agentThreads) => {

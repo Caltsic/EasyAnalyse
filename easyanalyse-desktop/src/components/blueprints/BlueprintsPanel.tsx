@@ -167,7 +167,7 @@ export function BlueprintsPanel() {
 
   const handleDiscardLiveDraft = async () => {
     await runTopAction(t('discardingLiveDraft'), async () => {
-      clearLiveBlueprintDraft()
+      clearLiveBlueprintDraft({ suppressCurrentSession: true })
       await clearProjectLiveDraftPartial()
     })
   }

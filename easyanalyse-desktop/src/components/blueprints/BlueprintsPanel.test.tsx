@@ -88,6 +88,7 @@ function resetStores(document = createDocument()) {
     validationError: null,
     liveDraft: {
       status: 'idle',
+      sessionId: null,
       raw: '',
       markerFound: false,
       hasCompleteJson: false,
@@ -191,6 +192,7 @@ describe('BlueprintsPanel', () => {
     useBlueprintStore.setState({
       liveDraft: {
         status: 'ready',
+        sessionId: null,
         raw: JSON.stringify(liveDocument),
         markerFound: true,
         hasCompleteJson: true,
@@ -218,6 +220,7 @@ describe('BlueprintsPanel', () => {
     useBlueprintStore.setState({
       liveDraft: {
         status: 'ready',
+        sessionId: null,
         raw: JSON.stringify(liveDocument),
         markerFound: true,
         hasCompleteJson: true,
@@ -252,6 +255,7 @@ describe('BlueprintsPanel', () => {
     useBlueprintStore.setState({
       liveDraft: {
         status: 'ready',
+        sessionId: 'agent-panel-discard-test',
         raw: JSON.stringify(liveDocument),
         markerFound: true,
         hasCompleteJson: true,
@@ -272,6 +276,7 @@ describe('BlueprintsPanel', () => {
 
     expect(useBlueprintStore.getState().workspace?.blueprints ?? []).toHaveLength(0)
     expect(useBlueprintStore.getState().dirty).toBe(false)
+    expect(useBlueprintStore.getState().isLiveBlueprintDraftSessionSuppressed('agent-panel-discard-test')).toBe(true)
     expect(tauriMocks.deleteLiveBlueprintDraftPartialCommand).toHaveBeenCalledWith('/tmp/project.easyanalyse')
   })
 

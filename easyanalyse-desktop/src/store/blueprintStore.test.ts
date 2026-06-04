@@ -64,6 +64,7 @@ function resetBlueprintStore() {
     validationError: null,
     liveDraft: {
       status: 'idle',
+      sessionId: null,
       raw: '',
       markerFound: false,
       hasCompleteJson: false,
@@ -169,6 +170,45 @@ describe('blueprintStore', () => {
     expect(state.liveDraft.status).toBe('idle')
     expect(state.liveDraft.displayDocument).toBeNull()
     expect(state.dirty).toBe(true)
+  })
+
+  it('suppresses further updates from an accepted live draft session', async () => {
+    const mainDocument = createDocument({ document: { id: 'main-session', title: 'Main session' } })
+    const firstLiveDocument = createDocument({ document: { id: 'live-session-1', title: 'Accepted session draft' } })
+    const laterLiveDocument = createDocument({ document: { id: 'live-session-2', title: 'Later ignored draft' } })
+    const sessionId = 'agent-panel-session-test'
+    await useBlueprintStore.getState().loadForMainDocument('/tmp/session.easyanalyse', mainDocument)
+    useBlueprintStore.getState().startLiveBlueprintDraft({ sessionId })
+    useBlueprintStore.getState().updateLiveBlueprintDraft(
+      parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(firstLiveDocument)}`),
+      `${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(firstLiveDocument)}`,
+      { sessionId },
+    )
+
+    await useBlueprintStore.getState().acceptLiveBlueprintDraft({
+      mainDocument,
+      filePath: '/tmp/session.easyanalyse',
+      title: 'Accepted session draft',
+    })
+    expect(useBlueprintStore.getState().isLiveBlueprintDraftSessionSuppressed(sessionId)).toBe(true)
+
+    const startedAgain = useBlueprintStore.getState().startLiveBlueprintDraft({ sessionId })
+    const updatedAgain = useBlueprintStore.getState().updateLiveBlueprintDraft(
+      parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(laterLiveDocument)}`),
+      `${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(laterLiveDocument)}`,
+      { sessionId },
+    )
+
+    expect(startedAgain).toBe(false)
+    expect(updatedAgain).toBe(false)
+    expect(useBlueprintStore.getState().liveDraft.status).toBe('idle')
+    expect(useBlueprintStore.getState().workspace?.blueprints).toHaveLength(1)
+    expect(useBlueprintStore.getState().workspace?.blueprints[0]?.title).toBe('Accepted session draft')
+
+    const nextSessionId = 'agent-panel-session-next'
+    const nextStarted = useBlueprintStore.getState().startLiveBlueprintDraft({ sessionId: nextSessionId })
+    expect(nextStarted).toBe(true)
+    expect(useBlueprintStore.getState().liveDraft.sessionId).toBe(nextSessionId)
   })
 
   it('clears transient live draft state when loading a main document', async () => {

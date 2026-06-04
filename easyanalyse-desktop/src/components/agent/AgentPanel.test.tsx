@@ -6,6 +6,7 @@ import { buildDefaultDocument } from '../../lib/document'
 import { parseAgentResponse } from '../../lib/agentResponse'
 import { createMockAgentResponse } from '../../lib/agentMockProvider'
 import type { MockAgentRequest } from '../../lib/agentMockProvider'
+import type { AgentProviderProgressEvent } from '../../lib/agentProviderClient'
 import type { OpenAiCompatibleFetch } from '../../lib/openAiCompatibleProvider'
 import { createEmptyBlueprintWorkspace } from '../../lib/blueprintWorkspace'
 import { createMemorySecretBackend, createSecretStore } from '../../lib/secretStore'
@@ -160,6 +161,7 @@ beforeEach(() => {
     validationError: null,
     liveDraft: {
       status: 'idle',
+      sessionId: null,
       raw: '',
       markerFound: false,
       hasCompleteJson: false,
@@ -530,6 +532,95 @@ describe('AgentPanel', () => {
     await act(async () => {
       await vi.waitFor(() => expect(host.textContent).toContain('1 blueprint candidates stored'))
     })
+  })
+
+  it('keeps an accepted live draft from being revived or duplicated by the same provider run', async () => {
+    const provider = deepseekProvider()
+    const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })
+    await secretStore.saveSecret({ providerId: provider.id, value: 'test-deepseek-key' })
+    const acceptedLiveDocument = createDocument('doc-live-accepted-during-run')
+    acceptedLiveDocument.document.title = 'Accepted during run'
+    const laterLiveDocument = createDocument('doc-live-later-ignored')
+    laterLiveDocument.document.title = 'Ignored later stream'
+    const finalDocument = createDocument('doc-live-final-ignored')
+    finalDocument.document.title = 'Ignored final candidate'
+    const pending = deferred<AgentResponseParseResult>()
+    let progress: ((event: AgentProviderProgressEvent) => void) | undefined
+    providerMock.runConfiguredAgentProvider.mockImplementation((input) => {
+      progress = input.progress
+      return pending.promise
+    })
+    useSettingsStore.setState({
+      settings: {
+        basic: { locale: 'system' },
+        appearance: { theme: 'system' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+      },
+      loaded: true,
+      warnings: [],
+    })
+    const host = await renderAgentAndBlueprints({ secretStore })
+
+    await enterPromptAndSubmit(host, 'stream and accept a live draft')
+    await act(async () => {
+      await vi.waitFor(() => expect(progress).toBeTypeOf('function'))
+      progress?.({
+        phase: 'response',
+        message: 'Streaming first live draft.',
+        detail: {
+          streamedContent: `${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(acceptedLiveDocument)}`,
+        },
+      })
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(useBlueprintStore.getState().liveDraft.displayDocument?.document.title).toBe('Accepted during run'))
+    })
+
+    await act(async () => {
+      const acceptButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+        .find((button) => button.textContent?.includes('Accept draft'))
+      expect(acceptButton).toBeInstanceOf(window.HTMLButtonElement)
+      acceptButton?.click()
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(useBlueprintStore.getState().workspace?.blueprints).toHaveLength(1))
+    })
+
+    progress?.({
+      phase: 'response',
+      message: 'Streaming a later live draft that should be ignored.',
+      detail: {
+        streamedContent: `${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(laterLiveDocument)}`,
+      },
+    })
+    expect(useBlueprintStore.getState().liveDraft.status).toBe('idle')
+    expect(useBlueprintStore.getState().workspace?.blueprints[0]?.title).toBe('Accepted during run')
+
+    const finalResult = parseAgentResponse(JSON.stringify({
+      schemaVersion: 'agent-response-v1',
+      semanticVersion: 'easyanalyse-semantic-v4',
+      kind: 'blueprints',
+      summary: 'Final candidate arrived after accept.',
+      blueprints: [{
+        title: 'Ignored final candidate',
+        summary: 'Should not be stored after accept.',
+        rationale: 'The live draft session was already handled by the user.',
+        tradeoffs: [],
+        document: finalDocument,
+        issues: [],
+      }],
+    }))
+    await act(async () => {
+      pending.resolve(finalResult)
+      await pending.promise
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain('Final blueprint skipped'))
+    })
+
+    expect(useBlueprintStore.getState().workspace?.blueprints).toHaveLength(1)
+    expect(useBlueprintStore.getState().workspace?.blueprints[0]?.title).toBe('Accepted during run')
+    expect(host.textContent).toContain('were not stored again')
   })
 
   it('shows configured provider activity while a response is still pending', async () => {

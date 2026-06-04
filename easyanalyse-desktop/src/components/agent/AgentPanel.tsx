@@ -337,6 +337,9 @@ export function AgentPanel({
 
   function consumeLiveBlueprintProgress(runId: number, event: AgentProviderProgressEvent) {
     if (activeRunRef.current !== runId) return
+    const liveDraftSessionId = liveDraftSessionIdForRun(runId)
+    const blueprintStore = useBlueprintStore.getState()
+    if (blueprintStore.isLiveBlueprintDraftSessionSuppressed(liveDraftSessionId)) return
     const streamedContent = typeof event.detail?.streamedContent === 'string' ? event.detail.streamedContent : null
     if (!streamedContent) return
 
@@ -345,12 +348,13 @@ export function AgentPanel({
     })
     if (!result.markerFound) return
 
-    const blueprintStore = useBlueprintStore.getState()
-    if (blueprintStore.liveDraft.status === 'idle') {
-      blueprintStore.startLiveBlueprintDraft()
+    if (blueprintStore.liveDraft.status === 'idle' || blueprintStore.liveDraft.sessionId !== liveDraftSessionId) {
+      const started = blueprintStore.startLiveBlueprintDraft({ sessionId: liveDraftSessionId })
+      if (!started) return
     }
     liveDraftLastGoodRef.current = result.lastGood
-    blueprintStore.updateLiveBlueprintDraft(result, streamedContent)
+    const updated = blueprintStore.updateLiveBlueprintDraft(result, streamedContent, { sessionId: liveDraftSessionId })
+    if (!updated) return
     scheduleLiveBlueprintPartialWrite(runId, activeRunFilePathRef.current, streamedContent)
   }
 
@@ -484,6 +488,9 @@ export function AgentPanel({
         runProvider,
         runMockProvider,
         storeBlueprintCandidates: async (candidates, options) => {
+          if (useBlueprintStore.getState().isLiveBlueprintDraftSessionSuppressed(requestId)) {
+            return []
+          }
           const insertedIds = await addAgentBlueprintCandidatesToCurrentThread(
             candidates,
             {
@@ -539,29 +546,41 @@ export function AgentPanel({
       }
 
       let insertedCount = 0
+      let finalBlueprintStorageSkipped = false
       if (result.response.kind === 'blueprints') {
-        const inserted = await addAgentBlueprintCandidatesToCurrentThread(
-          result.response.blueprints,
-          {
-            mainDocument: documentAtStart,
-            filePath: filePathAtStart,
-            issues: result.issues,
-          },
-          {
-            threadId,
-            toolName: 'final_blueprints',
-            summary: t('finalBlueprintsStored', { count: result.response.blueprints.length }),
-          },
-        )
-        if (activeRunRef.current !== runId) return
-        insertedCount = inserted.length
-        if (insertedCount === 0 && result.response.blueprints.length > 0) {
-          throw new Error(t('generatedButNotStored'))
-        }
-        if (insertedCount > 0) {
-          void flushLiveBlueprintPartialWrite(runId)
-          useBlueprintStore.getState().clearLiveBlueprintDraft()
+        if (useBlueprintStore.getState().isLiveBlueprintDraftSessionSuppressed(requestId)) {
+          finalBlueprintStorageSkipped = true
+          clearPendingLiveBlueprintPartialWrite()
           liveDraftLastGoodRef.current = null
+          appendRunToolMessage(runId, {
+            title: t('liveDraftFinalStorageSkippedTitle'),
+            content: t('liveDraftFinalStorageSkipped'),
+            tone: 'warning',
+          }, true)
+        } else {
+          const inserted = await addAgentBlueprintCandidatesToCurrentThread(
+            result.response.blueprints,
+            {
+              mainDocument: documentAtStart,
+              filePath: filePathAtStart,
+              issues: result.issues,
+            },
+            {
+              threadId,
+              toolName: 'final_blueprints',
+              summary: t('finalBlueprintsStored', { count: result.response.blueprints.length }),
+            },
+          )
+          if (activeRunRef.current !== runId) return
+          insertedCount = inserted.length
+          if (insertedCount === 0 && result.response.blueprints.length > 0) {
+            throw new Error(t('generatedButNotStored'))
+          }
+          if (insertedCount > 0) {
+            void flushLiveBlueprintPartialWrite(runId)
+            useBlueprintStore.getState().clearLiveBlueprintDraft()
+            liveDraftLastGoodRef.current = null
+          }
         }
       }
 
@@ -577,7 +596,9 @@ export function AgentPanel({
         error: null,
         elapsedMs,
       }))
-      const assistantContent = formatResponseMessage(result.response, insertedCount, t)
+      const assistantContent = finalBlueprintStorageSkipped && result.response.kind === 'blueprints'
+        ? formatSuppressedBlueprintResponseMessage(result.response, t)
+        : formatResponseMessage(result.response, insertedCount, t)
       updateActiveAssistantMessage({
         title: assistantTitleFromResponse(result.response, t),
         content: assistantContent,
@@ -829,6 +850,10 @@ export function AgentPanel({
       </form>
     </section>
   )
+}
+
+function liveDraftSessionIdForRun(runId: number): string {
+  return `agent-panel-${runId}`
 }
 
 function formatElapsed(elapsedMs: number): string {
@@ -1142,6 +1167,21 @@ function formatResponseMessage(
   }
 
   return response.message
+}
+
+function formatSuppressedBlueprintResponseMessage(
+  response: Extract<AgentResponse, { kind: 'blueprints' }>,
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string,
+): string {
+  const candidateLines = response.blueprints.map((candidate) => (
+    `- ${candidate.title}: ${candidate.issues.length} issue${candidate.issues.length === 1 ? '' : 's'}`
+  ))
+  return [
+    response.summary,
+    '',
+    t('liveDraftFinalStorageSkipped'),
+    ...candidateLines,
+  ].join('\n')
 }
 
 function formatToolTrace(toolTrace: AgentToolTraceEntry[], repairTrace: AgentRepairTraceEntry[]): string {

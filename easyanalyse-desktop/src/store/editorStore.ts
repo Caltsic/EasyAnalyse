@@ -27,9 +27,12 @@ import {
   isTauriRuntime,
   newDocumentCommand,
   openDocumentFromPath,
+  readLiveBlueprintDraftPartialCommand,
   saveDocumentToPath,
   validateDocumentCommand,
 } from '../lib/tauri'
+import { isEasyAnalyseProjectPath } from '../lib/easyAnalyseProject'
+import { parseLiveBlueprintDraft } from '../lib/liveBlueprintDraft'
 import type {
   DeviceDefinition,
   DeviceShape,
@@ -82,6 +85,7 @@ interface EditorState {
   initialize: () => Promise<void>
   newDocument: () => Promise<void>
   openDocument: () => Promise<void>
+  openProject: () => Promise<void>
   saveDocument: () => Promise<void>
   saveDocumentAs: () => Promise<void>
   revalidate: () => Promise<void>
@@ -486,6 +490,42 @@ export const useEditorStore = create<EditorState>((set, get) => {
       }),
     })
     await useBlueprintStore.getState().loadForMainDocument(filePath, normalized)
+    const restoredLiveDraft = await restoreLiveBlueprintDraftFromProject(filePath, operationToken)
+    if (restoredLiveDraft && operationToken === documentOperationToken) {
+      set({
+        statusMessage: withLocale(get().locale, 'statusLiveDraftRecovered', {
+          path: filePath,
+        }),
+      })
+    }
+  }
+
+  const restoreLiveBlueprintDraftFromProject = async (filePath: string, operationToken: number) => {
+    if (!isEasyAnalyseProjectPath(filePath)) {
+      return false
+    }
+
+    let raw: string | null = null
+    try {
+      raw = await readLiveBlueprintDraftPartialCommand(filePath)
+    } catch {
+      return false
+    }
+    if (operationToken !== documentOperationToken || !raw?.trim()) {
+      return false
+    }
+
+    const result = parseLiveBlueprintDraft(raw)
+    if (!result.markerFound) {
+      return false
+    }
+
+    const blueprintStore = useBlueprintStore.getState()
+    if (blueprintStore.liveDraft.status === 'idle') {
+      blueprintStore.startLiveBlueprintDraft()
+    }
+    useBlueprintStore.getState().updateLiveBlueprintDraft(result, raw)
+    return true
   }
 
   return {
@@ -548,6 +588,30 @@ export const useEditorStore = create<EditorState>((set, get) => {
             multiple: false,
             directory: false,
             filters: FILE_FILTERS,
+          }),
+        )
+        if (operationToken !== documentOperationToken) {
+          return
+        }
+        if (!path) {
+          set({ statusMessage: withLocale(get().locale, 'statusOpenCancelled') })
+          return
+        }
+
+        await loadDocumentFromPath(path, operationToken)
+      } catch (error) {
+        if (operationToken === documentOperationToken) {
+          set({ statusMessage: getErrorMessage(error) })
+        }
+      }
+    },
+    openProject: async () => {
+      const operationToken = ++documentOperationToken
+      try {
+        const path = normalizeDialogPath(
+          await open({
+            multiple: false,
+            directory: true,
           }),
         )
         if (operationToken !== documentOperationToken) {

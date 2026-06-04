@@ -54,6 +54,7 @@ function App() {
   const initialize = useEditorStore((state) => state.initialize)
   const newDocument = useEditorStore((state) => state.newDocument)
   const openDocument = useEditorStore((state) => state.openDocument)
+  const openProject = useEditorStore((state) => state.openProject)
   const saveDocument = useEditorStore((state) => state.saveDocument)
   const saveDocumentAs = useEditorStore((state) => state.saveDocumentAs)
   const revalidate = useEditorStore((state) => state.revalidate)
@@ -159,6 +160,7 @@ function App() {
     deleteSelection,
     newDocument,
     openDocument,
+    openProject,
     pendingDeviceShape,
     redo,
     resetViewportToOrigin,
@@ -245,6 +247,9 @@ function App() {
             <button onClick={() => void newDocument()}>{t('newDocument')}</button>
             <button className="ghost-button" onClick={() => void openDocument()}>
               {t('openFile')}
+            </button>
+            <button className="ghost-button" onClick={() => void openProject()}>
+              {t('openProject')}
             </button>
             <button className="ghost-button" onClick={() => void saveDocument()}>
               {t('save')}

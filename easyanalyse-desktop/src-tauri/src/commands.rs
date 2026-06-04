@@ -416,6 +416,18 @@ pub fn write_live_blueprint_draft_partial(project_path: String, raw: String) -> 
 }
 
 #[tauri::command]
+pub fn read_live_blueprint_draft_partial(project_path: String) -> Result<Option<String>, String> {
+    let project_path = Path::new(&project_path);
+    ensure_easyanalyse_project_path(project_path)?;
+    let partial_path = easyanalyse_project_live_draft_partial_path(project_path)?;
+    match fs::read_to_string(&partial_path) {
+        Ok(content) => Ok(Some(content)),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+#[tauri::command]
 pub fn get_blueprint_sidecar_path(document_path: String) -> Result<String, String> {
     Ok(derive_blueprint_sidecar_path(&document_path))
 }
@@ -606,8 +618,9 @@ fn validation_summary(report: &ValidationReport) -> String {
 mod tests {
     use super::{
         decode_json_text, get_blueprint_sidecar_path, load_blueprint_workspace_from_path,
-        open_document_from_path, save_blueprint_workspace_to_path, save_document_to_path,
-        secret_store_status_for_native_availability, write_live_blueprint_draft_partial,
+        open_document_from_path, read_live_blueprint_draft_partial, save_blueprint_workspace_to_path,
+        save_document_to_path, secret_store_status_for_native_availability,
+        write_live_blueprint_draft_partial,
     };
     #[cfg(unix)]
     use super::write_secret_map_to_path;
@@ -738,6 +751,12 @@ mod tests {
         let project_path = unique_temp_path("live-draft.easyanalyse");
         let raw = "BEGIN_EASYANALYSE_BLUEPRINT_JSON\n{\"schemaVersion\":\"4.0.0\"".to_string();
 
+        assert!(
+            read_live_blueprint_draft_partial(project_path.to_string_lossy().to_string())
+                .expect("missing partial should not fail")
+                .is_none()
+        );
+
         let partial_path = write_live_blueprint_draft_partial(
             project_path.to_string_lossy().to_string(),
             raw.clone(),
@@ -747,15 +766,25 @@ mod tests {
         let expected = project_path.join("working-copy").join("live-draft.raw.json.partial");
         assert_eq!(partial_path, expected.to_string_lossy().to_string());
         assert_eq!(fs::read_to_string(&expected).expect("partial draft should be readable"), raw);
+        assert_eq!(
+            read_live_blueprint_draft_partial(project_path.to_string_lossy().to_string())
+                .expect("partial draft should read"),
+            Some(raw)
+        );
 
         let error = write_live_blueprint_draft_partial(
             unique_temp_path("legacy.json").to_string_lossy().to_string(),
             "raw".to_string(),
         )
         .expect_err("legacy json paths must not receive live draft partials");
+        let read_error = read_live_blueprint_draft_partial(
+            unique_temp_path("legacy.json").to_string_lossy().to_string(),
+        )
+        .expect_err("legacy json paths must not read live draft partials");
 
         let _ = fs::remove_dir_all(&project_path);
         assert!(error.contains(".easyanalyse"), "{error}");
+        assert!(read_error.contains(".easyanalyse"), "{read_error}");
     }
 
     #[test]

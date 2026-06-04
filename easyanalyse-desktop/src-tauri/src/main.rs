@@ -23,6 +23,7 @@ fn run() {
             commands::open_document_from_path,
             commands::save_document_to_path,
             commands::write_live_blueprint_draft_partial,
+            commands::read_live_blueprint_draft_partial,
             commands::get_blueprint_sidecar_path,
             commands::load_blueprint_workspace_from_path,
             commands::save_blueprint_workspace_to_path,

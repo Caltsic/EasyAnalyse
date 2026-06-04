@@ -728,6 +728,7 @@ describe('AgentPanel', () => {
     })
     expect(useBlueprintStore.getState().liveDraft.status).toBe('idle')
     expect(writeLiveBlueprintDraftPartial).not.toHaveBeenCalled()
+    expect(host.textContent).not.toContain('Live stream finished')
 
     await act(async () => {
       Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
@@ -741,6 +742,119 @@ describe('AgentPanel', () => {
 
     expect(useBlueprintStore.getState().liveDraft.displayDocument?.document.title).toBe('Gated live draft')
     expect(writeLiveBlueprintDraftPartial).toHaveBeenCalledWith('/tmp/live-gated.easyanalyse', streamedContent)
+    expect(host.textContent).toContain('Live stream finished')
+  })
+
+  it('ignores gated streamed live drafts when the editor context changes before approval', async () => {
+    const provider = deepseekProvider()
+    const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })
+    await secretStore.saveSecret({ providerId: provider.id, value: 'test-deepseek-key' })
+    const documentWithDevice = createDocumentWithDevice('doc-live-context-source')
+    const replacementDocument = createDocumentWithDevice('doc-live-context-replacement')
+    const liveDocument = createDocument('doc-live-context-stale')
+    liveDocument.document.title = 'Stale live draft'
+    const streamedContent = `${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(liveDocument)}`
+    const finalResponse = parseAgentResponse(JSON.stringify({
+      schemaVersion: 'agent-response-v1',
+      semanticVersion: 'easyanalyse-semantic-v4',
+      kind: 'message',
+      summary: 'This result should be ignored',
+      markdown: 'The editor changed while the live gate was open.',
+    }))
+    const writeLiveBlueprintDraftPartial = vi.fn(async () => '/tmp/live-context.easyanalyse/working-copy/live-draft.raw.json.partial')
+    providerMock.runConfiguredAgentProvider.mockImplementation(async (input) => {
+      input.progress?.({
+        phase: 'response',
+        message: 'Streaming stale gated draft.',
+        detail: { streamedContent },
+      })
+      return finalResponse
+    })
+    useEditorStore.setState({ document: documentWithDevice, filePath: '/tmp/live-context.easyanalyse' })
+    useSettingsStore.setState({
+      settings: {
+        basic: { locale: 'system' },
+        appearance: { theme: 'system' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+      },
+      loaded: true,
+      warnings: [],
+    })
+    const host = await renderPanel({ secretStore, writeLiveBlueprintDraftPartial })
+
+    await enterPromptAndSubmit(host, 'stream live JSON then switch document')
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain('Save the current canvas before generating?'))
+    })
+    useEditorStore.setState({ document: replacementDocument, filePath: '/tmp/live-context-replacement.easyanalyse' })
+
+    await act(async () => {
+      Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+        .find((button) => button.textContent?.includes('Continue without saving'))
+        ?.click()
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain('ignored because the editor document or workspace changed'))
+    })
+
+    expect(useBlueprintStore.getState().liveDraft.status).toBe('idle')
+    expect(writeLiveBlueprintDraftPartial).not.toHaveBeenCalled()
+    expect(host.textContent).not.toContain('This result should be ignored')
+  })
+
+  it('cancels a pending streamed live draft gate without previewing or writing partials', async () => {
+    const provider = deepseekProvider()
+    const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })
+    await secretStore.saveSecret({ providerId: provider.id, value: 'test-deepseek-key' })
+    const documentWithDevice = createDocumentWithDevice('doc-live-cancel-source')
+    const liveDocument = createDocument('doc-live-cancelled')
+    liveDocument.document.title = 'Cancelled live draft'
+    const streamedContent = `${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(liveDocument)}`
+    const finalResponse = parseAgentResponse(JSON.stringify({
+      schemaVersion: 'agent-response-v1',
+      semanticVersion: 'easyanalyse-semantic-v4',
+      kind: 'message',
+      summary: 'This result should not complete',
+      markdown: 'The live gate was cancelled.',
+    }))
+    const writeLiveBlueprintDraftPartial = vi.fn(async () => '/tmp/live-cancel.easyanalyse/working-copy/live-draft.raw.json.partial')
+    providerMock.runConfiguredAgentProvider.mockImplementation(async (input) => {
+      input.progress?.({
+        phase: 'response',
+        message: 'Streaming cancellable gated draft.',
+        detail: { streamedContent },
+      })
+      return finalResponse
+    })
+    useEditorStore.setState({ document: documentWithDevice, filePath: '/tmp/live-cancel.easyanalyse' })
+    useSettingsStore.setState({
+      settings: {
+        basic: { locale: 'system' },
+        appearance: { theme: 'system' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+      },
+      loaded: true,
+      warnings: [],
+    })
+    const host = await renderPanel({ secretStore, writeLiveBlueprintDraftPartial })
+
+    await enterPromptAndSubmit(host, 'stream live JSON then cancel gate')
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain('Save the current canvas before generating?'))
+    })
+
+    await act(async () => {
+      Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+        .find((button) => button.textContent?.includes('Cancel generation'))
+        ?.click()
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain('Agent run cancelled'))
+    })
+
+    expect(useBlueprintStore.getState().liveDraft.status).toBe('idle')
+    expect(writeLiveBlueprintDraftPartial).not.toHaveBeenCalled()
+    expect(host.textContent).not.toContain('This result should not complete')
   })
 
   it('persists streamed live drafts only when the active document is a project directory', async () => {

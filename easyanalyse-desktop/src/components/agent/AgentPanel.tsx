@@ -171,6 +171,7 @@ export function AgentPanel({
   const activeRunFilePathRef = useRef<string | null>(null)
   const liveDraftPartialTimerRef = useRef<number | null>(null)
   const liveDraftPartialPendingRef = useRef<{ runId: number; projectPath: string; raw: string } | null>(null)
+  const liveProgressTasksByRunRef = useRef(new Map<number, Set<Promise<void>>>())
   const beginGateResolveRef = useRef<((data: BeginBlueprintGenerationData) => void) | null>(null)
   const beginGateDecisionByRunRef = useRef(new Map<number, BeginBlueprintGenerationData>())
   const beginGatePendingByRunRef = useRef(new Map<number, Promise<BeginBlueprintGenerationData>>())
@@ -371,7 +372,30 @@ export function AgentPanel({
     event: AgentProviderProgressEvent,
   ) {
     appendActivity(runId, startedAtMs, event)
-    void consumeLiveBlueprintProgress(runId, requestId, documentAtStart, filePathAtStart, event)
+    const task = consumeLiveBlueprintProgress(runId, requestId, documentAtStart, filePathAtStart, event)
+      .catch(() => undefined)
+    const existingTasks = liveProgressTasksByRunRef.current.get(runId)
+    const tasks = existingTasks ?? new Set<Promise<void>>()
+    if (!existingTasks) {
+      liveProgressTasksByRunRef.current.set(runId, tasks)
+    }
+    tasks.add(task)
+    void task.finally(() => {
+      const latestTasks = liveProgressTasksByRunRef.current.get(runId)
+      if (!latestTasks) return
+      latestTasks.delete(task)
+      if (latestTasks.size === 0) {
+        liveProgressTasksByRunRef.current.delete(runId)
+      }
+    })
+  }
+
+  async function waitForLiveBlueprintProgress(runId: number) {
+    while (true) {
+      const tasks = liveProgressTasksByRunRef.current.get(runId)
+      if (!tasks || tasks.size === 0) return
+      await Promise.all(Array.from(tasks))
+    }
   }
 
   async function consumeLiveBlueprintProgress(
@@ -396,6 +420,8 @@ export function AgentPanel({
       intent: t('beginBlueprintLiveGateIntent'),
     })
     if (!allowed || activeRunRef.current !== runId) return
+    const latestEditor = useEditorStore.getState()
+    if (latestEditor.document !== documentAtStart || latestEditor.filePath !== filePathAtStart) return
 
     const latestBlueprintStore = useBlueprintStore.getState()
     if (latestBlueprintStore.isLiveBlueprintDraftSessionSuppressed(liveDraftSessionId)) return
@@ -471,6 +497,7 @@ export function AgentPanel({
     const startedAtMs = Date.now()
     activityIdRef.current = 1
     liveDraftLastGoodRef.current = null
+    liveProgressTasksByRunRef.current.delete(runId)
     beginGateDecisionByRunRef.current.delete(runId)
     beginGatePendingByRunRef.current.delete(runId)
     beginGateResolveRef.current = null
@@ -578,6 +605,7 @@ export function AgentPanel({
         beginBlueprintGeneration: (request) => handleBeginBlueprintGeneration(runId, requestId, documentAtStart, request),
         onProgress: (progressEvent) => handleProviderProgress(runId, startedAtMs, requestId, documentAtStart, filePathAtStart, progressEvent),
       })
+      await waitForLiveBlueprintProgress(runId)
       if (activeRunRef.current !== runId) return
 
       const latestEditor = useEditorStore.getState()
@@ -695,6 +723,7 @@ export function AgentPanel({
         }, true)
       }
     } catch (error) {
+      await waitForLiveBlueprintProgress(runId)
       if (activeRunRef.current !== runId) return
       const elapsedMs = Math.max(0, Date.now() - startedAtMs)
       const message = getErrorMessage(error)
@@ -726,6 +755,7 @@ export function AgentPanel({
       }
       beginGateDecisionByRunRef.current.delete(runId)
       beginGatePendingByRunRef.current.delete(runId)
+      liveProgressTasksByRunRef.current.delete(runId)
     }
   }
 
@@ -790,6 +820,7 @@ export function AgentPanel({
     abortControllerRef.current = null
     activeAssistantMessageRef.current = null
     activeRunFilePathRef.current = null
+    liveProgressTasksByRunRef.current.delete(cancelledRunId)
     beginGateDecisionByRunRef.current.delete(cancelledRunId)
     beginGatePendingByRunRef.current.delete(cancelledRunId)
     if (beginGate?.runId === cancelledRunId) {

@@ -114,6 +114,13 @@
   color: var(--muted);
 }
 
+.blueprints-panel__preview-empty {
+  min-height: 120px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--canvas-bg);
+}
+
 .blueprints-panel__preview-canvas {
   height: 220px;
   min-height: 180px;

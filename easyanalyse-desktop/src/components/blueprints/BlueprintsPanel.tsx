@@ -106,22 +106,30 @@ export function BlueprintsPanel() {
     [blueprints, selectedBlueprintId],
   )
   const livePreviewDocument = liveDraft.displayDocument
-  const livePreviewVisible = livePreviewDocument !== null && liveDraft.status !== 'idle'
-  const previewDocument = livePreviewDocument ?? selectedBlueprint?.document ?? null
-  const previewResetKey = livePreviewVisible
+  const liveDraftActive = liveDraft.status !== 'idle'
+  const liveDiagnostics = liveDraftActive ? liveDraftDiagnosticLines(liveDraft, t) : []
+  const livePreviewPanelVisible = liveDraftActive && (livePreviewDocument !== null || liveDiagnostics.length > 0)
+  const selectedBlueprintPreviewVisible = !livePreviewPanelVisible
+    && selectedBlueprint !== null
+    && selectedBlueprint.lifecycleStatus !== 'deleted'
+  const previewDocument = livePreviewPanelVisible
+    ? livePreviewDocument
+    : selectedBlueprintPreviewVisible
+      ? selectedBlueprint.document
+      : null
+  const previewResetKey = livePreviewPanelVisible
     ? `live:${liveDraft.updatedAt ?? 'draft'}`
     : selectedBlueprint
       ? `${selectedBlueprint.id}:${selectedBlueprint.documentHash}`
       : ''
-  const previewTitle = livePreviewVisible
+  const previewTitle = livePreviewPanelVisible
     ? t('liveBlueprintPreviewTitle')
     : selectedBlueprint
       ? t('previewTitle', { title: selectedBlueprint.title })
       : ''
-  const previewDescription = livePreviewVisible
+  const previewDescription = livePreviewPanelVisible
     ? t('liveBlueprintPreviewStatus', { status: describeLiveDraftStatus(liveDraft.status, t) })
     : t('previewHint')
-  const liveDiagnostics = livePreviewVisible ? liveDraftDiagnosticLines(liveDraft, t) : []
   const applyModalOpen = pendingApplyRecord !== null
   const blueprintActionsDisabled = topActionBusy || applyModalOpen || applyBusy
 
@@ -327,14 +335,14 @@ export function BlueprintsPanel() {
           ))}
         </div>
       )}
-      {previewDocument && (livePreviewVisible || (selectedBlueprint && selectedBlueprint.lifecycleStatus !== 'deleted')) && (
+      {(livePreviewPanelVisible || selectedBlueprintPreviewVisible) && (
         <section className="blueprints-panel__preview" aria-label={t('selectedBlueprintPreview')}>
           <div className="blueprints-panel__preview-header">
             <div>
               <h3>{previewTitle}</h3>
               <p>{previewDescription}</p>
             </div>
-            {livePreviewVisible ? (
+            {livePreviewPanelVisible ? (
               <div className="blueprints-panel__preview-actions">
                 <Button
                   type="button"
@@ -365,21 +373,27 @@ export function BlueprintsPanel() {
               </ul>
             </div>
           ) : null}
-          <AppErrorBoundary
-            compact
-            resetKey={previewResetKey}
-            title={t('blueprintPreviewFailed')}
-            description={t('blueprintPreviewFailedDescription')}
-            detailsLabel={t('errorDetails')}
-            tryAgainLabel={t('tryAgain')}
-            reloadLabel={t('reload')}
-          >
-            <BlueprintPreviewCanvas
-              document={previewDocument}
-              locale={locale}
-              className="blueprints-panel__preview-canvas"
-            />
-          </AppErrorBoundary>
+          {previewDocument ? (
+            <AppErrorBoundary
+              compact
+              resetKey={previewResetKey}
+              title={t('blueprintPreviewFailed')}
+              description={t('blueprintPreviewFailedDescription')}
+              detailsLabel={t('errorDetails')}
+              tryAgainLabel={t('tryAgain')}
+              reloadLabel={t('reload')}
+            >
+              <BlueprintPreviewCanvas
+                document={previewDocument}
+                locale={locale}
+                className="blueprints-panel__preview-canvas"
+              />
+            </AppErrorBoundary>
+          ) : (
+            <EmptyState className="blueprints-panel__preview-empty" title={t('liveBlueprintNoPreviewTitle')}>
+              {t('liveBlueprintNoPreviewHint')}
+            </EmptyState>
+          )}
         </section>
       )}
       {pendingApplyRecord && (

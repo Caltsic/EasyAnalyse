@@ -281,6 +281,78 @@ describe('BlueprintsPanel', () => {
     expect(previewCanvas?.dataset.documentTitle).toBe('Format fallback draft')
   })
 
+  it('shows live diagnostics even before any draft document is displayable', async () => {
+    useBlueprintStore.setState({
+      liveDraft: {
+        status: 'invalid-json',
+        sessionId: 'agent-panel-no-preview-diagnostics-test',
+        raw: 'BEGIN_EASYANALYSE_BLUEPRINT_JSON\n{"schemaVersion":',
+        markerFound: true,
+        hasCompleteJson: false,
+        displayDocument: null,
+        lastGoodDocument: null,
+        updatedAt: '2026-06-05T00:00:00.000Z',
+        error: {
+          code: 'invalid-json',
+          message: 'Waiting for a valid document object',
+          line: 2,
+          column: 18,
+        },
+      },
+    })
+
+    const host = await renderPanel()
+
+    expect(host.textContent).toContain('Live blueprint preview')
+    expect(host.textContent).toContain('Live diagnostics')
+    expect(host.textContent).toContain('Waiting for a valid document object')
+    expect(host.textContent).toContain('No displayable blueprint yet')
+    expect(host.querySelector('[aria-label="Blueprint preview canvas"]')).toBeNull()
+    expect((firstButtonByText(host, 'Accept draft') as HTMLButtonElement).disabled).toBe(true)
+    expect((firstButtonByText(host, 'Discard draft') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('prioritizes live diagnostics over the selected blueprint preview before any draft is displayable', async () => {
+    const selectedDocument = createDocument({ document: { ...createDocument().document, id: 'selected-doc', title: 'Selected blueprint' } })
+    const selectedBlueprint = await createBlueprintRecord({
+      id: 'bp-selected-live-diagnostics',
+      title: 'Selected fallback blueprint',
+      document: selectedDocument,
+      documentHash: await hashDocument(selectedDocument),
+    })
+    useBlueprintStore.setState({
+      workspace: {
+        ...createEmptyBlueprintWorkspace(),
+        blueprints: [selectedBlueprint],
+      },
+      selectedBlueprintId: selectedBlueprint.id,
+      liveDraft: {
+        status: 'invalid-document',
+        sessionId: 'agent-panel-selected-no-preview-diagnostics-test',
+        raw: JSON.stringify({ schemaVersion: '4.0.0', document: {}, devices: [], view: {} }),
+        markerFound: true,
+        hasCompleteJson: true,
+        displayDocument: null,
+        lastGoodDocument: null,
+        updatedAt: '2026-06-05T00:00:00.000Z',
+        error: {
+          code: 'invalid-document',
+          message: 'Draft cannot be displayed yet',
+          issues: [{ path: 'document.title', code: 'required', message: 'Expected a title' }],
+        },
+      },
+    })
+
+    const host = await renderPanel()
+
+    expect(host.textContent).toContain('Live blueprint preview')
+    expect(host.textContent).toContain('Draft cannot be displayed yet')
+    expect(host.textContent).toContain('document.title: required, Expected a title')
+    expect(host.textContent).toContain('No displayable blueprint yet')
+    expect(host.textContent).not.toContain('Preview: Selected fallback blueprint')
+    expect(host.querySelector('[aria-label="Blueprint preview canvas"]')).toBeNull()
+  })
+
   it('accepts a live draft preview as a persisted blueprint and clears the project partial', async () => {
     const main = createDocument({ document: { ...createDocument().document, id: 'main-live-accept', title: 'Main live accept' } })
     const liveDocument = createDocument({ document: { ...createDocument().document, id: 'live-accept', title: 'Accepted live preview' } })

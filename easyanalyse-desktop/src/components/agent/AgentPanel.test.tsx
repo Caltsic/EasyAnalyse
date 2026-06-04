@@ -284,6 +284,20 @@ describe('AgentPanel', () => {
     await secretStore.saveSecret({ providerId: provider.id, value: 'test-deepseek-key' })
     const liveDocument = createDocument('doc-live-streamed')
     liveDocument.document.title = 'Live streamed draft'
+    const partialAgentResponseWithCompleteDocument = [
+      '{',
+      '"schemaVersion":"agent-response-v1",',
+      '"semanticVersion":"easyanalyse-semantic-v4",',
+      '"kind":"blueprints",',
+      '"summary":"Streaming wrapper",',
+      '"blueprints":[{',
+      '"title":"Live candidate",',
+      '"summary":"Candidate summary",',
+      '"rationale":"Candidate rationale",',
+      '"tradeoffs":[],',
+      `"document":${JSON.stringify(liveDocument)},`,
+      '"issues":[]',
+    ].join('')
     const finalResponse = parseAgentResponse(JSON.stringify({
       schemaVersion: 'agent-response-v1',
       semanticVersion: 'easyanalyse-semantic-v4',
@@ -303,7 +317,7 @@ describe('AgentPanel', () => {
         phase: 'response',
         message: 'Streaming complete blueprint draft.',
         detail: {
-          streamedContent: `${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(liveDocument)}`,
+          streamedContent: `${LIVE_BLUEPRINT_JSON_MARKER}\n${partialAgentResponseWithCompleteDocument}`,
         },
       })
       return finalResponse

@@ -77,6 +77,20 @@ export function parseLiveBlueprintDraft(
   }
 
   if (!extraction.candidate) {
+    const earlyDocument = extractFirstDisplayableDocumentFromPartial(buffer, extraction)
+    if (earlyDocument) {
+      return {
+        status: 'ready',
+        markerFound: true,
+        hasCompleteJson: true,
+        updated: true,
+        displayDocument: earlyDocument.document,
+        lastGood: earlyDocument.document,
+        candidate: earlyDocument.span,
+        partial: extraction.partial,
+      }
+    }
+
     const status: LiveBlueprintDraftStatus = extraction.partial ? 'partial-json' : 'waiting-for-json'
     return baseResult(status, extraction, previousLastGood)
   }
@@ -135,6 +149,169 @@ function unwrapDisplayDocumentCandidate(value: unknown): { value: unknown; path:
   }
 
   return { value, path: '$' }
+}
+
+function extractFirstDisplayableDocumentFromPartial(
+  buffer: string,
+  extraction: LiveBlueprintJsonExtraction,
+): { document: DocumentFile; span: LiveBlueprintJsonSpan } | null {
+  if (!extraction.markerFound || extraction.scanStartIndex < 0) return null
+
+  const scanText = buffer.slice(extraction.scanStartIndex)
+  const span = findFirstBlueprintDocumentSpan(scanText, extraction.scanStartIndex)
+  if (!span) return null
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(span.json)
+  } catch {
+    return null
+  }
+
+  const issues = collectDocumentFileIssues(parsed, '$.blueprints[0].document')
+  return issues.length === 0 ? { document: parsed as DocumentFile, span } : null
+}
+
+function findFirstBlueprintDocumentSpan(text: string, absoluteOffset: number): LiveBlueprintJsonSpan | null {
+  const rootStart = text.indexOf('{')
+  if (rootStart < 0) return null
+
+  const blueprintsValueStart = findDirectPropertyValueStart(text, rootStart, 'blueprints')
+  if (blueprintsValueStart === null || text[blueprintsValueStart] !== '[') return null
+
+  const firstCandidateStart = findFirstArrayObjectElementStart(text, blueprintsValueStart)
+  if (firstCandidateStart === null) return null
+
+  const documentValueStart = findDirectPropertyValueStart(text, firstCandidateStart, 'document')
+  if (documentValueStart === null || text[documentValueStart] !== '{') return null
+
+  return extractCompleteObjectSpanAt(text, documentValueStart, absoluteOffset)
+}
+
+function findDirectPropertyValueStart(
+  text: string,
+  objectStartIndex: number,
+  propertyName: string,
+): number | null {
+  if (text[objectStartIndex] !== '{') return null
+  let depth = 0
+
+  for (let index = objectStartIndex; index < text.length; index += 1) {
+    const char = text[index]
+
+    if (char === '"') {
+      const token = readJsonStringToken(text, index)
+      if (!token) return null
+      if (depth === 1 && token.value === propertyName) {
+        const cursor = skipJsonWhitespace(text, token.endIndex)
+        if (text[cursor] === ':') {
+          return skipJsonWhitespace(text, cursor + 1)
+        }
+      }
+      index = token.endIndex - 1
+      continue
+    }
+
+    if (char === '{') {
+      depth += 1
+      continue
+    }
+
+    if (char !== '}') continue
+    depth -= 1
+    if (depth === 0) return null
+  }
+
+  return null
+}
+
+function findFirstArrayObjectElementStart(text: string, arrayStartIndex: number): number | null {
+  if (text[arrayStartIndex] !== '[') return null
+  const cursor = skipJsonWhitespace(text, arrayStartIndex + 1)
+  return text[cursor] === '{' ? cursor : null
+}
+
+function readJsonStringToken(text: string, startIndex: number): { value: string; endIndex: number } | null {
+  let escaped = false
+  for (let index = startIndex + 1; index < text.length; index += 1) {
+    const char = text[index]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (char === '\\') {
+      escaped = true
+      continue
+    }
+    if (char !== '"') continue
+
+    const raw = text.slice(startIndex, index + 1)
+    try {
+      const value = JSON.parse(raw)
+      return typeof value === 'string' ? { value, endIndex: index + 1 } : null
+    } catch {
+      return null
+    }
+  }
+
+  return null
+}
+
+function skipJsonWhitespace(text: string, startIndex: number): number {
+  let index = startIndex
+  while (index < text.length && /\s/.test(text[index]!)) {
+    index += 1
+  }
+  return index
+}
+
+function extractCompleteObjectSpanAt(
+  text: string,
+  startIndex: number,
+  absoluteOffset: number,
+): LiveBlueprintJsonSpan | null {
+  let depth = 0
+  let inString = false
+  let escaped = false
+
+  for (let index = startIndex; index < text.length; index += 1) {
+    const char = text[index]
+    if (inString) {
+      if (escaped) {
+        escaped = false
+      } else if (char === '\\') {
+        escaped = true
+      } else if (char === '"') {
+        inString = false
+      }
+      continue
+    }
+
+    if (char === '"') {
+      inString = true
+      continue
+    }
+
+    if (char === '{') {
+      depth += 1
+      continue
+    }
+
+    if (char !== '}') {
+      continue
+    }
+
+    depth -= 1
+    if (depth === 0) {
+      return {
+        json: text.slice(startIndex, index + 1),
+        startIndex: absoluteOffset + startIndex,
+        endIndex: absoluteOffset + index + 1,
+      }
+    }
+  }
+
+  return null
 }
 
 export function extractLastCompleteJsonObjectAfterMarker(

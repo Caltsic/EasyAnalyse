@@ -139,6 +139,73 @@ describe('liveBlueprintDraft', () => {
     expect(result.candidate?.json).toBe(JSON.stringify(document))
   })
 
+  it('synthesizes a displayable direct document before the root object closes when required fields are complete', () => {
+    const document = createDocument({ document: { id: 'partial-direct', title: 'Partial direct draft' } })
+    const partialDirectDocument = [
+      '{',
+      '"schemaVersion":"4.0.0",',
+      `"document":${JSON.stringify(document.document)},`,
+      `"devices":${JSON.stringify(document.devices)},`,
+      `"view":${JSON.stringify(document.view)},`,
+      '"extensions":{',
+    ].join('')
+
+    const result = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${partialDirectDocument}`)
+
+    expect(result.status).toBe('partial-json')
+    expect(result.hasCompleteJson).toBe(false)
+    expect(result.partial).toMatchObject({ depth: expect.any(Number) })
+    expect(result.displayDocument?.document.id).toBe('partial-direct')
+    expect(result.displayDocument?.devices[0]?.id).toBe('r1')
+    expect(result.candidate?.json).toBe(JSON.stringify(document))
+  })
+
+  it('synthesizes a nested blueprint document before that document object closes when required fields are complete', () => {
+    const document = createDocument({ document: { id: 'partial-nested', title: 'Partial nested draft' } })
+    const partialWrapper = [
+      '{',
+      '"schemaVersion":"agent-response-v1",',
+      '"semanticVersion":"easyanalyse-semantic-v4",',
+      '"kind":"blueprints",',
+      '"blueprints":[{',
+      '"title":"Candidate",',
+      '"summary":"Candidate summary",',
+      '"rationale":"Candidate rationale",',
+      '"tradeoffs":[],',
+      '"document":{',
+      '"schemaVersion":"4.0.0",',
+      `"document":${JSON.stringify(document.document)},`,
+      `"devices":${JSON.stringify(document.devices)},`,
+      `"view":${JSON.stringify(document.view)},`,
+      '"extensions":{',
+    ].join('')
+
+    const result = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${partialWrapper}`)
+
+    expect(result.status).toBe('partial-json')
+    expect(result.hasCompleteJson).toBe(false)
+    expect(result.partial).toMatchObject({ depth: expect.any(Number) })
+    expect(result.displayDocument?.document.id).toBe('partial-nested')
+    expect(result.candidate?.json).toBe(JSON.stringify(document))
+  })
+
+  it('does not synthesize a partial document before all required fields are complete', () => {
+    const lastGood = createDocument({ document: { id: 'last', title: 'Last good' } })
+    const document = createDocument({ document: { id: 'missing-view', title: 'Missing view' } })
+    const partialDirectDocument = [
+      '{',
+      '"schemaVersion":"4.0.0",',
+      `"document":${JSON.stringify(document.document)},`,
+      `"devices":${JSON.stringify(document.devices)},`,
+    ].join('')
+
+    const result = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${partialDirectDocument}`, { lastGood })
+
+    expect(result.status).toBe('partial-json')
+    expect(result.displayDocument).toBe(lastGood)
+    expect(result.candidate).toBeNull()
+  })
+
   it('ignores document-like text in strings while extracting the first nested blueprint document', () => {
     const document = createDocument({ document: { id: 'string-safe', title: 'String safe draft' } })
     const partialWrapper = [

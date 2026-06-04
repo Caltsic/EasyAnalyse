@@ -80,9 +80,9 @@ export function parseLiveBlueprintDraft(
     const earlyDocument = extractFirstDisplayableDocumentFromPartial(buffer, extraction)
     if (earlyDocument) {
       return {
-        status: 'ready',
+        status: earlyDocument.complete ? 'ready' : 'partial-json',
         markerFound: true,
-        hasCompleteJson: true,
+        hasCompleteJson: earlyDocument.complete,
         updated: true,
         displayDocument: earlyDocument.document,
         lastGood: earlyDocument.document,
@@ -154,12 +154,12 @@ function unwrapDisplayDocumentCandidate(value: unknown): { value: unknown; path:
 function extractFirstDisplayableDocumentFromPartial(
   buffer: string,
   extraction: LiveBlueprintJsonExtraction,
-): { document: DocumentFile; span: LiveBlueprintJsonSpan } | null {
+): { document: DocumentFile; span: LiveBlueprintJsonSpan; complete: boolean } | null {
   if (!extraction.markerFound || extraction.scanStartIndex < 0) return null
 
   const scanText = buffer.slice(extraction.scanStartIndex)
   const span = findFirstBlueprintDocumentSpan(scanText, extraction.scanStartIndex)
-  if (!span) return null
+  if (!span) return extractFirstSynthesizedDocumentFromPartialObject(scanText, extraction.scanStartIndex)
 
   let parsed: unknown
   try {
@@ -169,7 +169,11 @@ function extractFirstDisplayableDocumentFromPartial(
   }
 
   const issues = collectDocumentFileIssues(parsed, '$.blueprints[0].document')
-  return issues.length === 0 ? { document: parsed as DocumentFile, span } : null
+  if (issues.length === 0) {
+    return { document: parsed as DocumentFile, span, complete: true }
+  }
+
+  return extractFirstSynthesizedDocumentFromPartialObject(scanText, extraction.scanStartIndex)
 }
 
 function findFirstBlueprintDocumentSpan(text: string, absoluteOffset: number): LiveBlueprintJsonSpan | null {
@@ -186,6 +190,87 @@ function findFirstBlueprintDocumentSpan(text: string, absoluteOffset: number): L
   if (documentValueStart === null || text[documentValueStart] !== '{') return null
 
   return extractCompleteObjectSpanAt(text, documentValueStart, absoluteOffset)
+}
+
+function extractFirstSynthesizedDocumentFromPartialObject(
+  text: string,
+  absoluteOffset: number,
+): { document: DocumentFile; span: LiveBlueprintJsonSpan; complete: boolean } | null {
+  const rootStart = text.indexOf('{')
+  if (rootStart < 0) return null
+
+  const directDocument = synthesizeDisplayDocumentFromPartialObject(text, rootStart, absoluteOffset, '$')
+  if (directDocument) return directDocument
+
+  const documentValueStart = findFirstBlueprintDocumentValueStart(text)
+  return documentValueStart === null
+    ? null
+    : synthesizeDisplayDocumentFromPartialObject(text, documentValueStart, absoluteOffset, '$.blueprints[0].document')
+}
+
+function findFirstBlueprintDocumentValueStart(text: string): number | null {
+  const rootStart = text.indexOf('{')
+  if (rootStart < 0) return null
+
+  const blueprintsValueStart = findDirectPropertyValueStart(text, rootStart, 'blueprints')
+  if (blueprintsValueStart === null || text[blueprintsValueStart] !== '[') return null
+
+  const firstCandidateStart = findFirstArrayObjectElementStart(text, blueprintsValueStart)
+  if (firstCandidateStart === null) return null
+
+  const documentValueStart = findDirectPropertyValueStart(text, firstCandidateStart, 'document')
+  return documentValueStart !== null && text[documentValueStart] === '{' ? documentValueStart : null
+}
+
+function synthesizeDisplayDocumentFromPartialObject(
+  text: string,
+  objectStartIndex: number,
+  absoluteOffset: number,
+  basePath: string,
+): { document: DocumentFile; span: LiveBlueprintJsonSpan; complete: boolean } | null {
+  if (text[objectStartIndex] !== '{') return null
+
+  const schemaVersion = extractDirectPropertyJsonValueSpan(text, objectStartIndex, 'schemaVersion', absoluteOffset)
+  const document = extractDirectPropertyJsonValueSpan(text, objectStartIndex, 'document', absoluteOffset)
+  const devices = extractDirectPropertyJsonValueSpan(text, objectStartIndex, 'devices', absoluteOffset)
+  const view = extractDirectPropertyJsonValueSpan(text, objectStartIndex, 'view', absoluteOffset)
+  if (!schemaVersion || !document || !devices || !view) return null
+
+  let synthesized: DocumentFile
+  try {
+    synthesized = {
+      schemaVersion: JSON.parse(schemaVersion.json),
+      document: JSON.parse(document.json),
+      devices: JSON.parse(devices.json),
+      view: JSON.parse(view.json),
+    } as DocumentFile
+  } catch {
+    return null
+  }
+
+  const issues = collectDocumentFileIssues(synthesized, basePath)
+  if (issues.length > 0) return null
+
+  const endIndex = Math.max(schemaVersion.endIndex, document.endIndex, devices.endIndex, view.endIndex)
+  return {
+    document: synthesized,
+    complete: false,
+    span: {
+      json: JSON.stringify(synthesized),
+      startIndex: absoluteOffset + objectStartIndex,
+      endIndex,
+    },
+  }
+}
+
+function extractDirectPropertyJsonValueSpan(
+  text: string,
+  objectStartIndex: number,
+  propertyName: string,
+  absoluteOffset: number,
+): LiveBlueprintJsonSpan | null {
+  const valueStart = findDirectPropertyValueStart(text, objectStartIndex, propertyName)
+  return valueStart === null ? null : extractCompleteJsonValueSpanAt(text, valueStart, absoluteOffset)
 }
 
 function findDirectPropertyValueStart(
@@ -270,6 +355,35 @@ function extractCompleteObjectSpanAt(
   startIndex: number,
   absoluteOffset: number,
 ): LiveBlueprintJsonSpan | null {
+  if (text[startIndex] !== '{') return null
+  return extractCompleteJsonContainerSpanAt(text, startIndex, absoluteOffset)
+}
+
+function extractCompleteJsonValueSpanAt(
+  text: string,
+  startIndex: number,
+  absoluteOffset: number,
+): LiveBlueprintJsonSpan | null {
+  const char = text[startIndex]
+  if (char === '{' || char === '[') {
+    return extractCompleteJsonContainerSpanAt(text, startIndex, absoluteOffset)
+  }
+  if (char !== '"') return null
+
+  const token = readJsonStringToken(text, startIndex)
+  if (!token) return null
+  return {
+    json: text.slice(startIndex, token.endIndex),
+    startIndex: absoluteOffset + startIndex,
+    endIndex: absoluteOffset + token.endIndex,
+  }
+}
+
+function extractCompleteJsonContainerSpanAt(
+  text: string,
+  startIndex: number,
+  absoluteOffset: number,
+): LiveBlueprintJsonSpan | null {
   let depth = 0
   let inString = false
   let escaped = false
@@ -292,12 +406,12 @@ function extractCompleteObjectSpanAt(
       continue
     }
 
-    if (char === '{') {
+    if (char === '{' || char === '[') {
       depth += 1
       continue
     }
 
-    if (char !== '}') {
+    if (char !== '}' && char !== ']') {
       continue
     }
 

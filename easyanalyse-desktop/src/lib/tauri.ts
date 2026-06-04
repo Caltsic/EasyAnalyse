@@ -57,6 +57,13 @@ export async function readLiveBlueprintDraftPartialCommand(projectPath: string) 
   return invoke<string | null>('read_live_blueprint_draft_partial', { projectPath })
 }
 
+export async function deleteLiveBlueprintDraftPartialCommand(projectPath: string) {
+  if (!isEasyAnalyseProjectPath(projectPath) || !isTauriRuntime()) {
+    return false
+  }
+  return invoke<boolean>('delete_live_blueprint_draft_partial', { projectPath })
+}
+
 export async function startMobileShare(document: DocumentFile, snapshot: MobileRenderSnapshot) {
   return invoke<MobileShareSession>('start_mobile_share', { document, snapshot })
 }

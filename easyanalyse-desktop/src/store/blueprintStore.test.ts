@@ -131,6 +131,46 @@ describe('blueprintStore', () => {
     expect(state.liveDraft.displayDocument).not.toBe(liveDocument)
   })
 
+  it('accepts a live draft as an agent blueprint for the current main document', async () => {
+    const mainDocument = createDocument({ document: { id: 'main-doc', title: 'Main document' } })
+    const liveDocument = createDocument({ document: { id: 'live-doc', title: 'Accepted live draft' } })
+    const readyRaw = `${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(liveDocument)}`
+    const ready = parseLiveBlueprintDraft(readyRaw)
+    tauriMocks.getBlueprintSidecarPathCommand.mockResolvedValue('/tmp/project.easyanalyse/blueprints/workspace.easyanalyse-blueprints.json')
+    tauriMocks.loadBlueprintWorkspaceFromPath.mockResolvedValue(null)
+    await useBlueprintStore.getState().loadForMainDocument('/tmp/project.easyanalyse', mainDocument)
+    useBlueprintStore.getState().startLiveBlueprintDraft()
+    useBlueprintStore.getState().updateLiveBlueprintDraft(ready, readyRaw)
+
+    const accepted = await useBlueprintStore.getState().acceptLiveBlueprintDraft({
+      mainDocument,
+      filePath: '/tmp/project.easyanalyse',
+      title: 'Accepted from live',
+      description: 'Accepted description',
+    })
+
+    const state = useBlueprintStore.getState()
+    const mainHash = await hashDocument(mainDocument)
+    expect(accepted).not.toBeNull()
+    expect(state.workspace?.blueprints).toHaveLength(1)
+    expect(state.workspace?.blueprints[0]).toMatchObject({
+      title: 'Accepted from live',
+      description: 'Accepted description',
+      source: 'agent',
+      baseMainDocumentHash: mainHash,
+      tags: ['agent', 'live-draft'],
+    })
+    expect(state.workspace?.mainDocument).toMatchObject({
+      documentId: 'main-doc',
+      path: '/tmp/project.easyanalyse',
+      hash: mainHash,
+    })
+    expect(state.selectedBlueprintId).toBe(accepted?.id)
+    expect(state.liveDraft.status).toBe('idle')
+    expect(state.liveDraft.displayDocument).toBeNull()
+    expect(state.dirty).toBe(true)
+  })
+
   it('clears transient live draft state when loading a main document', async () => {
     const liveDocument = createDocument({ document: { id: 'live', title: 'Live draft before load' } })
     const result = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(liveDocument)}`)

@@ -66,6 +66,14 @@
   background: var(--panel-bg);
 }
 
+.blueprints-panel__preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .blueprints-panel__preview-header h3,
 .blueprints-panel__preview-header p {
   margin: 0;
@@ -74,6 +82,12 @@
 .blueprints-panel__preview-header p {
   color: var(--muted);
   font-size: 0.88rem;
+}
+
+.blueprints-panel__preview-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .blueprints-panel__preview-canvas {

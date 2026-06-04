@@ -12,6 +12,9 @@ import type { DocumentFile } from '../../types/document'
 import { ApplyBlueprintDialog } from './ApplyBlueprintDialog'
 
 const previewCanvasMockState = vi.hoisted(() => ({ throwOnRender: false }))
+const tauriMocks = vi.hoisted(() => ({
+  deleteLiveBlueprintDraftPartialCommand: vi.fn(),
+}))
 
 vi.mock('./BlueprintPreviewCanvas', () => ({
   BlueprintPreviewCanvas: ({ document, className }: { document: DocumentFile; className?: string }) => {
@@ -22,6 +25,11 @@ vi.mock('./BlueprintPreviewCanvas', () => ({
       <div aria-label="Blueprint preview canvas" className={className} data-document-title={document.document.title} />
     )
   },
+}))
+
+vi.mock('../../lib/tauri', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/tauri')>()),
+  deleteLiveBlueprintDraftPartialCommand: tauriMocks.deleteLiveBlueprintDraftPartialCommand,
 }))
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -173,6 +181,7 @@ afterEach(() => {
 
 beforeEach(() => {
   previewCanvasMockState.throwOnRender = false
+  tauriMocks.deleteLiveBlueprintDraftPartialCommand.mockResolvedValue(false)
   resetStores()
 })
 
@@ -199,6 +208,71 @@ describe('BlueprintsPanel', () => {
     expect(previewCanvas?.dataset.documentTitle).toBe('Live streamed draft')
     expect(useBlueprintStore.getState().workspace?.blueprints ?? []).toHaveLength(0)
     expect(useBlueprintStore.getState().dirty).toBe(false)
+  })
+
+  it('accepts a live draft preview as a persisted blueprint and clears the project partial', async () => {
+    const main = createDocument({ document: { ...createDocument().document, id: 'main-live-accept', title: 'Main live accept' } })
+    const liveDocument = createDocument({ document: { ...createDocument().document, id: 'live-accept', title: 'Accepted live preview' } })
+    resetStores(main)
+    useEditorStore.setState({ filePath: '/tmp/project.easyanalyse' })
+    useBlueprintStore.setState({
+      liveDraft: {
+        status: 'ready',
+        raw: JSON.stringify(liveDocument),
+        markerFound: true,
+        hasCompleteJson: true,
+        displayDocument: liveDocument,
+        lastGoodDocument: liveDocument,
+        updatedAt: '2026-06-05T00:00:00.000Z',
+      },
+    })
+    tauriMocks.deleteLiveBlueprintDraftPartialCommand.mockResolvedValue(true)
+    const host = await renderPanel()
+
+    await act(async () => {
+      firstButtonByText(host, 'Accept draft')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(useBlueprintStore.getState().workspace?.blueprints).toHaveLength(1))
+    })
+
+    const state = useBlueprintStore.getState()
+    expect(state.liveDraft.status).toBe('idle')
+    expect(state.workspace?.blueprints[0]?.title).toBe('Accepted live preview')
+    expect(state.workspace?.blueprints[0]?.source).toBe('agent')
+    expect(state.workspace?.blueprints[0]?.tags).toContain('live-draft')
+    expect(state.selectedBlueprintId).toBe(state.workspace?.blueprints[0]?.id)
+    expect(state.dirty).toBe(true)
+    expect(tauriMocks.deleteLiveBlueprintDraftPartialCommand).toHaveBeenCalledWith('/tmp/project.easyanalyse')
+  })
+
+  it('discards a live draft preview and clears the project partial without creating a blueprint', async () => {
+    const liveDocument = createDocument({ document: { ...createDocument().document, id: 'live-discard', title: 'Discarded live preview' } })
+    useEditorStore.setState({ filePath: '/tmp/project.easyanalyse' })
+    useBlueprintStore.setState({
+      liveDraft: {
+        status: 'ready',
+        raw: JSON.stringify(liveDocument),
+        markerFound: true,
+        hasCompleteJson: true,
+        displayDocument: liveDocument,
+        lastGoodDocument: liveDocument,
+        updatedAt: '2026-06-05T00:00:00.000Z',
+      },
+    })
+    tauriMocks.deleteLiveBlueprintDraftPartialCommand.mockResolvedValue(true)
+    const host = await renderPanel()
+
+    await act(async () => {
+      firstButtonByText(host, 'Discard draft')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(useBlueprintStore.getState().liveDraft.status).toBe('idle'))
+    })
+
+    expect(useBlueprintStore.getState().workspace?.blueprints ?? []).toHaveLength(0)
+    expect(useBlueprintStore.getState().dirty).toBe(false)
+    expect(tauriMocks.deleteLiveBlueprintDraftPartialCommand).toHaveBeenCalledWith('/tmp/project.easyanalyse')
   })
 
   it('keeps the panel mounted when the selected blueprint preview fails to render', async () => {

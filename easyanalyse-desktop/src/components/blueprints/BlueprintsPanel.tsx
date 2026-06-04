@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { hashDocument } from '../../lib/documentHash'
 import { getErrorMessage } from '../../lib/errors'
 import { translate } from '../../lib/i18n'
+import { deleteLiveBlueprintDraftPartialCommand } from '../../lib/tauri'
 import { useBlueprintStore, type BlueprintLiveDraftState } from '../../store/blueprintStore'
 import { useEditorStore } from '../../store/editorStore'
 import type { BlueprintRecord } from '../../types/blueprint'
@@ -37,6 +38,8 @@ export function BlueprintsPanel() {
   const loadForMainDocument = useBlueprintStore((state) => state.loadForMainDocument)
   const saveWorkspace = useBlueprintStore((state) => state.saveWorkspace)
   const createSnapshotFromDocument = useBlueprintStore((state) => state.createSnapshotFromDocument)
+  const acceptLiveBlueprintDraft = useBlueprintStore((state) => state.acceptLiveBlueprintDraft)
+  const clearLiveBlueprintDraft = useBlueprintStore((state) => state.clearLiveBlueprintDraft)
   const validateBlueprint = useBlueprintStore((state) => state.validateBlueprint)
   const archiveBlueprint = useBlueprintStore((state) => state.archiveBlueprint)
   const deleteBlueprint = useBlueprintStore((state) => state.deleteBlueprint)
@@ -138,6 +141,34 @@ export function BlueprintsPanel() {
   const handleReload = async () => {
     await runTopAction(t('reloadingWorkspace'), async () => {
       await loadForMainDocument(filePath, document)
+    })
+  }
+
+  const clearProjectLiveDraftPartial = async () => {
+    if (filePath !== null) {
+      await deleteLiveBlueprintDraftPartialCommand(filePath)
+    }
+  }
+
+  const handleAcceptLiveDraft = async () => {
+    if (!livePreviewDocument) return
+    await runTopAction(t('acceptingLiveDraft'), async () => {
+      const accepted = await acceptLiveBlueprintDraft({
+        mainDocument: document,
+        filePath,
+        title: livePreviewDocument.document.title,
+        description: t('acceptedLiveDraftDescription'),
+      })
+      if (accepted !== null) {
+        await clearProjectLiveDraftPartial()
+      }
+    })
+  }
+
+  const handleDiscardLiveDraft = async () => {
+    await runTopAction(t('discardingLiveDraft'), async () => {
+      clearLiveBlueprintDraft()
+      await clearProjectLiveDraftPartial()
     })
   }
 
@@ -275,8 +306,30 @@ export function BlueprintsPanel() {
       {previewDocument && (livePreviewVisible || (selectedBlueprint && selectedBlueprint.lifecycleStatus !== 'deleted')) && (
         <section className="blueprints-panel__preview" aria-label={t('selectedBlueprintPreview')}>
           <div className="blueprints-panel__preview-header">
-            <h3>{previewTitle}</h3>
-            <p>{previewDescription}</p>
+            <div>
+              <h3>{previewTitle}</h3>
+              <p>{previewDescription}</p>
+            </div>
+            {livePreviewVisible ? (
+              <div className="blueprints-panel__preview-actions">
+                <Button
+                  type="button"
+                  onClick={() => void handleAcceptLiveDraft()}
+                  disabled={topActionBusy || livePreviewDocument === null}
+                >
+                  {t('acceptLiveDraft')}
+                </Button>
+                <Button
+                  className="ghost-button"
+                  variant="ghost"
+                  type="button"
+                  onClick={() => void handleDiscardLiveDraft()}
+                  disabled={topActionBusy}
+                >
+                  {t('discardLiveDraft')}
+                </Button>
+              </div>
+            ) : null}
           </div>
           <AppErrorBoundary
             compact

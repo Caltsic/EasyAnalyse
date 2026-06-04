@@ -428,6 +428,18 @@ pub fn read_live_blueprint_draft_partial(project_path: String) -> Result<Option<
 }
 
 #[tauri::command]
+pub fn delete_live_blueprint_draft_partial(project_path: String) -> Result<bool, String> {
+    let project_path = Path::new(&project_path);
+    ensure_easyanalyse_project_path(project_path)?;
+    let partial_path = easyanalyse_project_live_draft_partial_path(project_path)?;
+    match fs::remove_file(&partial_path) {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+#[tauri::command]
 pub fn get_blueprint_sidecar_path(document_path: String) -> Result<String, String> {
     Ok(derive_blueprint_sidecar_path(&document_path))
 }
@@ -618,8 +630,8 @@ fn validation_summary(report: &ValidationReport) -> String {
 mod tests {
     use super::{
         decode_json_text, get_blueprint_sidecar_path, load_blueprint_workspace_from_path,
-        open_document_from_path, read_live_blueprint_draft_partial, save_blueprint_workspace_to_path,
-        save_document_to_path, secret_store_status_for_native_availability,
+        delete_live_blueprint_draft_partial, open_document_from_path, read_live_blueprint_draft_partial,
+        save_blueprint_workspace_to_path, save_document_to_path, secret_store_status_for_native_availability,
         write_live_blueprint_draft_partial,
     };
     #[cfg(unix)]
@@ -771,6 +783,19 @@ mod tests {
                 .expect("partial draft should read"),
             Some(raw)
         );
+        assert!(
+            delete_live_blueprint_draft_partial(project_path.to_string_lossy().to_string())
+                .expect("partial draft should delete")
+        );
+        assert!(
+            read_live_blueprint_draft_partial(project_path.to_string_lossy().to_string())
+                .expect("deleted partial should not fail")
+                .is_none()
+        );
+        assert!(
+            !delete_live_blueprint_draft_partial(project_path.to_string_lossy().to_string())
+                .expect("missing partial delete should not fail")
+        );
 
         let error = write_live_blueprint_draft_partial(
             unique_temp_path("legacy.json").to_string_lossy().to_string(),
@@ -781,10 +806,15 @@ mod tests {
             unique_temp_path("legacy.json").to_string_lossy().to_string(),
         )
         .expect_err("legacy json paths must not read live draft partials");
+        let delete_error = delete_live_blueprint_draft_partial(
+            unique_temp_path("legacy.json").to_string_lossy().to_string(),
+        )
+        .expect_err("legacy json paths must not delete live draft partials");
 
         let _ = fs::remove_dir_all(&project_path);
         assert!(error.contains(".easyanalyse"), "{error}");
         assert!(read_error.contains(".easyanalyse"), "{read_error}");
+        assert!(delete_error.contains(".easyanalyse"), "{delete_error}");
     }
 
     #[test]

@@ -32,6 +32,13 @@ interface AgentCandidateInsertionContext {
   issues?: AgentResponseParseIssue[]
 }
 
+interface AcceptLiveDraftContext {
+  mainDocument: DocumentFile
+  filePath: string | null
+  title?: string
+  description?: string
+}
+
 export interface BlueprintLiveDraftState {
   status: 'idle' | LiveBlueprintDraftResult['status']
   raw: string
@@ -55,6 +62,7 @@ export interface BlueprintState {
   startLiveBlueprintDraft(): void
   updateLiveBlueprintDraft(result: LiveBlueprintDraftResult, raw: string): void
   clearLiveBlueprintDraft(): void
+  acceptLiveBlueprintDraft(context: AcceptLiveDraftContext): Promise<BlueprintRecord | null>
   setWorkspaceAgentThreads(agentThreads: AgentThreadWorkspace): void
   addAgentBlueprintCandidates(
     candidates: AgentBlueprintCandidate[],
@@ -236,6 +244,55 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
 
   clearLiveBlueprintDraft: () => {
     set({ liveDraft: createIdleLiveDraft() })
+  },
+
+  acceptLiveBlueprintDraft: async (context) => {
+    const liveDocument = get().liveDraft.displayDocument
+    if (liveDocument === null) {
+      return null
+    }
+
+    const mainHash = await hashDocument(context.mainDocument)
+    const record = await createBlueprintFromDocument({
+      document: liveDocument,
+      title: context.title ?? liveDocument.document.title,
+      description: context.description,
+      baseMainDocumentHash: mainHash,
+      source: 'agent',
+      validationState: 'unknown',
+      tags: ['agent', 'live-draft'],
+      notes: 'Accepted from a recovered or in-progress live blueprint draft.',
+      extensions: {
+        liveDraft: {
+          acceptedAt: new Date().toISOString(),
+        },
+      },
+    })
+
+    let accepted: BlueprintRecord | null = null
+    set((state) => {
+      const latestLiveDocument = state.liveDraft.displayDocument
+      if (latestLiveDocument === null) {
+        accepted = null
+        return {}
+      }
+
+      const currentWorkspace = state.workspace ?? createWorkspaceForDocument(context.filePath, context.mainDocument, mainHash)
+      const reboundWorkspace = withUpdatedMainDocumentRef(currentWorkspace, context.filePath, context.mainDocument, mainHash)
+      accepted = record
+      return {
+        workspace: {
+          ...reboundWorkspace,
+          updatedAt: new Date().toISOString(),
+          blueprints: [...reboundWorkspace.blueprints, record],
+        },
+        selectedBlueprintId: record.id,
+        dirty: true,
+        liveDraft: createIdleLiveDraft(),
+      }
+    })
+
+    return accepted
   },
 
   setWorkspaceAgentThreads: (agentThreads) => {

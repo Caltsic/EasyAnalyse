@@ -14,11 +14,20 @@ import { BlueprintPreviewCanvas } from './BlueprintPreviewCanvas'
 
 type BlueprintTranslate = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) => string
 
-function describeLiveDraftStatus(status: BlueprintLiveDraftState['status'], t: BlueprintTranslate): string {
-  if (status === 'ready') return t('liveBlueprintStatusReady')
-  if (status === 'partial-json' || status === 'waiting-for-json') return t('liveBlueprintStatusParsing')
-  if (status === 'invalid-json' || status === 'invalid-document') return t('liveBlueprintStatusKeepingLastGood')
-  if (status === 'marker-missing') return t('liveBlueprintStatusWaitingForMarker')
+function describeLiveDraftStatus(
+  liveDraft: Pick<BlueprintLiveDraftState, 'displayDocument' | 'hasCompleteJson' | 'status'>,
+  t: BlueprintTranslate,
+): string {
+  const hasDisplayableDraft = liveDraft.displayDocument !== null
+  if (liveDraft.status === 'ready' && liveDraft.hasCompleteJson) return t('liveBlueprintStatusReady')
+  if (liveDraft.status === 'partial-json') {
+    return hasDisplayableDraft ? t('liveBlueprintStatusPartialPreview') : t('liveBlueprintStatusBuildingPreview')
+  }
+  if (liveDraft.status === 'waiting-for-json') return t('liveBlueprintStatusBuildingPreview')
+  if (liveDraft.status === 'invalid-json' || liveDraft.status === 'invalid-document') {
+    return hasDisplayableDraft ? t('liveBlueprintStatusKeepingLastGood') : t('liveBlueprintStatusDiagnosticsOnly')
+  }
+  if (liveDraft.status === 'marker-missing') return t('liveBlueprintStatusWaitingForMarker')
   return t('liveBlueprintStatusIdle')
 }
 
@@ -128,7 +137,7 @@ export function BlueprintsPanel() {
       ? t('previewTitle', { title: selectedBlueprint.title })
       : ''
   const previewDescription = livePreviewPanelVisible
-    ? t('liveBlueprintPreviewStatus', { status: describeLiveDraftStatus(liveDraft.status, t) })
+    ? t('liveBlueprintPreviewStatus', { status: describeLiveDraftStatus(liveDraft, t) })
     : t('previewHint')
   const liveDraftAcceptable = livePreviewDocument !== null && liveDraft.status === 'ready' && liveDraft.hasCompleteJson
   const applyModalOpen = pendingApplyRecord !== null

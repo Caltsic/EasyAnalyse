@@ -230,7 +230,8 @@ describe('BlueprintsPanel', () => {
     const host = await renderPanel()
 
     expect(host.textContent).toContain('Live blueprint preview')
-    expect(host.textContent).toContain('parsing')
+    expect(host.textContent).toContain('showing a temporary live preview')
+    expect(host.textContent).toContain('content and layout may still change')
     const previewCanvas = host.querySelector('[aria-label="Blueprint preview canvas"]') as HTMLElement | null
     expect(previewCanvas?.dataset.documentTitle).toBe('Partial live projection')
     const acceptButton = firstButtonByText(host, 'Accept draft') as HTMLButtonElement
@@ -335,6 +336,7 @@ describe('BlueprintsPanel', () => {
     const host = await renderPanel()
 
     expect(host.textContent).toContain('Live blueprint preview')
+    expect(host.textContent).toContain('waiting for a displayable preview')
     expect(host.textContent).toContain('Live diagnostics')
     expect(host.textContent).toContain('Waiting for a valid document object')
     expect(host.textContent).toContain('No displayable blueprint yet')

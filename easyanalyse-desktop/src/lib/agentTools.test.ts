@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { runAgentTool, getAgentToolSchemas, selfCheckBlueprintCandidates } from './agentTools'
 import type { DocumentFile, ValidationReport } from '../types/document'
 import type { AgentBlueprintCandidate } from '../types/agent'
+import type { AgentCircuitCorrectnessReviewReport } from '../types/agentTools'
 import type { BlueprintWorkspaceFile } from '../types/blueprint'
 
 function documentAt(x = 0, y = 0): DocumentFile {
@@ -41,6 +42,7 @@ describe('agentTools', () => {
       'create_blueprint_candidate',
       'validate_document',
       'check_layout_overlaps',
+      'review_circuit_correctness',
       'check_blueprint_candidate',
     ])
     expect(JSON.stringify(schemas)).toContain('Hard-check one EasyAnalyse DocumentFile candidate')
@@ -49,6 +51,7 @@ describe('agentTools', () => {
     expect(JSON.stringify(schemas)).toContain('visual network lines crossing device bounds')
     expect(JSON.stringify(schemas)).toContain('Return the current blueprint workspace summary')
     expect(JSON.stringify(schemas)).toContain('deterministic filter blueprint candidate')
+    expect(JSON.stringify(schemas)).toContain('strict EasyAnalyse circuit correctness reviewer')
     expect(JSON.stringify(schemas)).not.toMatch(/Authorization|apiKey|sk-/i)
   })
 
@@ -103,6 +106,78 @@ describe('agentTools', () => {
     const unknown = await runAgentTool('unknown_tool', { document: documentAt() })
     expect(unknown.ok).toBe(false)
     expect(unknown.toolName).toBe('check_blueprint_format')
+  })
+
+  it('reviews circuit correctness through an injected strict reviewer callback', async () => {
+    const candidate: AgentBlueprintCandidate = {
+      title: 'RC candidate',
+      summary: 'Candidate summary',
+      rationale: 'Candidate rationale',
+      tradeoffs: [],
+      document: documentAt(),
+      issues: [],
+    }
+    const reviewerReport: AgentCircuitCorrectnessReviewReport = {
+      schemaVersion: 'agent-circuit-correctness-review-v1',
+      semanticVersion: 'easyanalyse-semantic-v4',
+      verdict: 'fail',
+      confidence: 0.82,
+      summary: 'The requested low-pass function is not proven by this topology.',
+      reasons: ['The capacitor is not connected as a shunt filter element.'],
+      suggestions: ['Move the capacitor from VOUT to GND for a first-order low-pass.'],
+      checkedAssumptions: ['Connectivity is terminal-label based.'],
+      reviewer: { providerId: 'reviewer', modelId: 'strict-model' },
+    }
+    const reviewCircuitCorrectness = vi.fn(async () => reviewerReport)
+
+    const result = await runAgentTool('review_circuit_correctness', {
+      candidate,
+      userRequest: 'Build an RC low-pass filter.',
+    }, {
+      userRequest: 'Build an RC low-pass filter.',
+      validateDocument: () => validReport(candidate.document),
+      reviewCircuitCorrectness,
+    })
+
+    expect(reviewCircuitCorrectness).toHaveBeenCalledWith(expect.objectContaining({
+      userRequest: 'Build an RC low-pass filter.',
+      candidateTitle: 'RC candidate',
+      document: candidate.document,
+    }))
+    expect(result).toMatchObject({
+      ok: true,
+      toolName: 'review_circuit_correctness',
+      issueCount: 1,
+      data: {
+        reviewed: true,
+        report: { verdict: 'fail', confidence: 0.82 },
+      },
+    })
+  })
+
+  it('skips strict correctness review until hard format issues are fixed', async () => {
+    const malformed = {
+      title: 'Broken candidate',
+      summary: 'Broken',
+      rationale: 'Broken',
+      tradeoffs: [],
+      document: { ...documentAt(), wires: [] },
+      issues: [],
+    }
+    const reviewCircuitCorrectness = vi.fn()
+
+    const result = await runAgentTool('review_circuit_correctness', { candidate: malformed }, {
+      validateDocument: () => validReport(documentAt()),
+      reviewCircuitCorrectness,
+    })
+
+    expect(reviewCircuitCorrectness).not.toHaveBeenCalled()
+    expect(result).toMatchObject({
+      ok: false,
+      toolName: 'review_circuit_correctness',
+      data: { reviewed: false, report: { verdict: 'unknown' } },
+    })
+    expect(result.issues.map((issue) => issue.code)).toContain('format.unknown_field')
   })
 
   it('check_document_format treats schema/openability errors as hard failures but ignores semantic issues', async () => {

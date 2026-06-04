@@ -16,6 +16,7 @@ import {
   Wrench,
 } from 'lucide-react'
 import { runMockAgentProvider } from '../../lib/agentMockProvider'
+import { runCircuitCorrectnessReviewer } from '../../lib/agentCircuitReviewer'
 import { runConfiguredAgentProvider } from '../../lib/agentProviderClient'
 import type { AgentProviderProgressEvent } from '../../lib/agentProviderClient'
 import { getErrorMessage } from '../../lib/errors'
@@ -93,6 +94,22 @@ function selectedProviderFromSettings(): { provider: AgentProviderPublicConfig |
   const provider = settings.agent.providers.find((item) => item.id === settings.agent.selectedProviderId) ?? null
   const modelId = settings.agent.selectedModelId ?? provider?.defaultModel ?? provider?.models[0] ?? null
   return { provider, modelId }
+}
+
+function correctnessReviewerFromSettings(
+  activeProvider: AgentProviderPublicConfig,
+  activeModelId: string,
+): { provider: AgentProviderPublicConfig; modelId: string; inheritsMain: boolean } {
+  const settings = useSettingsStore.getState().settings
+  const reviewer = settings.agent.correctnessReviewer
+  if (reviewer.mode === 'custom-provider' && reviewer.providerId) {
+    const provider = settings.agent.providers.find((item) => item.id === reviewer.providerId)
+    const modelId = reviewer.modelId ?? provider?.defaultModel ?? provider?.models[0]
+    if (provider && modelId && provider.models.includes(modelId)) {
+      return { provider, modelId, inheritsMain: false }
+    }
+  }
+  return { provider: activeProvider, modelId: activeModelId, inheritsMain: true }
 }
 
 export function AgentPanel({
@@ -975,6 +992,36 @@ async function runSelectedProvider(input: {
         focusedNetworkLineId: state.focusedNetworkLineId,
       }
     },
+    reviewCircuitCorrectness: async (reviewInput) => {
+      const reviewer = correctnessReviewerFromSettings(provider, modelId)
+      let reviewerApiKey = apiKey
+      if (!reviewer.inheritsMain) {
+        if (!reviewer.provider.apiKeyRef) {
+          throw new Error(`Reviewer provider ${reviewer.provider.name} has no saved API key.`)
+        }
+        if (!isManagedSecretRef(reviewer.provider.apiKeyRef)) {
+          throw new Error(`Reviewer provider ${reviewer.provider.name} uses an unsupported legacy API key reference. Please re-save the API key in Settings.`)
+        }
+        input.onProgress?.({ phase: 'preparing', message: `Reading saved API key for reviewer ${reviewer.provider.name}.` })
+        const saved = await input.secretStore.readSecret(reviewer.provider.apiKeyRef)
+        if (!saved?.trim()) {
+          throw new Error(`Saved API key for reviewer provider ${reviewer.provider.name} was not found.`)
+        }
+        reviewerApiKey = saved
+      }
+      input.onProgress?.({
+        phase: 'tool',
+        message: `Running strict circuit reviewer with ${reviewer.provider.name} / ${reviewer.modelId}.`,
+      })
+      return runCircuitCorrectnessReviewer({
+        ...reviewInput,
+        provider: reviewer.provider,
+        modelId: reviewer.modelId,
+        apiKey: reviewerApiKey,
+        fetchImpl: getBrowserFetch(),
+        signal: input.signal,
+      })
+    },
     createBlueprintCandidate: async (candidate) => {
       const latestEditor = useEditorStore.getState()
       if (latestEditor.document !== input.currentDocument || latestEditor.filePath !== input.filePath) {
@@ -1062,4 +1109,11 @@ function formatToolTrace(toolTrace: AgentToolTraceEntry[], repairTrace: AgentRep
 
 function formatParseIssues(issues: AgentResponseParseIssue[]): string {
   return issues.map((issue) => `${issue.severity}: ${issue.message}`).join('\n')
+}
+
+function getBrowserFetch() {
+  if (typeof window === 'undefined' || typeof window.fetch !== 'function') {
+    throw new Error('Reviewer requests require a browser fetch implementation.')
+  }
+  return window.fetch.bind(window)
 }

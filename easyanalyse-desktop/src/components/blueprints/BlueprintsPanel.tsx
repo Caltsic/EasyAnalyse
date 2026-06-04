@@ -22,6 +22,29 @@ function describeLiveDraftStatus(status: BlueprintLiveDraftState['status'], t: B
   return t('liveBlueprintStatusIdle')
 }
 
+function liveDraftDiagnosticLines(liveDraft: BlueprintLiveDraftState, t: BlueprintTranslate): string[] {
+  const error = liveDraft.error
+  if (!error) return []
+
+  const lines = [
+    error.message,
+    t('liveBlueprintDiagnosticCode', { code: error.code }),
+  ]
+  if (typeof error.line === 'number' && typeof error.column === 'number') {
+    lines.push(t('liveBlueprintDiagnosticLocation', { line: error.line, column: error.column }))
+  }
+  if (error.excerpt) {
+    lines.push(t('liveBlueprintDiagnosticExcerpt', { excerpt: error.excerpt }))
+  }
+  for (const issue of error.issues ?? []) {
+    lines.push(issue.path
+      ? t('liveBlueprintDiagnosticIssueWithPath', { path: issue.path, code: issue.code, message: issue.message })
+      : t('liveBlueprintDiagnosticIssue', { code: issue.code, message: issue.message }))
+  }
+
+  return lines
+}
+
 export function BlueprintsPanel() {
   const document = useEditorStore((state) => state.document)
   const filePath = useEditorStore((state) => state.filePath)
@@ -98,6 +121,7 @@ export function BlueprintsPanel() {
   const previewDescription = livePreviewVisible
     ? t('liveBlueprintPreviewStatus', { status: describeLiveDraftStatus(liveDraft.status, t) })
     : t('previewHint')
+  const liveDiagnostics = livePreviewVisible ? liveDraftDiagnosticLines(liveDraft, t) : []
   const applyModalOpen = pendingApplyRecord !== null
   const blueprintActionsDisabled = topActionBusy || applyModalOpen || applyBusy
 
@@ -331,6 +355,16 @@ export function BlueprintsPanel() {
               </div>
             ) : null}
           </div>
+          {liveDiagnostics.length > 0 ? (
+            <div className="blueprints-panel__live-diagnostics" role="status" aria-live="polite">
+              <strong>{t('liveBlueprintDiagnosticsTitle')}</strong>
+              <ul>
+                {liveDiagnostics.map((line, index) => (
+                  <li key={`${index}:${line}`}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <AppErrorBoundary
             compact
             resetKey={previewResetKey}

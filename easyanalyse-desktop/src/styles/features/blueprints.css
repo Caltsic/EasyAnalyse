@@ -90,6 +90,30 @@
   flex-wrap: wrap;
 }
 
+.blueprints-panel__live-diagnostics {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--warning, #f59e0b) 46%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warning, #f59e0b) 10%, var(--panel-bg));
+  color: var(--text);
+  font-size: 0.84rem;
+  overflow-wrap: anywhere;
+}
+
+.blueprints-panel__live-diagnostics strong {
+  font-size: 0.82rem;
+}
+
+.blueprints-panel__live-diagnostics ul {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
 .blueprints-panel__preview-canvas {
   height: 220px;
   min-height: 180px;

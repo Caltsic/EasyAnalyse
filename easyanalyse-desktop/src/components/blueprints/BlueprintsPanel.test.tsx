@@ -212,6 +212,75 @@ describe('BlueprintsPanel', () => {
     expect(useBlueprintStore.getState().dirty).toBe(false)
   })
 
+  it('shows live JSON diagnostics while keeping the last displayable draft preview', async () => {
+    const lastGood = createDocument({ document: { ...createDocument().document, id: 'live-last-good', title: 'Last displayable draft' } })
+    useBlueprintStore.setState({
+      liveDraft: {
+        status: 'invalid-json',
+        sessionId: 'agent-panel-invalid-json-test',
+        raw: 'BEGIN_EASYANALYSE_BLUEPRINT_JSON\n{"schemaVersion":"4.0.0",',
+        markerFound: true,
+        hasCompleteJson: true,
+        displayDocument: lastGood,
+        lastGoodDocument: lastGood,
+        updatedAt: '2026-06-05T00:00:00.000Z',
+        error: {
+          code: 'invalid-json',
+          message: 'A complete JSON object was extracted but JSON.parse failed: Unexpected token',
+          line: 12,
+          column: 8,
+          excerpt: '"devices": [',
+        },
+      },
+    })
+
+    const host = await renderPanel()
+
+    expect(host.textContent).toContain('keeping last displayable version')
+    expect(host.textContent).toContain('Live diagnostics')
+    expect(host.textContent).toContain('A complete JSON object was extracted but JSON.parse failed')
+    expect(host.textContent).toContain('Code: invalid-json')
+    expect(host.textContent).toContain('Location: line 12, column 8')
+    expect(host.textContent).toContain('Excerpt: "devices": [')
+    const previewCanvas = host.querySelector('[aria-label="Blueprint preview canvas"]') as HTMLElement | null
+    expect(previewCanvas?.dataset.documentTitle).toBe('Last displayable draft')
+  })
+
+  it('shows live document format diagnostics with schema paths', async () => {
+    const lastGood = createDocument({ document: { ...createDocument().document, id: 'live-format-last-good', title: 'Format fallback draft' } })
+    useBlueprintStore.setState({
+      liveDraft: {
+        status: 'invalid-document',
+        sessionId: 'agent-panel-invalid-document-test',
+        raw: JSON.stringify({ schemaVersion: '4.0.0', document: {}, devices: [], view: {} }),
+        markerFound: true,
+        hasCompleteJson: true,
+        displayDocument: lastGood,
+        lastGoodDocument: lastGood,
+        updatedAt: '2026-06-05T00:00:00.000Z',
+        error: {
+          code: 'invalid-document',
+          message: 'Document format check failed',
+          issues: [
+            {
+              path: 'devices[0].terminals',
+              code: 'required',
+              message: 'Expected at least one terminal',
+            },
+          ],
+        },
+      },
+    })
+
+    const host = await renderPanel()
+
+    expect(host.textContent).toContain('Document format check failed')
+    expect(host.textContent).toContain('Code: invalid-document')
+    expect(host.textContent).toContain('devices[0].terminals: required, Expected at least one terminal')
+    const previewCanvas = host.querySelector('[aria-label="Blueprint preview canvas"]') as HTMLElement | null
+    expect(previewCanvas?.dataset.documentTitle).toBe('Format fallback draft')
+  })
+
   it('accepts a live draft preview as a persisted blueprint and clears the project partial', async () => {
     const main = createDocument({ document: { ...createDocument().document, id: 'main-live-accept', title: 'Main live accept' } })
     const liveDocument = createDocument({ document: { ...createDocument().document, id: 'live-accept', title: 'Accepted live preview' } })

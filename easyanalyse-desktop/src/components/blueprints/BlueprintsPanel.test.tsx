@@ -78,6 +78,15 @@ function resetStores(document = createDocument()) {
     loadError: null,
     saveError: null,
     validationError: null,
+    liveDraft: {
+      status: 'idle',
+      raw: '',
+      markerFound: false,
+      hasCompleteJson: false,
+      displayDocument: null,
+      lastGoodDocument: null,
+      updatedAt: null,
+    },
   })
 }
 
@@ -168,6 +177,30 @@ beforeEach(() => {
 })
 
 describe('BlueprintsPanel', () => {
+  it('renders a transient live draft preview without a persisted blueprint record', async () => {
+    const liveDocument = createDocument({ document: { ...createDocument().document, id: 'live-doc', title: 'Live streamed draft' } })
+    useBlueprintStore.setState({
+      liveDraft: {
+        status: 'ready',
+        raw: JSON.stringify(liveDocument),
+        markerFound: true,
+        hasCompleteJson: true,
+        displayDocument: liveDocument,
+        lastGoodDocument: liveDocument,
+        updatedAt: '2026-06-05T00:00:00.000Z',
+      },
+    })
+
+    const host = await renderPanel()
+
+    expect(host.textContent).toContain('Live blueprint preview')
+    expect(host.textContent).toContain('showing latest displayable version')
+    const previewCanvas = host.querySelector('[aria-label="Blueprint preview canvas"]') as HTMLElement | null
+    expect(previewCanvas?.dataset.documentTitle).toBe('Live streamed draft')
+    expect(useBlueprintStore.getState().workspace?.blueprints ?? []).toHaveLength(0)
+    expect(useBlueprintStore.getState().dirty).toBe(false)
+  })
+
   it('keeps the panel mounted when the selected blueprint preview fails to render', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     try {

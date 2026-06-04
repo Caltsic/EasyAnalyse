@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { hashDocument } from '../lib/documentHash'
+import { LIVE_BLUEPRINT_JSON_MARKER, parseLiveBlueprintDraft } from '../lib/liveBlueprintDraft'
 import type { AgentBlueprintCandidate } from '../types/agent'
 import type { AgentThreadWorkspace } from '../types/agentThread'
 import type { BlueprintWorkspaceFile } from '../types/blueprint'
@@ -61,6 +62,15 @@ function resetBlueprintStore() {
     loadError: null,
     saveError: null,
     validationError: null,
+    liveDraft: {
+      status: 'idle',
+      raw: '',
+      markerFound: false,
+      hasCompleteJson: false,
+      displayDocument: null,
+      lastGoodDocument: null,
+      updatedAt: null,
+    },
   })
 }
 
@@ -92,6 +102,61 @@ beforeEach(() => {
 })
 
 describe('blueprintStore', () => {
+  it('stores live draft preview state without dirtying or creating blueprint records', () => {
+    const initialDocument = createDocument({ document: { id: 'last-good', title: 'Last good live draft' } })
+    const liveDocument = createDocument({ document: { id: 'live-ready', title: 'Live ready draft' } })
+
+    useBlueprintStore.getState().startLiveBlueprintDraft()
+    const partial = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n{"schemaVersion":"4.0.0"`, {
+      lastGood: initialDocument,
+    })
+    useBlueprintStore.getState().updateLiveBlueprintDraft(partial, 'partial')
+
+    expect(useBlueprintStore.getState().dirty).toBe(false)
+    expect(useBlueprintStore.getState().workspace?.blueprints ?? []).toHaveLength(0)
+    expect(useBlueprintStore.getState().liveDraft.status).toBe('partial-json')
+    expect(useBlueprintStore.getState().liveDraft.displayDocument?.document.id).toBe('last-good')
+
+    const readyRaw = `${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(liveDocument)}`
+    const ready = parseLiveBlueprintDraft(readyRaw, {
+      lastGood: useBlueprintStore.getState().liveDraft.lastGoodDocument,
+    })
+    useBlueprintStore.getState().updateLiveBlueprintDraft(ready, readyRaw)
+
+    const state = useBlueprintStore.getState()
+    expect(state.dirty).toBe(false)
+    expect(state.workspace?.blueprints ?? []).toHaveLength(0)
+    expect(state.liveDraft.status).toBe('ready')
+    expect(state.liveDraft.displayDocument?.document.title).toBe('Live ready draft')
+    expect(state.liveDraft.displayDocument).not.toBe(liveDocument)
+  })
+
+  it('clears transient live draft state when loading a main document', async () => {
+    const liveDocument = createDocument({ document: { id: 'live', title: 'Live draft before load' } })
+    const result = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(liveDocument)}`)
+    useBlueprintStore.getState().startLiveBlueprintDraft()
+    useBlueprintStore.getState().updateLiveBlueprintDraft(result, 'raw live draft')
+
+    await useBlueprintStore.getState().loadForMainDocument(null, createDocument())
+
+    expect(useBlueprintStore.getState().liveDraft.status).toBe('idle')
+    expect(useBlueprintStore.getState().liveDraft.displayDocument).toBeNull()
+  })
+
+  it('clears transient live draft state when rebinding after the main document is saved', async () => {
+    const liveDocument = createDocument({ document: { id: 'live-before-rebind', title: 'Live draft before rebind' } })
+    const result = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(liveDocument)}`)
+    tauriMocks.getBlueprintSidecarPathCommand.mockResolvedValue('/tmp/rebound.easyanalyse-blueprints.json')
+    useBlueprintStore.getState().startLiveBlueprintDraft()
+    useBlueprintStore.getState().updateLiveBlueprintDraft(result, 'raw live draft')
+
+    await useBlueprintStore.getState().rebindForSavedDocument('/tmp/rebound.easyanalyse.json', createDocument())
+
+    expect(useBlueprintStore.getState().liveDraft.status).toBe('idle')
+    expect(useBlueprintStore.getState().liveDraft.displayDocument).toBeNull()
+    expect(useBlueprintStore.getState().sidecarPath).toBe('/tmp/rebound.easyanalyse-blueprints.json')
+  })
+
   it('createSnapshotFromDocument does not mutate the source document or change the main document hash', async () => {
     const document = createDocument()
     const beforeJson = JSON.stringify(document)

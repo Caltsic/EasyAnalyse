@@ -9,6 +9,7 @@ import type { MockAgentRequest } from '../../lib/agentMockProvider'
 import { createEmptyBlueprintWorkspace } from '../../lib/blueprintWorkspace'
 import { createMemorySecretBackend, createSecretStore, type SecretStore } from '../../lib/secretStore'
 import { hashDocument } from '../../lib/documentHash'
+import { LIVE_BLUEPRINT_JSON_MARKER } from '../../lib/liveBlueprintDraft'
 import { useBlueprintStore } from '../../store/blueprintStore'
 import { useEditorStore } from '../../store/editorStore'
 import { useSettingsStore } from '../../store/settingsStore'
@@ -107,6 +108,15 @@ beforeEach(() => {
     loadError: null,
     saveError: null,
     validationError: null,
+    liveDraft: {
+      status: 'idle',
+      raw: '',
+      markerFound: false,
+      hasCompleteJson: false,
+      displayDocument: null,
+      lastGoodDocument: null,
+      updatedAt: null,
+    },
   })
   useEditorStore.setState({
     document: createDocument(),
@@ -266,6 +276,63 @@ describe('AgentPanel', () => {
       await vi.waitFor(() => expect(useBlueprintStore.getState().workspace?.blueprints).toHaveLength(2))
     })
     expect(host.textContent).toContain('2 blueprint candidates stored')
+  })
+
+  it('projects configured provider streamed blueprint JSON into transient live draft state', async () => {
+    const provider = deepseekProvider()
+    const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })
+    await secretStore.saveSecret({ providerId: provider.id, value: 'test-deepseek-key' })
+    const liveDocument = createDocument('doc-live-streamed')
+    liveDocument.document.title = 'Live streamed draft'
+    const finalResponse = parseAgentResponse(JSON.stringify({
+      schemaVersion: 'agent-response-v1',
+      semanticVersion: 'easyanalyse-semantic-v4',
+      kind: 'message',
+      summary: 'Live preview ready',
+      markdown: 'The live draft is visible in the blueprint preview.',
+    }))
+    providerMock.runConfiguredAgentProvider.mockImplementation(async (input) => {
+      input.progress?.({
+        phase: 'response',
+        message: 'Streaming blueprint draft partial.',
+        detail: {
+          streamedContent: `${LIVE_BLUEPRINT_JSON_MARKER}\n{"schemaVersion":"4.0.0"`,
+        },
+      })
+      input.progress?.({
+        phase: 'response',
+        message: 'Streaming complete blueprint draft.',
+        detail: {
+          streamedContent: `${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(liveDocument)}`,
+        },
+      })
+      return finalResponse
+    })
+    useSettingsStore.setState({
+      settings: {
+        basic: { locale: 'system' },
+        appearance: { theme: 'system' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+      },
+      loaded: true,
+      warnings: [],
+    })
+    const host = await renderPanel({ secretStore })
+
+    await enterPromptAndSubmit(host, 'stream a live blueprint draft')
+
+    await act(async () => {
+      await vi.waitFor(() => expect(useBlueprintStore.getState().liveDraft.status).toBe('ready'))
+    })
+    const state = useBlueprintStore.getState()
+    expect(state.liveDraft.displayDocument?.document.title).toBe('Live streamed draft')
+    expect(state.liveDraft.lastGoodDocument?.document.id).toBe('doc-live-streamed')
+    expect(state.liveDraft.raw).toContain(LIVE_BLUEPRINT_JSON_MARKER)
+    expect(state.workspace?.blueprints ?? []).toEqual([])
+    expect(state.dirty).toBe(false)
+    expect(host.textContent).toContain('Live preview ready')
+    expect(host.textContent).not.toContain('Streaming blueprint draft partial.')
+    expect(host.textContent).not.toContain('Streaming complete blueprint draft.')
   })
 
   it('shows configured provider activity while a response is still pending', async () => {

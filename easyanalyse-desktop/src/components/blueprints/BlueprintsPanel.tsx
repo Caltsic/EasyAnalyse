@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { hashDocument } from '../../lib/documentHash'
 import { getErrorMessage } from '../../lib/errors'
 import { translate } from '../../lib/i18n'
-import { useBlueprintStore } from '../../store/blueprintStore'
+import { useBlueprintStore, type BlueprintLiveDraftState } from '../../store/blueprintStore'
 import { useEditorStore } from '../../store/editorStore'
 import type { BlueprintRecord } from '../../types/blueprint'
 import { AppErrorBoundary } from '../AppErrorBoundary'
@@ -10,6 +10,16 @@ import { Button, EmptyState } from '../ui'
 import { ApplyBlueprintDialog } from './ApplyBlueprintDialog'
 import { BlueprintCard } from './BlueprintCard'
 import { BlueprintPreviewCanvas } from './BlueprintPreviewCanvas'
+
+type BlueprintTranslate = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) => string
+
+function describeLiveDraftStatus(status: BlueprintLiveDraftState['status'], t: BlueprintTranslate): string {
+  if (status === 'ready') return t('liveBlueprintStatusReady')
+  if (status === 'partial-json' || status === 'waiting-for-json') return t('liveBlueprintStatusParsing')
+  if (status === 'invalid-json' || status === 'invalid-document') return t('liveBlueprintStatusKeepingLastGood')
+  if (status === 'marker-missing') return t('liveBlueprintStatusWaitingForMarker')
+  return t('liveBlueprintStatusIdle')
+}
 
 export function BlueprintsPanel() {
   const document = useEditorStore((state) => state.document)
@@ -23,6 +33,7 @@ export function BlueprintsPanel() {
   const loadError = useBlueprintStore((state) => state.loadError)
   const saveError = useBlueprintStore((state) => state.saveError)
   const validationError = useBlueprintStore((state) => state.validationError)
+  const liveDraft = useBlueprintStore((state) => state.liveDraft)
   const loadForMainDocument = useBlueprintStore((state) => state.loadForMainDocument)
   const saveWorkspace = useBlueprintStore((state) => state.saveWorkspace)
   const createSnapshotFromDocument = useBlueprintStore((state) => state.createSnapshotFromDocument)
@@ -61,15 +72,31 @@ export function BlueprintsPanel() {
     }
   }, [document])
 
+  const t = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) =>
+    translate(locale, key, params)
   const blueprints = useMemo(() => workspace?.blueprints ?? [], [workspace])
   const selectedBlueprint = useMemo(
     () => blueprints.find((record) => record.id === selectedBlueprintId) ?? null,
     [blueprints, selectedBlueprintId],
   )
+  const livePreviewDocument = liveDraft.displayDocument
+  const livePreviewVisible = livePreviewDocument !== null && liveDraft.status !== 'idle'
+  const previewDocument = livePreviewDocument ?? selectedBlueprint?.document ?? null
+  const previewResetKey = livePreviewVisible
+    ? `live:${liveDraft.updatedAt ?? 'draft'}`
+    : selectedBlueprint
+      ? `${selectedBlueprint.id}:${selectedBlueprint.documentHash}`
+      : ''
+  const previewTitle = livePreviewVisible
+    ? t('liveBlueprintPreviewTitle')
+    : selectedBlueprint
+      ? t('previewTitle', { title: selectedBlueprint.title })
+      : ''
+  const previewDescription = livePreviewVisible
+    ? t('liveBlueprintPreviewStatus', { status: describeLiveDraftStatus(liveDraft.status, t) })
+    : t('previewHint')
   const applyModalOpen = pendingApplyRecord !== null
   const blueprintActionsDisabled = topActionBusy || applyModalOpen || applyBusy
-  const t = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) =>
-    translate(locale, key, params)
 
   const runTopAction = async (message: string, action: () => Promise<void>) => {
     if (activeTopActionTokenRef.current !== null) {
@@ -245,15 +272,15 @@ export function BlueprintsPanel() {
           ))}
         </div>
       )}
-      {selectedBlueprint && selectedBlueprint.lifecycleStatus !== 'deleted' && (
+      {previewDocument && (livePreviewVisible || (selectedBlueprint && selectedBlueprint.lifecycleStatus !== 'deleted')) && (
         <section className="blueprints-panel__preview" aria-label={t('selectedBlueprintPreview')}>
           <div className="blueprints-panel__preview-header">
-            <h3>{t('previewTitle', { title: selectedBlueprint.title })}</h3>
-            <p>{t('previewHint')}</p>
+            <h3>{previewTitle}</h3>
+            <p>{previewDescription}</p>
           </div>
           <AppErrorBoundary
             compact
-            resetKey={`${selectedBlueprint.id}:${selectedBlueprint.documentHash}`}
+            resetKey={previewResetKey}
             title={t('blueprintPreviewFailed')}
             description={t('blueprintPreviewFailedDescription')}
             detailsLabel={t('errorDetails')}
@@ -261,7 +288,7 @@ export function BlueprintsPanel() {
             reloadLabel={t('reload')}
           >
             <BlueprintPreviewCanvas
-              document={selectedBlueprint.document}
+              document={previewDocument}
               locale={locale}
               className="blueprints-panel__preview-canvas"
             />

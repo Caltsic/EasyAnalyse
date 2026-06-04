@@ -12,6 +12,7 @@ import {
   validateDocumentCommand,
 } from '../lib/tauri'
 import { getErrorMessage } from '../lib/errors'
+import type { LiveBlueprintDraftResult } from '../lib/liveBlueprintDraft'
 import type {
   AgentBlueprintCandidate,
   AgentResponseParseIssue,
@@ -31,6 +32,17 @@ interface AgentCandidateInsertionContext {
   issues?: AgentResponseParseIssue[]
 }
 
+export interface BlueprintLiveDraftState {
+  status: 'idle' | LiveBlueprintDraftResult['status']
+  raw: string
+  markerFound: boolean
+  hasCompleteJson: boolean
+  displayDocument: DocumentFile | null
+  lastGoodDocument: DocumentFile | null
+  updatedAt: string | null
+  error?: LiveBlueprintDraftResult['error']
+}
+
 export interface BlueprintState {
   workspace: BlueprintWorkspaceFile | null
   sidecarPath: string | null
@@ -39,6 +51,10 @@ export interface BlueprintState {
   loadError: string | null
   saveError: string | null
   validationError: string | null
+  liveDraft: BlueprintLiveDraftState
+  startLiveBlueprintDraft(): void
+  updateLiveBlueprintDraft(result: LiveBlueprintDraftResult, raw: string): void
+  clearLiveBlueprintDraft(): void
   setWorkspaceAgentThreads(agentThreads: AgentThreadWorkspace): void
   addAgentBlueprintCandidates(
     candidates: AgentBlueprintCandidate[],
@@ -137,6 +153,22 @@ function isReportValid(report: ValidationReport): boolean {
   return schemaValid === true && semanticValid === true
 }
 
+function cloneDocumentSnapshot(document: DocumentFile): DocumentFile {
+  return JSON.parse(JSON.stringify(document)) as DocumentFile
+}
+
+function createIdleLiveDraft(): BlueprintLiveDraftState {
+  return {
+    status: 'idle',
+    raw: '',
+    markerFound: false,
+    hasCompleteJson: false,
+    displayDocument: null,
+    lastGoodDocument: null,
+    updatedAt: null,
+  }
+}
+
 function isDefinitelyDifferentMainDocument(
   workspace: BlueprintWorkspaceFile,
   context: AgentCandidateInsertionContext,
@@ -164,6 +196,47 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
   loadError: null,
   saveError: null,
   validationError: null,
+  liveDraft: createIdleLiveDraft(),
+
+  startLiveBlueprintDraft: () => {
+    set({
+      liveDraft: {
+        ...createIdleLiveDraft(),
+        status: 'waiting-for-json',
+        markerFound: true,
+        updatedAt: new Date().toISOString(),
+      },
+    })
+  },
+
+  updateLiveBlueprintDraft: (result, raw) => {
+    set((state) => {
+      const displayDocument = result.displayDocument
+        ? cloneDocumentSnapshot(result.displayDocument)
+        : state.liveDraft.displayDocument
+      const lastGoodDocument = result.lastGood
+        ? cloneDocumentSnapshot(result.lastGood)
+        : state.liveDraft.lastGoodDocument
+
+      return {
+        liveDraft: {
+          ...state.liveDraft,
+          status: result.status,
+          raw,
+          markerFound: result.markerFound,
+          hasCompleteJson: result.hasCompleteJson,
+          displayDocument,
+          lastGoodDocument,
+          updatedAt: new Date().toISOString(),
+          ...(result.error === undefined ? { error: undefined } : { error: result.error }),
+        },
+      }
+    })
+  },
+
+  clearLiveBlueprintDraft: () => {
+    set({ liveDraft: createIdleLiveDraft() })
+  },
 
   setWorkspaceAgentThreads: (agentThreads) => {
     set((state) => {
@@ -257,6 +330,7 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
         dirty: false,
         selectedBlueprintId: null,
         loadError: null,
+        liveDraft: createIdleLiveDraft(),
       })
       return
     }
@@ -279,6 +353,7 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
         dirty: false,
         selectedBlueprintId: null,
         loadError: null,
+        liveDraft: createIdleLiveDraft(),
       })
     } catch (error) {
       if (requestVersion !== loadRequestVersion) {
@@ -290,6 +365,7 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
         dirty: false,
         selectedBlueprintId: null,
         loadError: getErrorMessage(error),
+        liveDraft: createIdleLiveDraft(),
       })
     }
   },
@@ -317,6 +393,7 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
         loadError: null,
         saveError: null,
         selectedBlueprintId: state.selectedBlueprintId,
+        liveDraft: createIdleLiveDraft(),
       }
     })
   },

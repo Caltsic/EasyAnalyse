@@ -20,6 +20,7 @@ import { runConfiguredAgentProvider } from '../../lib/agentProviderClient'
 import type { AgentProviderProgressEvent } from '../../lib/agentProviderClient'
 import { getErrorMessage } from '../../lib/errors'
 import { translate, type TranslationKey } from '../../lib/i18n'
+import { parseLiveBlueprintDraft } from '../../lib/liveBlueprintDraft'
 import { defaultSecretStore, isManagedSecretRef, type SecretStore } from '../../lib/secretStore'
 import { useAgentThreadStore } from '../../store/agentThreadStore'
 import { useBlueprintStore } from '../../store/blueprintStore'
@@ -143,6 +144,7 @@ export function AgentPanel({
   const activeAssistantMessageRef = useRef<{ threadId: string; messageId: string } | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
+  const liveDraftLastGoodRef = useRef<DocumentFile | null>(null)
 
   const running = runState.status === 'running'
   const provider = settings.agent.providers.find((item) => item.id === settings.agent.selectedProviderId) ?? null
@@ -302,12 +304,38 @@ export function AgentPanel({
       }
       return { ...state, elapsedMs, activity: [...state.activity, entry].slice(-MAX_ACTIVITY_ENTRIES) }
     })
+    if (typeof event.detail?.streamedContent === 'string') {
+      return
+    }
     appendRunToolMessage(runId, {
       title: formatActivityPhase(event.phase),
       content: event.message,
       meta: formatElapsed(elapsedMs),
       tone: event.phase === 'complete' ? 'success' : 'neutral',
     })
+  }
+
+  function handleProviderProgress(runId: number, startedAtMs: number, event: AgentProviderProgressEvent) {
+    appendActivity(runId, startedAtMs, event)
+    consumeLiveBlueprintProgress(runId, event)
+  }
+
+  function consumeLiveBlueprintProgress(runId: number, event: AgentProviderProgressEvent) {
+    if (activeRunRef.current !== runId) return
+    const streamedContent = typeof event.detail?.streamedContent === 'string' ? event.detail.streamedContent : null
+    if (!streamedContent) return
+
+    const result = parseLiveBlueprintDraft(streamedContent, {
+      lastGood: liveDraftLastGoodRef.current,
+    })
+    if (!result.markerFound) return
+
+    const blueprintStore = useBlueprintStore.getState()
+    if (blueprintStore.liveDraft.status === 'idle') {
+      blueprintStore.startLiveBlueprintDraft()
+    }
+    liveDraftLastGoodRef.current = result.lastGood
+    blueprintStore.updateLiveBlueprintDraft(result, streamedContent)
   }
 
   async function sendPrompt() {
@@ -334,6 +362,8 @@ export function AgentPanel({
     const requestId = `agent-panel-${runId}`
     const startedAtMs = Date.now()
     activityIdRef.current = 1
+    liveDraftLastGoodRef.current = null
+    useBlueprintStore.getState().clearLiveBlueprintDraft()
 
     setPrompt('')
     touchLocalThread(threadId, trimmedPrompt)
@@ -422,7 +452,7 @@ export function AgentPanel({
           })
           return insertedIds
         },
-        onProgress: (progressEvent) => appendActivity(runId, startedAtMs, progressEvent),
+        onProgress: (progressEvent) => handleProviderProgress(runId, startedAtMs, progressEvent),
       })
       if (activeRunRef.current !== runId) return
 
@@ -473,6 +503,10 @@ export function AgentPanel({
         insertedCount = inserted.length
         if (insertedCount === 0 && result.response.blueprints.length > 0) {
           throw new Error(t('generatedButNotStored'))
+        }
+        if (insertedCount > 0) {
+          useBlueprintStore.getState().clearLiveBlueprintDraft()
+          liveDraftLastGoodRef.current = null
         }
       }
 

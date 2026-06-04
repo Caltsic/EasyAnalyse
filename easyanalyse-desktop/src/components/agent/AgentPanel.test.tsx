@@ -409,6 +409,60 @@ describe('AgentPanel', () => {
     })
   })
 
+  it('reuses the begin gate decision before storing final blueprints', async () => {
+    const provider = deepseekProvider()
+    const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })
+    await secretStore.saveSecret({ providerId: provider.id, value: 'test-deepseek-key' })
+    const documentWithDevice = createDocumentWithDevice('doc-begin-gate-reuse')
+    const candidateDocument = createDocument('doc-reuse-after-begin')
+    candidateDocument.document.title = 'Final after begin gate'
+    providerMock.runConfiguredAgentProvider.mockImplementation(async (input) => {
+      const beginResult = await input.beginBlueprintGeneration?.({ intent: 'Generate replacement', title: 'Final after begin gate' })
+      expect(beginResult).toMatchObject({ allowed: true, action: 'continue_without_saving' })
+      return parseAgentResponse(JSON.stringify({
+        schemaVersion: 'agent-response-v1',
+        semanticVersion: 'easyanalyse-semantic-v4',
+        kind: 'blueprints',
+        summary: 'Final candidate after begin tool',
+        blueprints: [{
+          title: 'Final after begin gate',
+          summary: 'Stored without showing the begin gate a second time.',
+          rationale: 'The first begin gate decision is scoped to this run.',
+          tradeoffs: [],
+          document: candidateDocument,
+          issues: [],
+        }],
+      }))
+    })
+    useEditorStore.setState({ document: documentWithDevice, filePath: '/tmp/begin-reuse.easyanalyse' })
+    useSettingsStore.setState({
+      settings: {
+        basic: { locale: 'system' },
+        appearance: { theme: 'system' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+      },
+      loaded: true,
+      warnings: [],
+    })
+    const host = await renderAgentAndBlueprints({ secretStore })
+
+    await enterPromptAndSubmit(host, 'start with begin tool then return final blueprint')
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain('Save the current canvas before generating?'))
+    })
+    await act(async () => {
+      Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+        .find((button) => button.textContent?.includes('Continue without saving'))
+        ?.click()
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(useBlueprintStore.getState().workspace?.blueprints).toHaveLength(1))
+    })
+
+    expect(useBlueprintStore.getState().workspace?.blueprints[0]?.title).toBe('Final after begin gate')
+    expect(host.textContent).not.toContain('Save the current canvas before generating?')
+  })
+
   it('cancels the provider run from the begin blueprint generation gate', async () => {
     const provider = deepseekProvider()
     const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })
@@ -452,6 +506,113 @@ describe('AgentPanel', () => {
     expect(beginResult).toMatchObject({ allowed: false, action: 'cancelled' })
     expect(host.textContent).not.toContain('This response should be ignored after cancellation.')
     expect(useBlueprintStore.getState().workspace?.blueprints ?? []).toEqual([])
+  })
+
+  it('enforces the begin gate before storing final blueprints even when the model skipped the begin tool', async () => {
+    const provider = deepseekProvider()
+    const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })
+    await secretStore.saveSecret({ providerId: provider.id, value: 'test-deepseek-key' })
+    const documentWithDevice = createDocumentWithDevice('doc-begin-gate-final')
+    const candidateDocument = createDocument('doc-final-after-gate')
+    candidateDocument.document.title = 'Final after enforced gate'
+    providerMock.runConfiguredAgentProvider.mockResolvedValue(parseAgentResponse(JSON.stringify({
+      schemaVersion: 'agent-response-v1',
+      semanticVersion: 'easyanalyse-semantic-v4',
+      kind: 'blueprints',
+      summary: 'Final candidate without begin tool',
+      blueprints: [{
+        title: 'Final after enforced gate',
+        summary: 'Should store only after user chooses.',
+        rationale: 'The model skipped the begin tool, so EasyAnalyse enforces it.',
+        tradeoffs: [],
+        document: candidateDocument,
+        issues: [],
+      }],
+    })))
+    useEditorStore.setState({ document: documentWithDevice, filePath: '/tmp/begin-final.easyanalyse' })
+    useSettingsStore.setState({
+      settings: {
+        basic: { locale: 'system' },
+        appearance: { theme: 'system' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+      },
+      loaded: true,
+      warnings: [],
+    })
+    const host = await renderAgentAndBlueprints({ secretStore })
+
+    await enterPromptAndSubmit(host, 'return final blueprints without begin tool')
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain('Save the current canvas before generating?'))
+    })
+    expect(useBlueprintStore.getState().workspace?.blueprints ?? []).toEqual([])
+
+    await act(async () => {
+      Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+        .find((button) => button.textContent?.includes('Continue without saving'))
+        ?.click()
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(useBlueprintStore.getState().workspace?.blueprints).toHaveLength(1))
+    })
+
+    expect(useBlueprintStore.getState().workspace?.blueprints[0]?.title).toBe('Final after enforced gate')
+    expect(host.textContent).toContain('1 blueprint candidates stored')
+  })
+
+  it('enforces the begin gate before storing tool-created blueprints when the model skipped the begin tool', async () => {
+    const provider = deepseekProvider()
+    const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })
+    await secretStore.saveSecret({ providerId: provider.id, value: 'test-deepseek-key' })
+    const documentWithDevice = createDocumentWithDevice('doc-begin-gate-tool')
+    const candidateDocument = createDocument('doc-tool-after-gate')
+    const candidate = {
+      title: 'Tool after enforced gate',
+      summary: 'Stored after user gate.',
+      rationale: 'The model skipped begin but called create_blueprint_candidate.',
+      tradeoffs: [],
+      document: candidateDocument,
+      issues: [],
+    }
+    let createResult: unknown = null
+    providerMock.runConfiguredAgentProvider.mockImplementation(async (input) => {
+      createResult = await input.createBlueprintCandidate?.(candidate)
+      return parseAgentResponse(JSON.stringify({
+        schemaVersion: 'agent-response-v1',
+        semanticVersion: 'easyanalyse-semantic-v4',
+        kind: 'message',
+        markdown: 'Tool storage completed.',
+      }))
+    })
+    useEditorStore.setState({ document: documentWithDevice, filePath: '/tmp/begin-tool.easyanalyse' })
+    useSettingsStore.setState({
+      settings: {
+        basic: { locale: 'system' },
+        appearance: { theme: 'system' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+      },
+      loaded: true,
+      warnings: [],
+    })
+    const host = await renderAgentAndBlueprints({ secretStore })
+
+    await enterPromptAndSubmit(host, 'call create blueprint without begin tool')
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain('Save the current canvas before generating?'))
+    })
+    expect(createResult).toBeNull()
+
+    await act(async () => {
+      Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+        .find((button) => button.textContent?.includes('Continue without saving'))
+        ?.click()
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(useBlueprintStore.getState().workspace?.blueprints).toHaveLength(1))
+    })
+
+    expect(createResult).toMatchObject({ blueprintIds: [expect.any(String)] })
+    expect(useBlueprintStore.getState().workspace?.blueprints[0]?.title).toBe('Tool after enforced gate')
   })
 
   it('projects configured provider streamed blueprint JSON into transient live draft state', async () => {
@@ -523,6 +684,63 @@ describe('AgentPanel', () => {
     expect(host.textContent).toContain('Live preview ready')
     expect(host.textContent).not.toContain('Streaming blueprint draft partial.')
     expect(host.textContent).not.toContain('Streaming complete blueprint draft.')
+  })
+
+  it('enforces the begin gate before previewing streamed live drafts when the model skipped the begin tool', async () => {
+    const provider = deepseekProvider()
+    const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })
+    await secretStore.saveSecret({ providerId: provider.id, value: 'test-deepseek-key' })
+    const documentWithDevice = createDocumentWithDevice('doc-live-gate-source')
+    const liveDocument = createDocument('doc-live-gated')
+    liveDocument.document.title = 'Gated live draft'
+    const streamedContent = `${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(liveDocument)}`
+    const finalResponse = parseAgentResponse(JSON.stringify({
+      schemaVersion: 'agent-response-v1',
+      semanticVersion: 'easyanalyse-semantic-v4',
+      kind: 'message',
+      summary: 'Live stream finished',
+      markdown: 'The streamed draft is gated by EasyAnalyse.',
+    }))
+    const writeLiveBlueprintDraftPartial = vi.fn(async () => '/tmp/live-gated.easyanalyse/working-copy/live-draft.raw.json.partial')
+    providerMock.runConfiguredAgentProvider.mockImplementation(async (input) => {
+      input.progress?.({
+        phase: 'response',
+        message: 'Streaming gated draft.',
+        detail: { streamedContent },
+      })
+      return finalResponse
+    })
+    useEditorStore.setState({ document: documentWithDevice, filePath: '/tmp/live-gated.easyanalyse' })
+    useSettingsStore.setState({
+      settings: {
+        basic: { locale: 'system' },
+        appearance: { theme: 'system' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+      },
+      loaded: true,
+      warnings: [],
+    })
+    const host = await renderPanel({ secretStore, writeLiveBlueprintDraftPartial })
+
+    await enterPromptAndSubmit(host, 'stream live JSON without begin tool')
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain('Save the current canvas before generating?'))
+    })
+    expect(useBlueprintStore.getState().liveDraft.status).toBe('idle')
+    expect(writeLiveBlueprintDraftPartial).not.toHaveBeenCalled()
+
+    await act(async () => {
+      Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+        .find((button) => button.textContent?.includes('Continue without saving'))
+        ?.click()
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(useBlueprintStore.getState().liveDraft.status).toBe('ready'))
+      await new Promise((resolve) => window.setTimeout(resolve, 300))
+    })
+
+    expect(useBlueprintStore.getState().liveDraft.displayDocument?.document.title).toBe('Gated live draft')
+    expect(writeLiveBlueprintDraftPartial).toHaveBeenCalledWith('/tmp/live-gated.easyanalyse', streamedContent)
   })
 
   it('persists streamed live drafts only when the active document is a project directory', async () => {

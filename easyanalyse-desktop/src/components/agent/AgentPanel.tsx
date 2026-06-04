@@ -173,6 +173,7 @@ export function AgentPanel({
   const liveDraftPartialPendingRef = useRef<{ runId: number; projectPath: string; raw: string } | null>(null)
   const beginGateResolveRef = useRef<((data: BeginBlueprintGenerationData) => void) | null>(null)
   const beginGateDecisionByRunRef = useRef(new Map<number, BeginBlueprintGenerationData>())
+  const beginGatePendingByRunRef = useRef(new Map<number, Promise<BeginBlueprintGenerationData>>())
   const [beginGate, setBeginGate] = useState<BeginBlueprintGateState | null>(null)
 
   const running = runState.status === 'running'
@@ -361,12 +362,25 @@ export function AgentPanel({
     })
   }
 
-  function handleProviderProgress(runId: number, startedAtMs: number, event: AgentProviderProgressEvent) {
+  function handleProviderProgress(
+    runId: number,
+    startedAtMs: number,
+    requestId: string,
+    documentAtStart: DocumentFile,
+    filePathAtStart: string | null,
+    event: AgentProviderProgressEvent,
+  ) {
     appendActivity(runId, startedAtMs, event)
-    consumeLiveBlueprintProgress(runId, event)
+    void consumeLiveBlueprintProgress(runId, requestId, documentAtStart, filePathAtStart, event)
   }
 
-  function consumeLiveBlueprintProgress(runId: number, event: AgentProviderProgressEvent) {
+  async function consumeLiveBlueprintProgress(
+    runId: number,
+    requestId: string,
+    documentAtStart: DocumentFile,
+    filePathAtStart: string | null,
+    event: AgentProviderProgressEvent,
+  ) {
     if (activeRunRef.current !== runId) return
     const liveDraftSessionId = liveDraftSessionIdForRun(runId)
     const blueprintStore = useBlueprintStore.getState()
@@ -378,15 +392,21 @@ export function AgentPanel({
       lastGood: liveDraftLastGoodRef.current,
     })
     if (!result.markerFound) return
+    const allowed = await ensureBeginBlueprintGenerationAllowed(runId, requestId, documentAtStart, {
+      intent: t('beginBlueprintLiveGateIntent'),
+    })
+    if (!allowed || activeRunRef.current !== runId) return
 
-    if (blueprintStore.liveDraft.status === 'idle' || blueprintStore.liveDraft.sessionId !== liveDraftSessionId) {
-      const started = blueprintStore.startLiveBlueprintDraft({ sessionId: liveDraftSessionId })
+    const latestBlueprintStore = useBlueprintStore.getState()
+    if (latestBlueprintStore.isLiveBlueprintDraftSessionSuppressed(liveDraftSessionId)) return
+    if (latestBlueprintStore.liveDraft.status === 'idle' || latestBlueprintStore.liveDraft.sessionId !== liveDraftSessionId) {
+      const started = latestBlueprintStore.startLiveBlueprintDraft({ sessionId: liveDraftSessionId })
       if (!started) return
     }
     liveDraftLastGoodRef.current = result.lastGood
-    const updated = blueprintStore.updateLiveBlueprintDraft(result, streamedContent, { sessionId: liveDraftSessionId })
+    const updated = useBlueprintStore.getState().updateLiveBlueprintDraft(result, streamedContent, { sessionId: liveDraftSessionId })
     if (!updated) return
-    scheduleLiveBlueprintPartialWrite(runId, activeRunFilePathRef.current, streamedContent)
+    scheduleLiveBlueprintPartialWrite(runId, filePathAtStart, streamedContent)
   }
 
   function clearPendingLiveBlueprintPartialWrite() {
@@ -452,6 +472,7 @@ export function AgentPanel({
     activityIdRef.current = 1
     liveDraftLastGoodRef.current = null
     beginGateDecisionByRunRef.current.delete(runId)
+    beginGatePendingByRunRef.current.delete(runId)
     beginGateResolveRef.current = null
     setBeginGate(null)
     clearPendingLiveBlueprintPartialWrite()
@@ -525,6 +546,13 @@ export function AgentPanel({
           if (useBlueprintStore.getState().isLiveBlueprintDraftSessionSuppressed(requestId)) {
             return []
           }
+          const allowed = await ensureBeginBlueprintGenerationAllowed(runId, requestId, documentAtStart, {
+            intent: options?.summary ?? t('beginBlueprintStoreGateIntent'),
+            title: candidates[0]?.title,
+          })
+          if (!allowed || activeRunRef.current !== runId) {
+            return []
+          }
           const insertedIds = await addAgentBlueprintCandidatesToCurrentThread(
             candidates,
             {
@@ -548,7 +576,7 @@ export function AgentPanel({
           return insertedIds
         },
         beginBlueprintGeneration: (request) => handleBeginBlueprintGeneration(runId, requestId, documentAtStart, request),
-        onProgress: (progressEvent) => handleProviderProgress(runId, startedAtMs, progressEvent),
+        onProgress: (progressEvent) => handleProviderProgress(runId, startedAtMs, requestId, documentAtStart, filePathAtStart, progressEvent),
       })
       if (activeRunRef.current !== runId) return
 
@@ -593,6 +621,13 @@ export function AgentPanel({
             tone: 'warning',
           }, true)
         } else {
+          const allowed = await ensureBeginBlueprintGenerationAllowed(runId, requestId, documentAtStart, {
+            intent: t('beginBlueprintFinalGateIntent'),
+            title: result.response.blueprints[0]?.title,
+          })
+          if (!allowed || activeRunRef.current !== runId) {
+            return
+          }
           const inserted = await addAgentBlueprintCandidatesToCurrentThread(
             result.response.blueprints,
             {
@@ -689,6 +724,8 @@ export function AgentPanel({
         activeAssistantMessageRef.current = null
         activeRunFilePathRef.current = null
       }
+      beginGateDecisionByRunRef.current.delete(runId)
+      beginGatePendingByRunRef.current.delete(runId)
     }
   }
 
@@ -753,6 +790,8 @@ export function AgentPanel({
     abortControllerRef.current = null
     activeAssistantMessageRef.current = null
     activeRunFilePathRef.current = null
+    beginGateDecisionByRunRef.current.delete(cancelledRunId)
+    beginGatePendingByRunRef.current.delete(cancelledRunId)
     if (beginGate?.runId === cancelledRunId) {
       resolveBeginBlueprintGate({
         allowed: false,
@@ -764,7 +803,9 @@ export function AgentPanel({
   }
 
   function resolveBeginBlueprintGate(data: BeginBlueprintGenerationData) {
-    beginGateDecisionByRunRef.current.set(beginGate?.runId ?? activeRunRef.current, data)
+    const runId = beginGate?.runId ?? activeRunRef.current
+    beginGateDecisionByRunRef.current.set(runId, data)
+    beginGatePendingByRunRef.current.delete(runId)
     beginGateResolveRef.current?.(data)
     beginGateResolveRef.current = null
     setBeginGate(null)
@@ -778,6 +819,8 @@ export function AgentPanel({
   ): Promise<BeginBlueprintGenerationData> {
     const previousDecision = beginGateDecisionByRunRef.current.get(runId)
     if (previousDecision) return Promise.resolve(previousDecision)
+    const pendingDecision = beginGatePendingByRunRef.current.get(runId)
+    if (pendingDecision) return pendingDecision
     const canvasHadCircuit = documentAtStart.devices.length > 0
     if (!canvasHadCircuit) {
       const data: BeginBlueprintGenerationData = {
@@ -790,9 +833,10 @@ export function AgentPanel({
       return Promise.resolve(data)
     }
 
-    return new Promise((resolve) => {
+    const pending = new Promise<BeginBlueprintGenerationData>((resolve) => {
       beginGateResolveRef.current = (data) => {
         beginGateDecisionByRunRef.current.set(runId, data)
+        beginGatePendingByRunRef.current.delete(runId)
         resolve(data)
       }
       setBeginGate({
@@ -807,6 +851,18 @@ export function AgentPanel({
         error: null,
       })
     })
+    beginGatePendingByRunRef.current.set(runId, pending)
+    return pending
+  }
+
+  async function ensureBeginBlueprintGenerationAllowed(
+    runId: number,
+    requestId: string,
+    documentAtStart: DocumentFile,
+    request: BeginBlueprintGenerationRequest,
+  ): Promise<boolean> {
+    const result = await handleBeginBlueprintGeneration(runId, requestId, documentAtStart, request)
+    return result.allowed && activeRunRef.current === runId
   }
 
   async function handleBeginGateAction(action: BeginBlueprintGenerationAction) {
@@ -814,7 +870,17 @@ export function AgentPanel({
     setBeginGate((state) => state ? { ...state, busyAction: action, error: null } : state)
     try {
       if (action === 'cancelled') {
-        cancelRun()
+        const cancelledRunId = beginGate.runId
+        if (running && activeRunRef.current === cancelledRunId) {
+          cancelRun()
+        } else {
+          resolveBeginBlueprintGate({
+            allowed: false,
+            action: 'cancelled',
+            canvasHadCircuit: beginGate.canvasDeviceCount > 0,
+            message: t('beginBlueprintCancelled'),
+          })
+        }
         return
       }
 

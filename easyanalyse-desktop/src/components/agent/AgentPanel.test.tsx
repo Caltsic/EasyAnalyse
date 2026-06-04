@@ -6,8 +6,9 @@ import { buildDefaultDocument } from '../../lib/document'
 import { parseAgentResponse } from '../../lib/agentResponse'
 import { createMockAgentResponse } from '../../lib/agentMockProvider'
 import type { MockAgentRequest } from '../../lib/agentMockProvider'
+import type { OpenAiCompatibleFetch } from '../../lib/openAiCompatibleProvider'
 import { createEmptyBlueprintWorkspace } from '../../lib/blueprintWorkspace'
-import { createMemorySecretBackend, createSecretStore, type SecretStore } from '../../lib/secretStore'
+import { createMemorySecretBackend, createSecretStore } from '../../lib/secretStore'
 import { hashDocument } from '../../lib/documentHash'
 import { LIVE_BLUEPRINT_JSON_MARKER } from '../../lib/liveBlueprintDraft'
 import { useBlueprintStore } from '../../store/blueprintStore'
@@ -16,6 +17,7 @@ import { useSettingsStore } from '../../store/settingsStore'
 import type { AgentResponseParseResult } from '../../types/agent'
 import type { DocumentFile } from '../../types/document'
 import type { AgentProviderPublicConfig } from '../../types/settings'
+import type { AgentPanelProps } from './AgentPanel'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -32,6 +34,12 @@ vi.mock('../../lib/agentMockProvider', async (importOriginal) => ({
 vi.mock('../../lib/agentProviderClient', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/agentProviderClient')>()),
   runConfiguredAgentProvider: providerMock.runConfiguredAgentProvider,
+}))
+
+vi.mock('../blueprints/BlueprintPreviewCanvas', () => ({
+  BlueprintPreviewCanvas: ({ document, className }: { document: DocumentFile; className?: string }) => (
+    <div aria-label="Blueprint preview canvas" className={className} data-document-title={document.document.title} />
+  ),
 }))
 
 let root: Root | null = null
@@ -59,13 +67,30 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-async function renderPanel(props: { secretStore?: Pick<SecretStore, 'readSecret'> } = {}) {
+async function renderPanel(props: AgentPanelProps = {}) {
   const { AgentPanel } = await import('./AgentPanel')
   container = window.document.createElement('div')
   window.document.body.appendChild(container)
   root = createRoot(container)
   await act(async () => {
     root?.render(<AgentPanel {...props} />)
+  })
+  return container
+}
+
+async function renderAgentAndBlueprints(props: AgentPanelProps = {}) {
+  const { AgentPanel } = await import('./AgentPanel')
+  const { BlueprintsPanel } = await import('../blueprints/BlueprintsPanel')
+  container = window.document.createElement('div')
+  window.document.body.appendChild(container)
+  root = createRoot(container)
+  await act(async () => {
+    root?.render(
+      <>
+        <AgentPanel {...props} />
+        <BlueprintsPanel />
+      </>,
+    )
   })
   return container
 }
@@ -95,6 +120,31 @@ function deepseekProvider(overrides: Partial<AgentProviderPublicConfig> = {}): A
     defaultModel: 'deepseek-chat',
     apiKeyRef: 'secret-ref:deepseek-test',
     ...overrides,
+  }
+}
+
+function createControlledSseResponse() {
+  const encoder = new TextEncoder()
+  let controller: ReadableStreamDefaultController<Uint8Array> | null = null
+  const response = new Response(
+    new ReadableStream<Uint8Array>({
+      start(streamController) {
+        controller = streamController
+      },
+    }),
+    { headers: { 'Content-Type': 'text/event-stream' } },
+  )
+
+  return {
+    response,
+    enqueue(event: unknown) {
+      if (!controller) throw new Error('SSE stream controller is not ready')
+      const data = event === '[DONE]' ? '[DONE]' : JSON.stringify(event)
+      controller.enqueue(encoder.encode(`data: ${data}\n\n`))
+    },
+    close() {
+      controller?.close()
+    },
   }
 }
 
@@ -347,6 +397,87 @@ describe('AgentPanel', () => {
     expect(host.textContent).toContain('Live preview ready')
     expect(host.textContent).not.toContain('Streaming blueprint draft partial.')
     expect(host.textContent).not.toContain('Streaming complete blueprint draft.')
+  })
+
+  it('renders live blueprint preview from real provider-runtime SSE before the final response closes', async () => {
+    const { runConfiguredAgentProvider } = await vi.importActual<typeof import('../../lib/agentProviderClient')>(
+      '../../lib/agentProviderClient',
+    )
+    const provider = deepseekProvider()
+    const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })
+    await secretStore.saveSecret({ providerId: provider.id, value: 'test-deepseek-key' })
+    const liveDocument = createDocument('doc-provider-runtime-live')
+    liveDocument.document.title = 'Provider runtime live draft'
+    const candidate = {
+      title: 'Provider runtime candidate',
+      summary: 'Candidate summary',
+      rationale: 'Candidate rationale',
+      tradeoffs: [],
+      document: liveDocument,
+      issues: [],
+    }
+    const finalContent = JSON.stringify({
+      schemaVersion: 'agent-response-v1',
+      semanticVersion: 'easyanalyse-semantic-v4',
+      kind: 'blueprints',
+      summary: 'Provider runtime streamed blueprint',
+      blueprints: [candidate],
+    })
+    const splitAfterDocument = finalContent.indexOf(',"issues":[]')
+    expect(splitAfterDocument).toBeGreaterThan(0)
+    const firstDelta = finalContent.slice(0, splitAfterDocument)
+    const secondDelta = finalContent.slice(splitAfterDocument)
+    const sse = createControlledSseResponse()
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => sse.response)
+    const runProvider: AgentPanelProps['runProvider'] = (input) => runConfiguredAgentProvider({
+      ...input,
+      fetchImpl: fetchMock,
+      maxToolIterations: 0,
+      selfCheck: { enabled: false, repairOnIssues: false, maxRepairAttempts: 0 },
+    })
+    useEditorStore.setState({ filePath: null })
+    useSettingsStore.setState({
+      settings: {
+        basic: { locale: 'system' },
+        appearance: { theme: 'system' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+      },
+      loaded: true,
+      warnings: [],
+    })
+    const host = await renderAgentAndBlueprints({ secretStore, runProvider })
+
+    await enterPromptAndSubmit(host, 'stream through provider runtime')
+    await act(async () => {
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    })
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toMatchObject({ stream: true, response_format: { type: 'json_object' } })
+
+    await act(async () => {
+      sse.enqueue({
+        id: 'chatcmpl-agent-panel-stream',
+        choices: [{ index: 0, delta: { content: firstDelta } }],
+      })
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(useBlueprintStore.getState().liveDraft.displayDocument?.document.title).toBe('Provider runtime live draft'))
+    })
+    const previewCanvas = host.querySelector('[aria-label="Blueprint preview canvas"]') as HTMLElement | null
+    expect(host.textContent).toContain('Live blueprint preview')
+    expect(previewCanvas?.dataset.documentTitle).toBe('Provider runtime live draft')
+    expect(host.textContent).toContain('Running')
+
+    await act(async () => {
+      sse.enqueue({
+        id: 'chatcmpl-agent-panel-stream',
+        choices: [{ index: 0, delta: { content: secondDelta }, finish_reason: 'stop' }],
+      })
+      sse.enqueue('[DONE]')
+      sse.close()
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain('1 blueprint candidates stored'))
+    })
   })
 
   it('shows configured provider activity while a response is still pending', async () => {

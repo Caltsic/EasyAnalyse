@@ -741,6 +741,65 @@ describe('AgentPanel', () => {
     expect(host.textContent).toContain('Partial direct preview ready')
   })
 
+  it('projects a partial direct DocumentFile with provisional layout before view arrives', async () => {
+    const provider = deepseekProvider()
+    const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })
+    await secretStore.saveSecret({ providerId: provider.id, value: 'test-deepseek-key' })
+    const liveDocument = createDocumentWithDevice('doc-live-provisional-layout')
+    liveDocument.document.title = 'Provisional layout live draft'
+    const partialDirectDocument = [
+      '{',
+      '"schemaVersion":"4.0.0",',
+      `"document":${JSON.stringify(liveDocument.document)},`,
+      `"devices":${JSON.stringify(liveDocument.devices)},`,
+      '"view":{',
+    ].join('')
+    const finalResponse = parseAgentResponse(JSON.stringify({
+      schemaVersion: 'agent-response-v1',
+      semanticVersion: 'easyanalyse-semantic-v4',
+      kind: 'message',
+      summary: 'Provisional live preview ready',
+      markdown: 'The direct DocumentFile was previewed before view arrived.',
+    }))
+    providerMock.runConfiguredAgentProvider.mockImplementation(async (input) => {
+      input.progress?.({
+        phase: 'response',
+        message: 'Streaming provisional direct document.',
+        detail: {
+          streamedContent: `${LIVE_BLUEPRINT_JSON_MARKER}\n${partialDirectDocument}`,
+        },
+      })
+      return finalResponse
+    })
+    useSettingsStore.setState({
+      settings: {
+        basic: { locale: 'system' },
+        appearance: { theme: 'system' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+      },
+      loaded: true,
+      warnings: [],
+    })
+    const host = await renderAgentAndBlueprints({ secretStore })
+
+    await enterPromptAndSubmit(host, 'stream a partial direct document before view')
+
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(useBlueprintStore.getState().liveDraft.displayDocument?.document.title).toBe('Provisional layout live draft')
+      })
+    })
+    const liveDraft = useBlueprintStore.getState().liveDraft
+    expect(liveDraft.status).toBe('partial-json')
+    expect(liveDraft.hasCompleteJson).toBe(false)
+    expect(liveDraft.displayDocument?.view.devices).toEqual({ r1: { position: { x: 80, y: 96 } } })
+    const previewCanvas = host.querySelector('[aria-label="Blueprint preview canvas"]') as HTMLElement | null
+    expect(previewCanvas?.dataset.documentTitle).toBe('Provisional layout live draft')
+    const acceptButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent?.includes('Accept draft'))
+    expect(acceptButton?.disabled).toBe(true)
+  })
+
   it('enforces the begin gate before previewing streamed live drafts when the model skipped the begin tool', async () => {
     const provider = deepseekProvider()
     const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })

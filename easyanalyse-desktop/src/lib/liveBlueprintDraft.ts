@@ -1,4 +1,4 @@
-import type { DocumentFile, TerminalDirection } from '../types/document'
+import type { DeviceDefinition, DocumentFile, TerminalDirection, ViewDefinition } from '../types/document'
 import { isRecord } from './guards'
 
 export const LIVE_BLUEPRINT_JSON_MARKER = 'BEGIN_EASYANALYSE_BLUEPRINT_JSON'
@@ -234,7 +234,7 @@ function synthesizeDisplayDocumentFromPartialObject(
   const document = extractDirectPropertyJsonValueSpan(text, objectStartIndex, 'document', absoluteOffset)
   const devices = extractDirectPropertyJsonValueSpan(text, objectStartIndex, 'devices', absoluteOffset)
   const view = extractDirectPropertyJsonValueSpan(text, objectStartIndex, 'view', absoluteOffset)
-  if (!schemaVersion || !document || !view) return null
+  if (!schemaVersion || !document) return null
 
   const partialDeviceSpans = devices
     ? null
@@ -243,19 +243,20 @@ function synthesizeDisplayDocumentFromPartialObject(
 
   let synthesized: DocumentFile
   try {
+    const parsedDevices = devices
+      ? JSON.parse(devices.json) as DeviceDefinition[]
+      : partialDeviceSpans!.map((span) => JSON.parse(span.json) as DeviceDefinition)
     synthesized = {
       schemaVersion: JSON.parse(schemaVersion.json),
       document: JSON.parse(document.json),
-      devices: devices
-        ? JSON.parse(devices.json)
-        : partialDeviceSpans!.map((span) => JSON.parse(span.json)),
-      view: JSON.parse(view.json),
+      devices: parsedDevices,
+      view: view ? JSON.parse(view.json) : createProvisionalView(parsedDevices),
     } as DocumentFile
   } catch {
     return null
   }
 
-  if (!devices) {
+  if (!devices || !view) {
     synthesized = restrictViewToProjectedDevices(synthesized)
   }
 
@@ -263,7 +264,8 @@ function synthesizeDisplayDocumentFromPartialObject(
   if (issues.length > 0) return null
 
   const devicesEndIndex = devices?.endIndex ?? partialDeviceSpans?.at(-1)?.endIndex ?? 0
-  const endIndex = Math.max(schemaVersion.endIndex, document.endIndex, devicesEndIndex, view.endIndex)
+  const viewEndIndex = view?.endIndex ?? 0
+  const endIndex = Math.max(schemaVersion.endIndex, document.endIndex, devicesEndIndex, viewEndIndex)
   return {
     document: synthesized,
     complete: false,
@@ -272,6 +274,27 @@ function synthesizeDisplayDocumentFromPartialObject(
       startIndex: absoluteOffset + objectStartIndex,
       endIndex,
     },
+  }
+}
+
+function createProvisionalView(devices: DeviceDefinition[]): ViewDefinition {
+  return {
+    canvas: {
+      units: 'px',
+      grid: { enabled: true, size: 16 },
+    },
+    devices: Object.fromEntries(
+      devices.map((device, index) => [
+        device.id,
+        {
+          position: {
+            x: 80 + (index % 4) * 300,
+            y: 96 + Math.floor(index / 4) * 224,
+          },
+        },
+      ]),
+    ),
+    networkLines: {},
   }
 }
 

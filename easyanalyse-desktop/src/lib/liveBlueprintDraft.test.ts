@@ -200,6 +200,85 @@ describe('liveBlueprintDraft', () => {
     expect(result.displayDocument?.view.devices).toEqual({ r1: { position: { x: 10, y: 20 } } })
   })
 
+  it('synthesizes a direct document with provisional layout before view arrives', () => {
+    const document = createDocument({ document: { id: 'devices-before-view', title: 'Devices before view' } })
+    const partialDirectDocument = [
+      '{',
+      '"schemaVersion":"4.0.0",',
+      `"document":${JSON.stringify(document.document)},`,
+      `"devices":${JSON.stringify(document.devices)},`,
+      '"view":{',
+    ].join('')
+
+    const result = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${partialDirectDocument}`)
+
+    expect(result.status).toBe('partial-json')
+    expect(result.hasCompleteJson).toBe(false)
+    expect(result.displayDocument?.document.id).toBe('devices-before-view')
+    expect(result.displayDocument?.devices.map((device) => device.id)).toEqual(['r1'])
+    expect(result.displayDocument?.view).toMatchObject({
+      canvas: { units: 'px' },
+      devices: { r1: { position: { x: 80, y: 96 } } },
+      networkLines: {},
+    })
+  })
+
+  it('replaces provisional layout with the streamed view once it arrives', () => {
+    const document = createDocument({
+      document: { id: 'provisional-then-real-view', title: 'Provisional then real view' },
+      view: {
+        canvas: { units: 'px' },
+        devices: { r1: { position: { x: 444, y: 222 } } },
+        networkLines: { vin: { label: 'VIN', position: { x: 10, y: 10 } } },
+      },
+    })
+    const beforeView = [
+      '{',
+      '"schemaVersion":"4.0.0",',
+      `"document":${JSON.stringify(document.document)},`,
+      `"devices":${JSON.stringify(document.devices)},`,
+      '"view":{',
+    ].join('')
+    const withView = [
+      '{',
+      '"schemaVersion":"4.0.0",',
+      `"document":${JSON.stringify(document.document)},`,
+      `"devices":${JSON.stringify(document.devices)},`,
+      `"view":${JSON.stringify(document.view)},`,
+      '"extensions":{',
+    ].join('')
+
+    const provisional = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${beforeView}`)
+    const replaced = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${withView}`, {
+      lastGood: provisional.lastGood,
+    })
+
+    expect(provisional.status).toBe('partial-json')
+    expect(provisional.displayDocument?.view.devices?.r1?.position).toEqual({ x: 80, y: 96 })
+    expect(replaced.status).toBe('partial-json')
+    expect(replaced.displayDocument?.view.devices?.r1?.position).toEqual({ x: 444, y: 222 })
+    expect(replaced.displayDocument?.view.networkLines?.vin?.position).toEqual({ x: 10, y: 10 })
+  })
+
+  it('synthesizes complete devices from an open devices array with provisional layout before view arrives', () => {
+    const firstDevice = createDocument().devices[0]!
+    const document = createDocument({ document: { id: 'open-devices-before-view', title: 'Open devices before view' } })
+    const partialDirectDocument = [
+      '{',
+      '"schemaVersion":"4.0.0",',
+      `"document":${JSON.stringify(document.document)},`,
+      `"devices":[${JSON.stringify(firstDevice)},{"id":"next"`,
+    ].join('')
+
+    const result = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${partialDirectDocument}`)
+
+    expect(result.status).toBe('partial-json')
+    expect(result.hasCompleteJson).toBe(false)
+    expect(result.displayDocument?.document.id).toBe('open-devices-before-view')
+    expect(result.displayDocument?.devices.map((device) => device.id)).toEqual(['r1'])
+    expect(result.displayDocument?.view.devices).toEqual({ r1: { position: { x: 80, y: 96 } } })
+  })
+
   it('does not synthesize a devices-array projection before the first device object closes', () => {
     const lastGood = createDocument({ document: { id: 'last', title: 'Last good' } })
     const document = createDocument({ document: { id: 'first-device-open', title: 'First device open' } })
@@ -318,14 +397,40 @@ describe('liveBlueprintDraft', () => {
     expect(result.displayDocument?.devices.map((device) => device.id)).toEqual(['r1'])
   })
 
-  it('does not synthesize a partial document before all required fields are complete', () => {
+  it('synthesizes a nested document with provisional layout before view arrives', () => {
+    const document = createDocument({ document: { id: 'nested-devices-before-view', title: 'Nested devices before view' } })
+    const partialWrapper = [
+      '{',
+      '"schemaVersion":"agent-response-v1",',
+      '"semanticVersion":"easyanalyse-semantic-v4",',
+      '"kind":"blueprints",',
+      '"blueprints":[{',
+      '"title":"Candidate",',
+      '"summary":"Candidate summary",',
+      '"rationale":"Candidate rationale",',
+      '"tradeoffs":[],',
+      '"document":{',
+      '"schemaVersion":"4.0.0",',
+      `"document":${JSON.stringify(document.document)},`,
+      `"devices":${JSON.stringify(document.devices)},`,
+    ].join('')
+
+    const result = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${partialWrapper}`)
+
+    expect(result.status).toBe('partial-json')
+    expect(result.hasCompleteJson).toBe(false)
+    expect(result.displayDocument?.document.id).toBe('nested-devices-before-view')
+    expect(result.displayDocument?.view.devices).toEqual({ r1: { position: { x: 80, y: 96 } } })
+  })
+
+  it('does not synthesize a partial document before device data is available', () => {
     const lastGood = createDocument({ document: { id: 'last', title: 'Last good' } })
-    const document = createDocument({ document: { id: 'missing-view', title: 'Missing view' } })
+    const document = createDocument({ document: { id: 'missing-devices', title: 'Missing devices' } })
     const partialDirectDocument = [
       '{',
       '"schemaVersion":"4.0.0",',
       `"document":${JSON.stringify(document.document)},`,
-      `"devices":${JSON.stringify(document.devices)},`,
+      `"view":${JSON.stringify(document.view)},`,
     ].join('')
 
     const result = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${partialDirectDocument}`, { lastGood })

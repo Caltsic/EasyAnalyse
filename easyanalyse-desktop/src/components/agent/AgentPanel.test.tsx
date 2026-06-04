@@ -912,6 +912,220 @@ describe('AgentPanel', () => {
     expect(host.textContent).not.toContain('This result should not complete')
   })
 
+  it('waits for a pending streamed live draft gate before showing a provider error', async () => {
+    const provider = deepseekProvider()
+    const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })
+    await secretStore.saveSecret({ providerId: provider.id, value: 'test-deepseek-key' })
+    const documentWithDevice = createDocumentWithDevice('doc-live-error-source')
+    const liveDocument = createDocument('doc-live-before-error')
+    liveDocument.document.title = 'Live draft before provider error'
+    const streamedContent = `${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(liveDocument)}`
+    const writeLiveBlueprintDraftPartial = vi.fn(async () => '/tmp/live-error.easyanalyse/working-copy/live-draft.raw.json.partial')
+    providerMock.runConfiguredAgentProvider.mockImplementation(async (input) => {
+      input.progress?.({
+        phase: 'response',
+        message: 'Streaming gated draft before provider error.',
+        detail: { streamedContent },
+      })
+      throw new Error('provider failed after streaming')
+    })
+    useEditorStore.setState({ document: documentWithDevice, filePath: '/tmp/live-error.easyanalyse' })
+    useSettingsStore.setState({
+      settings: {
+        basic: { locale: 'system' },
+        appearance: { theme: 'system' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+      },
+      loaded: true,
+      warnings: [],
+    })
+    const host = await renderPanel({ secretStore, writeLiveBlueprintDraftPartial })
+
+    await enterPromptAndSubmit(host, 'stream live JSON then provider fails')
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain('Save the current canvas before generating?'))
+    })
+    expect(host.textContent).not.toContain('provider failed after streaming')
+    expect(useBlueprintStore.getState().liveDraft.status).toBe('idle')
+    expect(writeLiveBlueprintDraftPartial).not.toHaveBeenCalled()
+
+    await act(async () => {
+      Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+        .find((button) => button.textContent?.includes('Continue without saving'))
+        ?.click()
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain('provider failed after streaming'))
+      await new Promise((resolve) => window.setTimeout(resolve, 300))
+    })
+
+    expect(useBlueprintStore.getState().liveDraft.displayDocument?.document.title).toBe('Live draft before provider error')
+    expect(writeLiveBlueprintDraftPartial).toHaveBeenCalledWith('/tmp/live-error.easyanalyse', streamedContent)
+  })
+
+  it('cancels a pending streamed live draft gate before a provider error is shown', async () => {
+    const provider = deepseekProvider()
+    const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })
+    await secretStore.saveSecret({ providerId: provider.id, value: 'test-deepseek-key' })
+    const documentWithDevice = createDocumentWithDevice('doc-live-error-cancel-source')
+    const liveDocument = createDocument('doc-live-error-cancelled')
+    liveDocument.document.title = 'Cancelled provider error draft'
+    const streamedContent = `${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(liveDocument)}`
+    const writeLiveBlueprintDraftPartial = vi.fn(async () => '/tmp/live-error-cancel.easyanalyse/working-copy/live-draft.raw.json.partial')
+    providerMock.runConfiguredAgentProvider.mockImplementation(async (input) => {
+      input.progress?.({
+        phase: 'response',
+        message: 'Streaming gated draft before cancellable provider error.',
+        detail: { streamedContent },
+      })
+      throw new Error('provider error should be suppressed after cancel')
+    })
+    useEditorStore.setState({ document: documentWithDevice, filePath: '/tmp/live-error-cancel.easyanalyse' })
+    useSettingsStore.setState({
+      settings: {
+        basic: { locale: 'system' },
+        appearance: { theme: 'system' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+      },
+      loaded: true,
+      warnings: [],
+    })
+    const host = await renderPanel({ secretStore, writeLiveBlueprintDraftPartial })
+
+    await enterPromptAndSubmit(host, 'stream live JSON then cancel provider error')
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain('Save the current canvas before generating?'))
+    })
+
+    await act(async () => {
+      Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+        .find((button) => button.textContent?.includes('Cancel generation'))
+        ?.click()
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain('Agent run cancelled'))
+    })
+
+    expect(useBlueprintStore.getState().liveDraft.status).toBe('idle')
+    expect(writeLiveBlueprintDraftPartial).not.toHaveBeenCalled()
+    expect(host.textContent).not.toContain('provider error should be suppressed after cancel')
+  })
+
+  it('does not write a queued live draft partial after accepting the draft', async () => {
+    const provider = deepseekProvider()
+    const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })
+    await secretStore.saveSecret({ providerId: provider.id, value: 'test-deepseek-key' })
+    const liveDocument = createDocument('doc-live-accept-no-rewrite')
+    liveDocument.document.title = 'Accept without partial rewrite'
+    const streamedContent = `${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(liveDocument)}`
+    const finalResponse = parseAgentResponse(JSON.stringify({
+      schemaVersion: 'agent-response-v1',
+      semanticVersion: 'easyanalyse-semantic-v4',
+      kind: 'message',
+      summary: 'Live draft queued',
+      markdown: 'The live draft can be accepted before the partial write timer fires.',
+    }))
+    const writeLiveBlueprintDraftPartial = vi.fn(async () => '/tmp/project-accept.easyanalyse/working-copy/live-draft.raw.json.partial')
+    providerMock.runConfiguredAgentProvider.mockImplementation(async (input) => {
+      input.progress?.({
+        phase: 'response',
+        message: 'Streaming live draft for accept.',
+        detail: { streamedContent },
+      })
+      return finalResponse
+    })
+    useEditorStore.setState({ filePath: '/tmp/project-accept.easyanalyse' })
+    useSettingsStore.setState({
+      settings: {
+        basic: { locale: 'system' },
+        appearance: { theme: 'system' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+      },
+      loaded: true,
+      warnings: [],
+    })
+    const host = await renderAgentAndBlueprints({ secretStore, writeLiveBlueprintDraftPartial })
+
+    await enterPromptAndSubmit(host, 'stream a live draft then accept it')
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(useBlueprintStore.getState().liveDraft.displayDocument?.document.title).toBe('Accept without partial rewrite')
+      })
+    })
+    expect(writeLiveBlueprintDraftPartial).not.toHaveBeenCalled()
+
+    await act(async () => {
+      Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+        .find((button) => button.textContent?.includes('Accept draft'))
+        ?.click()
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(useBlueprintStore.getState().workspace?.blueprints).toHaveLength(1))
+      await new Promise((resolve) => window.setTimeout(resolve, 300))
+    })
+
+    expect(useBlueprintStore.getState().liveDraft.status).toBe('idle')
+    expect(useBlueprintStore.getState().workspace?.blueprints[0]?.title).toBe('Accept without partial rewrite')
+    expect(writeLiveBlueprintDraftPartial).not.toHaveBeenCalled()
+  })
+
+  it('does not write a queued live draft partial after discarding the draft', async () => {
+    const provider = deepseekProvider()
+    const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })
+    await secretStore.saveSecret({ providerId: provider.id, value: 'test-deepseek-key' })
+    const liveDocument = createDocument('doc-live-discard-no-rewrite')
+    liveDocument.document.title = 'Discard without partial rewrite'
+    const streamedContent = `${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(liveDocument)}`
+    const finalResponse = parseAgentResponse(JSON.stringify({
+      schemaVersion: 'agent-response-v1',
+      semanticVersion: 'easyanalyse-semantic-v4',
+      kind: 'message',
+      summary: 'Live draft queued',
+      markdown: 'The live draft can be discarded before the partial write timer fires.',
+    }))
+    const writeLiveBlueprintDraftPartial = vi.fn(async () => '/tmp/project-discard.easyanalyse/working-copy/live-draft.raw.json.partial')
+    providerMock.runConfiguredAgentProvider.mockImplementation(async (input) => {
+      input.progress?.({
+        phase: 'response',
+        message: 'Streaming live draft for discard.',
+        detail: { streamedContent },
+      })
+      return finalResponse
+    })
+    useEditorStore.setState({ filePath: '/tmp/project-discard.easyanalyse' })
+    useSettingsStore.setState({
+      settings: {
+        basic: { locale: 'system' },
+        appearance: { theme: 'system' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+      },
+      loaded: true,
+      warnings: [],
+    })
+    const host = await renderAgentAndBlueprints({ secretStore, writeLiveBlueprintDraftPartial })
+
+    await enterPromptAndSubmit(host, 'stream a live draft then discard it')
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(useBlueprintStore.getState().liveDraft.displayDocument?.document.title).toBe('Discard without partial rewrite')
+      })
+    })
+    expect(writeLiveBlueprintDraftPartial).not.toHaveBeenCalled()
+
+    await act(async () => {
+      Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+        .find((button) => button.textContent?.includes('Discard draft'))
+        ?.click()
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(useBlueprintStore.getState().liveDraft.status).toBe('idle'))
+      await new Promise((resolve) => window.setTimeout(resolve, 300))
+    })
+
+    expect(useBlueprintStore.getState().workspace?.blueprints ?? []).toEqual([])
+    expect(writeLiveBlueprintDraftPartial).not.toHaveBeenCalled()
+  })
+
   it('persists streamed live drafts only when the active document is a project directory', async () => {
     const provider = deepseekProvider()
     const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })

@@ -170,7 +170,7 @@ export function AgentPanel({
   const liveDraftLastGoodRef = useRef<DocumentFile | null>(null)
   const activeRunFilePathRef = useRef<string | null>(null)
   const liveDraftPartialTimerRef = useRef<number | null>(null)
-  const liveDraftPartialPendingRef = useRef<{ runId: number; projectPath: string; raw: string } | null>(null)
+  const liveDraftPartialPendingRef = useRef<{ runId: number; sessionId: string; projectPath: string; raw: string } | null>(null)
   const liveProgressTasksByRunRef = useRef(new Map<number, Set<Promise<void>>>())
   const beginGateResolveRef = useRef<((data: BeginBlueprintGenerationData) => void) | null>(null)
   const beginGateDecisionByRunRef = useRef(new Map<number, BeginBlueprintGenerationData>())
@@ -432,7 +432,7 @@ export function AgentPanel({
     liveDraftLastGoodRef.current = result.lastGood
     const updated = useBlueprintStore.getState().updateLiveBlueprintDraft(result, streamedContent, { sessionId: liveDraftSessionId })
     if (!updated) return
-    scheduleLiveBlueprintPartialWrite(runId, filePathAtStart, streamedContent)
+    scheduleLiveBlueprintPartialWrite(runId, liveDraftSessionId, filePathAtStart, streamedContent)
   }
 
   function clearPendingLiveBlueprintPartialWrite() {
@@ -443,9 +443,9 @@ export function AgentPanel({
     liveDraftPartialPendingRef.current = null
   }
 
-  function scheduleLiveBlueprintPartialWrite(runId: number, projectPath: string | null, raw: string) {
+  function scheduleLiveBlueprintPartialWrite(runId: number, sessionId: string, projectPath: string | null, raw: string) {
     if (!projectPath || !isEasyAnalyseProjectPath(projectPath)) return
-    liveDraftPartialPendingRef.current = { runId, projectPath, raw }
+    liveDraftPartialPendingRef.current = { runId, sessionId, projectPath, raw }
     if (liveDraftPartialTimerRef.current !== null) {
       window.clearTimeout(liveDraftPartialTimerRef.current)
     }
@@ -463,6 +463,7 @@ export function AgentPanel({
     }
     liveDraftPartialPendingRef.current = null
     if (activeRunRef.current !== runId) return
+    if (useBlueprintStore.getState().isLiveBlueprintDraftSessionSuppressed(pending.sessionId)) return
     if (useEditorStore.getState().filePath !== pending.projectPath) return
     try {
       await writeLiveBlueprintDraftPartial(pending.projectPath, pending.raw)

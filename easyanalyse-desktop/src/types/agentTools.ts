@@ -4,6 +4,7 @@ import type { AgentBlueprintCandidate } from './agent'
 import type { LayoutOverlapCheckOptions, LayoutOverlapReport } from '../lib/layoutValidation'
 
 export type AgentToolName =
+  | 'begin_blueprint_generation'
   | 'get_current_document'
   | 'get_blueprint_workspace'
   | 'get_blueprint_candidate'
@@ -94,6 +95,9 @@ export interface AgentToolRuntimeContext {
   getEditorFocus?: () => Promise<AgentEditorFocus | null> | AgentEditorFocus | null
   getEasyAnalyseFormatRules?: () => Promise<string> | string
   validateDocument?: (document: DocumentFile) => Promise<ValidationReport> | ValidationReport
+  beginBlueprintGeneration?: (
+    request: BeginBlueprintGenerationRequest,
+  ) => Promise<BeginBlueprintGenerationData> | BeginBlueprintGenerationData
   createBlueprintCandidate?: (
     candidate: AgentBlueprintCandidate,
     context: {
@@ -107,6 +111,7 @@ export type AgentToolContext = AgentToolRuntimeContext
 
 export type AgentToolInput =
   | Record<string, never>
+  | { intent?: string; title?: string }
   | {
       filterType?: 'lowpass' | 'highpass'
       topology?: 'auto' | 'passive-rc' | 'sallen-key'
@@ -142,6 +147,27 @@ export interface AgentDocumentSummary {
   deviceCount: number
   networkLineCount: number
   updatedAt?: string
+}
+
+export type BeginBlueprintGenerationAction =
+  | 'auto_continue'
+  | 'save_current_blueprint'
+  | 'save_new_blueprint'
+  | 'continue_without_saving'
+  | 'cancelled'
+
+export interface BeginBlueprintGenerationRequest {
+  intent?: string
+  title?: string
+}
+
+export interface BeginBlueprintGenerationData {
+  allowed: boolean
+  action: BeginBlueprintGenerationAction
+  canvasHadCircuit: boolean
+  savedBlueprintId?: string
+  savedBlueprintTitle?: string
+  message: string
 }
 
 export interface AgentBlueprintRecordSummary {

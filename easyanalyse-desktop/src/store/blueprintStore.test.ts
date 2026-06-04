@@ -172,6 +172,34 @@ describe('blueprintStore', () => {
     expect(state.dirty).toBe(true)
   })
 
+  it('replaces an existing blueprint document from the current canvas snapshot', async () => {
+    const mainDocument = createDocument({ document: { id: 'main-replace', title: 'Main replace' } })
+    const originalBlueprintDocument = createDocument({ document: { id: 'bp-original-doc', title: 'Original blueprint document' } })
+    const replacementDocument = createDocument({ document: { id: 'bp-replacement-doc', title: 'Replacement canvas' } })
+    await useBlueprintStore.getState().loadForMainDocument('/tmp/replace.easyanalyse', mainDocument)
+    const original = await useBlueprintStore.getState().createSnapshotFromDocument(originalBlueprintDocument, {
+      title: 'Selected source blueprint',
+    })
+
+    const replaced = await useBlueprintStore.getState().replaceBlueprintFromDocument(original.id, replacementDocument, {
+      notes: 'Saved before generation.',
+    })
+
+    expect(replaced).not.toBeNull()
+    const state = useBlueprintStore.getState()
+    const record = state.workspace?.blueprints.find((item) => item.id === original.id)
+    expect(record).toMatchObject({
+      id: original.id,
+      title: 'Selected source blueprint',
+      document: expect.objectContaining({ document: expect.objectContaining({ id: 'bp-replacement-doc' }) }),
+      validationState: 'unknown',
+      notes: 'Saved before generation.',
+    })
+    expect(record?.documentHash).not.toBe(original.documentHash)
+    expect(state.selectedBlueprintId).toBe(original.id)
+    expect(state.dirty).toBe(true)
+  })
+
   it('suppresses further updates from an accepted live draft session', async () => {
     const mainDocument = createDocument({ document: { id: 'main-session', title: 'Main session' } })
     const firstLiveDocument = createDocument({ document: { id: 'live-session-1', title: 'Accepted session draft' } })

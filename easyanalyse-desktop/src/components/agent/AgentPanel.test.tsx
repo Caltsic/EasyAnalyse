@@ -58,6 +58,31 @@ function createDocument(id = 'doc-agent'): DocumentFile {
   }
 }
 
+function createDocumentWithDevice(id = 'doc-agent-device'): DocumentFile {
+  const document = createDocument(id)
+  return {
+    ...document,
+    devices: [
+      {
+        id: 'r1',
+        name: 'R1',
+        kind: 'resistor',
+        terminals: [
+          { id: 'r1-a', name: 'A', direction: 'input', label: 'VIN' },
+          { id: 'r1-b', name: 'B', direction: 'output', label: 'VOUT' },
+        ],
+      },
+    ],
+    view: {
+      ...document.view,
+      devices: {
+        r1: { position: { x: 100, y: 100 }, size: { width: 120, height: 80 } },
+      },
+      networkLines: {},
+    },
+  }
+}
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
   let reject!: (reason?: unknown) => void
@@ -328,6 +353,105 @@ describe('AgentPanel', () => {
       await vi.waitFor(() => expect(useBlueprintStore.getState().workspace?.blueprints).toHaveLength(2))
     })
     expect(host.textContent).toContain('2 blueprint candidates stored')
+  })
+
+  it('asks before blueprint generation and saves the current canvas as a new blueprint before continuing', async () => {
+    const provider = deepseekProvider()
+    const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })
+    await secretStore.saveSecret({ providerId: provider.id, value: 'test-deepseek-key' })
+    const documentWithDevice = createDocumentWithDevice('doc-begin-gate-save')
+    const finalResponse = parseAgentResponse(JSON.stringify({
+      schemaVersion: 'agent-response-v1',
+      semanticVersion: 'easyanalyse-semantic-v4',
+      kind: 'message',
+      summary: 'Generation can continue',
+      markdown: 'The canvas was saved before generating.',
+    }))
+    let providerContinuedAfterGate = false
+    providerMock.runConfiguredAgentProvider.mockImplementation(async (input) => {
+      const beginResult = await input.beginBlueprintGeneration?.({ intent: 'Generate a replacement circuit', title: 'Saved before generation' })
+      expect(beginResult).toMatchObject({ allowed: true, action: 'save_new_blueprint' })
+      providerContinuedAfterGate = true
+      return finalResponse
+    })
+    useEditorStore.setState({ document: documentWithDevice, filePath: '/tmp/begin-save.easyanalyse' })
+    useSettingsStore.setState({
+      settings: {
+        basic: { locale: 'system' },
+        appearance: { theme: 'system' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+      },
+      loaded: true,
+      warnings: [],
+    })
+    const host = await renderAgentAndBlueprints({ secretStore })
+
+    await enterPromptAndSubmit(host, 'generate a replacement blueprint')
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain('Save the current canvas before generating?'))
+    })
+    await act(async () => {
+      Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+        .find((button) => button.textContent?.includes('Save as new blueprint'))
+        ?.click()
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain('Generation can continue'))
+    })
+
+    expect(providerContinuedAfterGate).toBe(true)
+    const blueprints = useBlueprintStore.getState().workspace?.blueprints ?? []
+    expect(blueprints).toHaveLength(1)
+    expect(blueprints[0]).toMatchObject({
+      title: 'Saved before generation',
+      source: 'manual_snapshot',
+      document: expect.objectContaining({ document: expect.objectContaining({ id: 'doc-begin-gate-save' }) }),
+    })
+  })
+
+  it('cancels the provider run from the begin blueprint generation gate', async () => {
+    const provider = deepseekProvider()
+    const secretStore = createSecretStore({ backend: createMemorySecretBackend(), idFactory: () => 'deepseek-test' })
+    await secretStore.saveSecret({ providerId: provider.id, value: 'test-deepseek-key' })
+    const documentWithDevice = createDocumentWithDevice('doc-begin-gate-cancel')
+    let beginResult: unknown = null
+    providerMock.runConfiguredAgentProvider.mockImplementation(async (input) => {
+      beginResult = await input.beginBlueprintGeneration?.({ intent: 'Generate replacement' })
+      return parseAgentResponse(JSON.stringify({
+        schemaVersion: 'agent-response-v1',
+        semanticVersion: 'easyanalyse-semantic-v4',
+        kind: 'message',
+        markdown: 'This response should be ignored after cancellation.',
+      }))
+    })
+    useEditorStore.setState({ document: documentWithDevice, filePath: '/tmp/begin-cancel.easyanalyse' })
+    useSettingsStore.setState({
+      settings: {
+        basic: { locale: 'system' },
+        appearance: { theme: 'system' },
+        agent: { providers: [provider], selectedProviderId: provider.id, selectedModelId: 'deepseek-chat' },
+      },
+      loaded: true,
+      warnings: [],
+    })
+    const host = await renderPanel({ secretStore })
+
+    await enterPromptAndSubmit(host, 'start then cancel blueprint generation')
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain('Save the current canvas before generating?'))
+    })
+    await act(async () => {
+      Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+        .find((button) => button.textContent?.includes('Cancel generation'))
+        ?.click()
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain('Agent run cancelled'))
+    })
+
+    expect(beginResult).toMatchObject({ allowed: false, action: 'cancelled' })
+    expect(host.textContent).not.toContain('This response should be ignored after cancellation.')
+    expect(useBlueprintStore.getState().workspace?.blueprints ?? []).toEqual([])
   })
 
   it('projects configured provider streamed blueprint JSON into transient live draft state', async () => {

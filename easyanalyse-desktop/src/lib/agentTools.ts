@@ -18,6 +18,7 @@ import type {
   AgentToolName,
   AgentToolRuntimeContext,
   AgentToolResult,
+  BeginBlueprintGenerationData,
   CheckBlueprintCandidateData,
   CheckBlueprintFormatData,
   CheckDocumentFormatData,
@@ -52,6 +53,26 @@ const EASYANALYSE_FORMAT_RULES = [
 
 export function getAgentToolSchemas() {
   return [
+    {
+      type: 'function' as const,
+      function: {
+        name: 'begin_blueprint_generation',
+        description:
+          [
+            'Call this before starting a new generated blueprint or live blueprint JSON stream.',
+            'The EasyAnalyse UI may ask the user whether to save the current canvas before generation continues.',
+            'If the result has allowed=false, stop generating and explain that the user cancelled.',
+          ].join(' '),
+        parameters: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            intent: { type: 'string', description: 'Short reason for beginning blueprint generation.' },
+            title: { type: 'string', description: 'Optional intended blueprint title.' },
+          },
+        },
+      },
+    },
     {
       type: 'function' as const,
       function: {
@@ -352,6 +373,7 @@ export async function runAgentTool(
   context: AgentToolContext = {},
 ): Promise<AgentToolResult> {
   try {
+    if (toolName === 'begin_blueprint_generation') return beginBlueprintGenerationTool(args, context)
     if (toolName === 'get_current_document') return getCurrentDocumentTool(context)
     if (toolName === 'get_blueprint_workspace') return getBlueprintWorkspaceTool(args, context)
     if (toolName === 'get_blueprint_candidate') return getBlueprintCandidateTool(args, context)
@@ -388,6 +410,34 @@ async function getCurrentDocumentTool(context: AgentToolRuntimeContext): Promise
     hasDocument: Boolean(document),
     document: document ? cloneDocument(document) : null,
   })
+}
+
+async function beginBlueprintGenerationTool(
+  args: unknown,
+  context: AgentToolRuntimeContext,
+): Promise<AgentToolResult<BeginBlueprintGenerationData>> {
+  const intent = getStringArg(args, 'intent')
+  const title = getStringArg(args, 'title')
+  const request = {
+    ...(intent ? { intent } : {}),
+    ...(title ? { title } : {}),
+  }
+  const fallback: BeginBlueprintGenerationData = {
+    allowed: true,
+    action: 'auto_continue',
+    canvasHadCircuit: false,
+    message: 'Blueprint generation may begin. No runtime save gate is available.',
+  }
+  const data = context.beginBlueprintGeneration ? await context.beginBlueprintGeneration(request) : fallback
+  return result(
+    'begin_blueprint_generation',
+    data.allowed,
+    data.allowed ? data.message : data.message || 'Blueprint generation was cancelled by the user.',
+    data.allowed
+      ? []
+      : [issue('warning', 'agent_tool.blueprint_generation_cancelled', data.message || 'Blueprint generation was cancelled by the user.', null, null)],
+    data,
+  )
 }
 
 async function getBlueprintWorkspaceTool(
@@ -1380,7 +1430,8 @@ function isDocumentFile(value: unknown): value is DocumentFile {
 }
 
 function isAgentToolName(value: string): value is AgentToolName {
-  return value === 'get_current_document'
+  return value === 'begin_blueprint_generation'
+    || value === 'get_current_document'
     || value === 'get_blueprint_workspace'
     || value === 'get_blueprint_candidate'
     || value === 'compare_blueprint_candidate'

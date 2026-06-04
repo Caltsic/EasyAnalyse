@@ -86,6 +86,11 @@ export interface BlueprintState {
     document: DocumentFile,
     options?: { title?: string; description?: string },
   ): Promise<BlueprintRecord>
+  replaceBlueprintFromDocument(
+    id: string,
+    document: DocumentFile,
+    options?: { title?: string; description?: string; notes?: string },
+  ): Promise<BlueprintRecord | null>
   validateBlueprint(id: string): Promise<void>
   archiveBlueprint(id: string): void
   deleteBlueprint(id: string): void
@@ -561,6 +566,47 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
     })
 
     return blueprint
+  },
+
+  replaceBlueprintFromDocument: async (id, document, options) => {
+    const { workspace } = get()
+    const target = workspace?.blueprints.find((record) => record.id === id)
+    if (workspace === null || target === undefined || target.lifecycleStatus === 'deleted') {
+      return null
+    }
+
+    const documentSnapshot = cloneDocumentSnapshot(document)
+    const documentHash = await hashDocument(documentSnapshot)
+    const mainHash = await hashDocument(document)
+    let updatedRecord: BlueprintRecord | null = null
+
+    set((state) => {
+      if (state.workspace === null) return {}
+      const current = state.workspace.blueprints.find((record) => record.id === id)
+      if (current === undefined || current.lifecycleStatus === 'deleted') return {}
+      const updatedAt = new Date().toISOString()
+      return {
+        workspace: updateBlueprint(state.workspace, id, (record) => {
+          updatedRecord = {
+            ...record,
+            title: options?.title ?? record.title,
+            ...(options?.description !== undefined ? { description: options.description } : {}),
+            document: documentSnapshot,
+            documentHash,
+            baseMainDocumentHash: mainHash,
+            validationState: 'unknown',
+            validationReport: undefined,
+            notes: options?.notes ?? record.notes,
+            updatedAt,
+          }
+          return updatedRecord
+        }),
+        selectedBlueprintId: id,
+        dirty: true,
+      }
+    })
+
+    return updatedRecord
   },
 
   validateBlueprint: async (id) => {

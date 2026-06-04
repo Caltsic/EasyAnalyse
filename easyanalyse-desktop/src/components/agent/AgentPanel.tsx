@@ -34,10 +34,17 @@ import type {
   AgentResponseParseIssue,
   AgentResponseParseResult,
 } from '../../types/agent'
-import type { AgentRepairTraceEntry, AgentToolTraceEntry } from '../../types/agentTools'
+import type {
+  AgentRepairTraceEntry,
+  AgentToolTraceEntry,
+  BeginBlueprintGenerationAction,
+  BeginBlueprintGenerationData,
+  BeginBlueprintGenerationRequest,
+} from '../../types/agentTools'
 import type { AgentThread, AgentThreadMessage } from '../../types/agentThread'
 import type { DocumentFile } from '../../types/document'
 import type { AgentProviderPublicConfig } from '../../types/settings'
+import { Button, ModalShell } from '../ui'
 
 const MAX_ACTIVITY_ENTRIES = 40
 const DEFAULT_THREAD_ID = 'agent-thread-local'
@@ -79,6 +86,18 @@ interface AgentChatMessage {
   content: string
   meta?: string
   tone?: AgentMessageTone
+}
+
+interface BeginBlueprintGateState {
+  runId: number
+  requestId: string
+  document: DocumentFile
+  intent?: string
+  title?: string
+  canvasDeviceCount: number
+  selectedBlueprintId: string | null
+  busyAction: BeginBlueprintGenerationAction | null
+  error: string | null
 }
 
 export interface AgentPanelProps {
@@ -152,6 +171,9 @@ export function AgentPanel({
   const activeRunFilePathRef = useRef<string | null>(null)
   const liveDraftPartialTimerRef = useRef<number | null>(null)
   const liveDraftPartialPendingRef = useRef<{ runId: number; projectPath: string; raw: string } | null>(null)
+  const beginGateResolveRef = useRef<((data: BeginBlueprintGenerationData) => void) | null>(null)
+  const beginGateDecisionByRunRef = useRef(new Map<number, BeginBlueprintGenerationData>())
+  const [beginGate, setBeginGate] = useState<BeginBlueprintGateState | null>(null)
 
   const running = runState.status === 'running'
   const provider = settings.agent.providers.find((item) => item.id === settings.agent.selectedProviderId) ?? null
@@ -218,6 +240,15 @@ export function AgentPanel({
       liveDraftPartialTimerRef.current = null
     }
     liveDraftPartialPendingRef.current = null
+    if (beginGateResolveRef.current) {
+      beginGateResolveRef.current({
+        allowed: false,
+        action: 'cancelled',
+        canvasHadCircuit: true,
+        message: 'Blueprint generation was cancelled because the Agent panel was unmounted.',
+      })
+      beginGateResolveRef.current = null
+    }
   }, [])
 
   useEffect(() => {
@@ -420,6 +451,9 @@ export function AgentPanel({
     const startedAtMs = Date.now()
     activityIdRef.current = 1
     liveDraftLastGoodRef.current = null
+    beginGateDecisionByRunRef.current.delete(runId)
+    beginGateResolveRef.current = null
+    setBeginGate(null)
     clearPendingLiveBlueprintPartialWrite()
     useBlueprintStore.getState().clearLiveBlueprintDraft()
 
@@ -513,6 +547,7 @@ export function AgentPanel({
           })
           return insertedIds
         },
+        beginBlueprintGeneration: (request) => handleBeginBlueprintGeneration(runId, requestId, documentAtStart, request),
         onProgress: (progressEvent) => handleProviderProgress(runId, startedAtMs, progressEvent),
       })
       if (activeRunRef.current !== runId) return
@@ -718,6 +753,117 @@ export function AgentPanel({
     abortControllerRef.current = null
     activeAssistantMessageRef.current = null
     activeRunFilePathRef.current = null
+    if (beginGate?.runId === cancelledRunId) {
+      resolveBeginBlueprintGate({
+        allowed: false,
+        action: 'cancelled',
+        canvasHadCircuit: beginGate.canvasDeviceCount > 0,
+        message: t('beginBlueprintCancelled'),
+      })
+    }
+  }
+
+  function resolveBeginBlueprintGate(data: BeginBlueprintGenerationData) {
+    beginGateDecisionByRunRef.current.set(beginGate?.runId ?? activeRunRef.current, data)
+    beginGateResolveRef.current?.(data)
+    beginGateResolveRef.current = null
+    setBeginGate(null)
+  }
+
+  function handleBeginBlueprintGeneration(
+    runId: number,
+    requestId: string,
+    documentAtStart: DocumentFile,
+    request: BeginBlueprintGenerationRequest,
+  ): Promise<BeginBlueprintGenerationData> {
+    const previousDecision = beginGateDecisionByRunRef.current.get(runId)
+    if (previousDecision) return Promise.resolve(previousDecision)
+    const canvasHadCircuit = documentAtStart.devices.length > 0
+    if (!canvasHadCircuit) {
+      const data: BeginBlueprintGenerationData = {
+        allowed: true,
+        action: 'auto_continue',
+        canvasHadCircuit: false,
+        message: t('beginBlueprintAutoContinue'),
+      }
+      beginGateDecisionByRunRef.current.set(runId, data)
+      return Promise.resolve(data)
+    }
+
+    return new Promise((resolve) => {
+      beginGateResolveRef.current = (data) => {
+        beginGateDecisionByRunRef.current.set(runId, data)
+        resolve(data)
+      }
+      setBeginGate({
+        runId,
+        requestId,
+        document: documentAtStart,
+        ...(request.intent ? { intent: request.intent } : {}),
+        ...(request.title ? { title: request.title } : {}),
+        canvasDeviceCount: documentAtStart.devices.length,
+        selectedBlueprintId: useBlueprintStore.getState().selectedBlueprintId,
+        busyAction: null,
+        error: null,
+      })
+    })
+  }
+
+  async function handleBeginGateAction(action: BeginBlueprintGenerationAction) {
+    if (!beginGate) return
+    setBeginGate((state) => state ? { ...state, busyAction: action, error: null } : state)
+    try {
+      if (action === 'cancelled') {
+        cancelRun()
+        return
+      }
+
+      if (action === 'save_current_blueprint') {
+        if (!beginGate.selectedBlueprintId) {
+          throw new Error(t('beginBlueprintNoSelectedBlueprint'))
+        }
+        const updated = await useBlueprintStore.getState().replaceBlueprintFromDocument(beginGate.selectedBlueprintId, beginGate.document, {
+          notes: t('beginBlueprintSavedBeforeGeneration'),
+        })
+        if (!updated) {
+          throw new Error(t('beginBlueprintNoSelectedBlueprint'))
+        }
+        resolveBeginBlueprintGate({
+          allowed: true,
+          action,
+          canvasHadCircuit: true,
+          savedBlueprintId: updated.id,
+          savedBlueprintTitle: updated.title,
+          message: t('beginBlueprintSavedCurrentResult', { title: updated.title }),
+        })
+        return
+      }
+
+      if (action === 'save_new_blueprint') {
+        const snapshot = await useBlueprintStore.getState().createSnapshotFromDocument(beginGate.document, {
+          title: beginGate.title || beginGate.document.document.title,
+          description: t('beginBlueprintSavedSnapshotDescription'),
+        })
+        resolveBeginBlueprintGate({
+          allowed: true,
+          action,
+          canvasHadCircuit: true,
+          savedBlueprintId: snapshot.id,
+          savedBlueprintTitle: snapshot.title,
+          message: t('beginBlueprintSavedNewResult', { title: snapshot.title }),
+        })
+        return
+      }
+
+      resolveBeginBlueprintGate({
+        allowed: true,
+        action: 'continue_without_saving',
+        canvasHadCircuit: true,
+        message: t('beginBlueprintContinueWithoutSavingResult'),
+      })
+    } catch (error) {
+      setBeginGate((state) => state ? { ...state, busyAction: null, error: getErrorMessage(error) } : state)
+    }
   }
 
   function changeThread(threadId: string) {
@@ -848,6 +994,13 @@ export function AgentPanel({
           </button>
         </div>
       </form>
+      {beginGate ? (
+        <BeginBlueprintGenerationDialog
+          gate={beginGate}
+          t={t}
+          onAction={(action) => void handleBeginGateAction(action)}
+        />
+      ) : null}
     </section>
   )
 }
@@ -985,6 +1138,83 @@ function AgentStatusBadge({ status, label }: { status: AgentRunState['status']; 
   )
 }
 
+function BeginBlueprintGenerationDialog({
+  gate,
+  t,
+  onAction,
+}: {
+  gate: BeginBlueprintGateState
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string
+  onAction: (action: BeginBlueprintGenerationAction) => void
+}) {
+  const busy = gate.busyAction !== null
+  return (
+    <ModalShell
+      rootClassName="agent-begin-blueprint-dialog__backdrop"
+      panelClassName="agent-begin-blueprint-dialog"
+      ariaLabelledBy="agent-begin-blueprint-dialog-title"
+      ariaDescribedBy="agent-begin-blueprint-dialog-description"
+      closeOnBackdrop={false}
+      closeOnEscape={false}
+      trapFocus
+      initialFocusSelector="button[data-modal-initial-focus]"
+    >
+      <div className="agent-begin-blueprint-dialog__header">
+        <div>
+          <h3 id="agent-begin-blueprint-dialog-title">{t('beginBlueprintGateTitle')}</h3>
+          <p id="agent-begin-blueprint-dialog-description">
+            {t('beginBlueprintGateDescription', { count: gate.canvasDeviceCount })}
+          </p>
+        </div>
+      </div>
+      {gate.intent ? (
+        <div className="agent-begin-blueprint-dialog__note">
+          <strong>{t('beginBlueprintIntent')}</strong>
+          <span>{gate.intent}</span>
+        </div>
+      ) : null}
+      {gate.error ? <p className="agent-begin-blueprint-dialog__error">{gate.error}</p> : null}
+      <div className="agent-begin-blueprint-dialog__actions">
+        <Button
+          type="button"
+          onClick={() => onAction('save_current_blueprint')}
+          disabled={busy || !gate.selectedBlueprintId}
+          title={!gate.selectedBlueprintId ? t('beginBlueprintNoSelectedBlueprint') : undefined}
+        >
+          {gate.busyAction === 'save_current_blueprint' ? t('saving') : t('beginBlueprintSaveCurrent')}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="ghost-button"
+          onClick={() => onAction('save_new_blueprint')}
+          disabled={busy}
+          data-modal-initial-focus
+        >
+          {gate.busyAction === 'save_new_blueprint' ? t('saving') : t('beginBlueprintSaveNew')}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="ghost-button"
+          onClick={() => onAction('continue_without_saving')}
+          disabled={busy}
+        >
+          {t('beginBlueprintContinueWithoutSaving')}
+        </Button>
+        <Button
+          type="button"
+          variant="danger"
+          onClick={() => onAction('cancelled')}
+          disabled={busy}
+        >
+          {t('beginBlueprintCancelGeneration')}
+        </Button>
+      </div>
+    </ModalShell>
+  )
+}
+
 function AgentMessageView({
   message,
   showToolDetailsLabel,
@@ -1046,6 +1276,7 @@ async function runSelectedProvider(input: {
       status?: 'running' | 'success' | 'error'
     },
   ) => Promise<string[]>
+  beginBlueprintGeneration?: (request: BeginBlueprintGenerationRequest) => Promise<BeginBlueprintGenerationData>
   onProgress?: (event: AgentProviderProgressEvent) => void
 }): Promise<AgentResponseParseResult> {
   const { provider, modelId } = selectedProviderFromSettings()
@@ -1092,6 +1323,7 @@ async function runSelectedProvider(input: {
         focusedNetworkLineId: state.focusedNetworkLineId,
       }
     },
+    beginBlueprintGeneration: input.beginBlueprintGeneration,
     createBlueprintCandidate: async (candidate) => {
       const latestEditor = useEditorStore.getState()
       if (latestEditor.document !== input.currentDocument || latestEditor.filePath !== input.filePath) {

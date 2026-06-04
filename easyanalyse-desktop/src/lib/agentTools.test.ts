@@ -28,6 +28,7 @@ describe('agentTools', () => {
   it('exposes hard-format, creation, context, and advisory OpenAI-compatible tool schemas', () => {
     const schemas = getAgentToolSchemas()
     expect(schemas.map((schema) => schema.function.name)).toEqual([
+      'begin_blueprint_generation',
       'get_current_document',
       'get_blueprint_workspace',
       'get_blueprint_candidate',
@@ -44,12 +45,63 @@ describe('agentTools', () => {
       'check_blueprint_candidate',
     ])
     expect(JSON.stringify(schemas)).toContain('Hard-check one EasyAnalyse DocumentFile candidate')
+    expect(JSON.stringify(schemas)).toContain('before starting a new generated blueprint')
     expect(JSON.stringify(schemas)).toContain('issueCount>0 is not a hard finalization gate by itself')
     expect(JSON.stringify(schemas)).toContain('wires, nodes, junctions')
     expect(JSON.stringify(schemas)).toContain('visual network lines crossing device bounds')
     expect(JSON.stringify(schemas)).toContain('Return the current blueprint workspace summary')
     expect(JSON.stringify(schemas)).toContain('deterministic filter blueprint candidate')
     expect(JSON.stringify(schemas)).not.toMatch(/Authorization|apiKey|sk-/i)
+  })
+
+  it('begin_blueprint_generation delegates to the runtime save gate', async () => {
+    const beginBlueprintGeneration = vi.fn(async () => ({
+      allowed: true,
+      action: 'save_new_blueprint' as const,
+      canvasHadCircuit: true,
+      savedBlueprintId: 'bp-saved',
+      savedBlueprintTitle: 'Saved source',
+      message: 'Saved current canvas before generation.',
+    }))
+    const result = await runAgentTool(
+      'begin_blueprint_generation',
+      { intent: 'Generate a low-pass filter', title: 'Filter candidate' },
+      { beginBlueprintGeneration },
+    )
+
+    expect(beginBlueprintGeneration).toHaveBeenCalledWith({
+      intent: 'Generate a low-pass filter',
+      title: 'Filter candidate',
+    })
+    expect(result).toMatchObject({
+      ok: true,
+      toolName: 'begin_blueprint_generation',
+      data: {
+        allowed: true,
+        action: 'save_new_blueprint',
+        savedBlueprintId: 'bp-saved',
+      },
+    })
+  })
+
+  it('begin_blueprint_generation reports user cancellation as a non-secret tool result', async () => {
+    const result = await runAgentTool('begin_blueprint_generation', {}, {
+      beginBlueprintGeneration: () => ({
+        allowed: false,
+        action: 'cancelled',
+        canvasHadCircuit: true,
+        message: 'The user cancelled this blueprint generation.',
+      }),
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      toolName: 'begin_blueprint_generation',
+      issueCount: 1,
+      issues: [expect.objectContaining({ code: 'agent_tool.blueprint_generation_cancelled' })],
+      data: { allowed: false, action: 'cancelled' },
+    })
+    expect(JSON.stringify(result)).not.toMatch(/Authorization|apiKey|sk-/i)
   })
 
   it('generates a deterministic filter blueprint candidate without mutating the main document', async () => {

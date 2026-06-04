@@ -160,6 +160,88 @@ describe('liveBlueprintDraft', () => {
     expect(result.candidate?.json).toBe(JSON.stringify(document))
   })
 
+  it('synthesizes a direct document from complete devices inside an open devices array', () => {
+    const firstDevice = createDocument().devices[0]!
+    const secondDevice = {
+      id: 'c1',
+      name: 'C1',
+      kind: 'capacitor',
+      terminals: [
+        { id: 'c1-a', name: 'A', label: 'VOUT', direction: 'input' },
+        { id: 'c1-b', name: 'B', label: 'GND', direction: 'output' },
+      ],
+    } satisfies DocumentFile['devices'][number]
+    const document = createDocument({
+      document: { id: 'partial-device-array', title: 'Partial device array draft' },
+      devices: [firstDevice, secondDevice],
+      view: {
+        canvas: { units: 'px' },
+        devices: {
+          r1: { position: { x: 10, y: 20 } },
+          c1: { position: { x: 260, y: 20 } },
+        },
+      },
+    })
+    const partialDirectDocument = [
+      '{',
+      '"schemaVersion":"4.0.0",',
+      `"document":${JSON.stringify(document.document)},`,
+      `"view":${JSON.stringify(document.view)},`,
+      `"devices":[${JSON.stringify(firstDevice)},{"id":"c1","name":"C1"`,
+    ].join('')
+
+    const result = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${partialDirectDocument}`)
+
+    expect(result.status).toBe('partial-json')
+    expect(result.hasCompleteJson).toBe(false)
+    expect(result.displayDocument?.document.id).toBe('partial-device-array')
+    expect(result.displayDocument?.devices).toHaveLength(1)
+    expect(result.displayDocument?.devices[0]?.id).toBe('r1')
+    expect(result.displayDocument?.view.devices).toEqual({ r1: { position: { x: 10, y: 20 } } })
+  })
+
+  it('does not synthesize a devices-array projection before the first device object closes', () => {
+    const lastGood = createDocument({ document: { id: 'last', title: 'Last good' } })
+    const document = createDocument({ document: { id: 'first-device-open', title: 'First device open' } })
+    const partialDirectDocument = [
+      '{',
+      '"schemaVersion":"4.0.0",',
+      `"document":${JSON.stringify(document.document)},`,
+      `"view":${JSON.stringify(document.view)},`,
+      '"devices":[{"id":"r1","name":"R1"',
+    ].join('')
+
+    const result = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${partialDirectDocument}`, { lastGood })
+
+    expect(result.status).toBe('partial-json')
+    expect(result.displayDocument).toBe(lastGood)
+    expect(result.candidate).toBeNull()
+  })
+
+  it('keeps scanning completed devices when device strings contain JSON punctuation', () => {
+    const firstDevice = {
+      ...createDocument().devices[0]!,
+      description: 'literal punctuation ] } { and "devices" should stay inside the string',
+    }
+    const document = createDocument({
+      document: { id: 'device-string-punctuation', title: 'Device string punctuation' },
+      devices: [firstDevice],
+    })
+    const partialDirectDocument = [
+      '{',
+      '"schemaVersion":"4.0.0",',
+      `"document":${JSON.stringify(document.document)},`,
+      `"view":${JSON.stringify(document.view)},`,
+      `"devices":[${JSON.stringify(firstDevice)},{"id":"next"`,
+    ].join('')
+
+    const result = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${partialDirectDocument}`)
+
+    expect(result.status).toBe('partial-json')
+    expect(result.displayDocument?.devices).toHaveLength(1)
+    expect(result.displayDocument?.devices[0]?.description).toContain('"devices"')
+  })
+
   it('synthesizes a nested blueprint document before that document object closes when required fields are complete', () => {
     const document = createDocument({ document: { id: 'partial-nested', title: 'Partial nested draft' } })
     const partialWrapper = [
@@ -189,6 +271,53 @@ describe('liveBlueprintDraft', () => {
     expect(result.candidate?.json).toBe(JSON.stringify(document))
   })
 
+  it('synthesizes a nested document from complete devices inside an open devices array', () => {
+    const firstDevice = createDocument().devices[0]!
+    const secondDevice = {
+      id: 'l1',
+      name: 'L1',
+      kind: 'inductor',
+      terminals: [
+        { id: 'l1-a', name: 'A', label: 'VOUT', direction: 'input' },
+        { id: 'l1-b', name: 'B', label: 'GND', direction: 'output' },
+      ],
+    } satisfies DocumentFile['devices'][number]
+    const document = createDocument({
+      document: { id: 'partial-nested-device-array', title: 'Partial nested device array draft' },
+      devices: [firstDevice, secondDevice],
+      view: {
+        canvas: { units: 'px' },
+        devices: {
+          r1: { position: { x: 10, y: 20 } },
+          l1: { position: { x: 260, y: 20 } },
+        },
+      },
+    })
+    const partialWrapper = [
+      '{',
+      '"schemaVersion":"agent-response-v1",',
+      '"semanticVersion":"easyanalyse-semantic-v4",',
+      '"kind":"blueprints",',
+      '"blueprints":[{',
+      '"title":"Candidate",',
+      '"summary":"Candidate summary",',
+      '"rationale":"Candidate rationale",',
+      '"tradeoffs":[],',
+      '"document":{',
+      '"schemaVersion":"4.0.0",',
+      `"document":${JSON.stringify(document.document)},`,
+      `"view":${JSON.stringify(document.view)},`,
+      `"devices":[${JSON.stringify(firstDevice)},{"id":"l1","name":"L1"`,
+    ].join('')
+
+    const result = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${partialWrapper}`)
+
+    expect(result.status).toBe('partial-json')
+    expect(result.hasCompleteJson).toBe(false)
+    expect(result.displayDocument?.document.id).toBe('partial-nested-device-array')
+    expect(result.displayDocument?.devices.map((device) => device.id)).toEqual(['r1'])
+  })
+
   it('does not synthesize a partial document before all required fields are complete', () => {
     const lastGood = createDocument({ document: { id: 'last', title: 'Last good' } })
     const document = createDocument({ document: { id: 'missing-view', title: 'Missing view' } })
@@ -197,6 +326,33 @@ describe('liveBlueprintDraft', () => {
       '"schemaVersion":"4.0.0",',
       `"document":${JSON.stringify(document.document)},`,
       `"devices":${JSON.stringify(document.devices)},`,
+    ].join('')
+
+    const result = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${partialDirectDocument}`, { lastGood })
+
+    expect(result.status).toBe('partial-json')
+    expect(result.displayDocument).toBe(lastGood)
+    expect(result.candidate).toBeNull()
+  })
+
+  it('does not synthesize a partial devices array when a complete device is invalid', () => {
+    const lastGood = createDocument({ document: { id: 'last', title: 'Last good' } })
+    const invalidDevice = {
+      id: 'bad1',
+      name: 'BAD1',
+      kind: 'module',
+      terminals: [{ id: 'bad1-a', name: 'A', direction: 'sideways' }],
+    }
+    const document = createDocument({
+      document: { id: 'invalid-partial-devices-array', title: 'Invalid partial devices array' },
+      devices: [invalidDevice as DocumentFile['devices'][number]],
+    })
+    const partialDirectDocument = [
+      '{',
+      '"schemaVersion":"4.0.0",',
+      `"document":${JSON.stringify(document.document)},`,
+      `"view":${JSON.stringify(document.view)},`,
+      `"devices":[${JSON.stringify(invalidDevice)},{"id":"next"`,
     ].join('')
 
     const result = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${partialDirectDocument}`, { lastGood })

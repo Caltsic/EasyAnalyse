@@ -212,6 +212,37 @@ describe('BlueprintsPanel', () => {
     expect(useBlueprintStore.getState().dirty).toBe(false)
   })
 
+  it('prevents accepting a partial live draft projection until the draft is complete', async () => {
+    const liveDocument = createDocument({ document: { ...createDocument().document, id: 'live-partial-doc', title: 'Partial live projection' } })
+    useBlueprintStore.setState({
+      liveDraft: {
+        status: 'partial-json',
+        sessionId: 'agent-panel-partial-accept-test',
+        raw: JSON.stringify(liveDocument),
+        markerFound: true,
+        hasCompleteJson: false,
+        displayDocument: liveDocument,
+        lastGoodDocument: liveDocument,
+        updatedAt: '2026-06-05T00:00:00.000Z',
+      },
+    })
+
+    const host = await renderPanel()
+
+    expect(host.textContent).toContain('Live blueprint preview')
+    expect(host.textContent).toContain('parsing')
+    const previewCanvas = host.querySelector('[aria-label="Blueprint preview canvas"]') as HTMLElement | null
+    expect(previewCanvas?.dataset.documentTitle).toBe('Partial live projection')
+    const acceptButton = firstButtonByText(host, 'Accept draft') as HTMLButtonElement
+    expect(acceptButton.disabled).toBe(true)
+
+    await act(async () => {
+      acceptButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(useBlueprintStore.getState().workspace?.blueprints ?? []).toHaveLength(0)
+  })
+
   it('shows live JSON diagnostics while keeping the last displayable draft preview', async () => {
     const lastGood = createDocument({ document: { ...createDocument().document, id: 'live-last-good', title: 'Last displayable draft' } })
     useBlueprintStore.setState({

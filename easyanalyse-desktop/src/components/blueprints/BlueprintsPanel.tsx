@@ -130,6 +130,7 @@ export function BlueprintsPanel() {
   const previewDescription = livePreviewPanelVisible
     ? t('liveBlueprintPreviewStatus', { status: describeLiveDraftStatus(liveDraft.status, t) })
     : t('previewHint')
+  const liveDraftAcceptable = livePreviewDocument !== null && liveDraft.status === 'ready' && liveDraft.hasCompleteJson
   const applyModalOpen = pendingApplyRecord !== null
   const blueprintActionsDisabled = topActionBusy || applyModalOpen || applyBusy
 
@@ -183,7 +184,7 @@ export function BlueprintsPanel() {
   }
 
   const handleAcceptLiveDraft = async () => {
-    if (!livePreviewDocument) return
+    if (!liveDraftAcceptable) return
     await runTopAction(t('acceptingLiveDraft'), async () => {
       const accepted = await acceptLiveBlueprintDraft({
         mainDocument: document,
@@ -347,7 +348,7 @@ export function BlueprintsPanel() {
                 <Button
                   type="button"
                   onClick={() => void handleAcceptLiveDraft()}
-                  disabled={topActionBusy || livePreviewDocument === null}
+                  disabled={topActionBusy || !liveDraftAcceptable}
                 >
                   {t('acceptLiveDraft')}
                 </Button>

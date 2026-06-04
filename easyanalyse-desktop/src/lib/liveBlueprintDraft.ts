@@ -234,24 +234,36 @@ function synthesizeDisplayDocumentFromPartialObject(
   const document = extractDirectPropertyJsonValueSpan(text, objectStartIndex, 'document', absoluteOffset)
   const devices = extractDirectPropertyJsonValueSpan(text, objectStartIndex, 'devices', absoluteOffset)
   const view = extractDirectPropertyJsonValueSpan(text, objectStartIndex, 'view', absoluteOffset)
-  if (!schemaVersion || !document || !devices || !view) return null
+  if (!schemaVersion || !document || !view) return null
+
+  const partialDeviceSpans = devices
+    ? null
+    : extractCompleteDirectArrayObjectElementSpans(text, objectStartIndex, 'devices', absoluteOffset)
+  if (!devices && (!partialDeviceSpans || partialDeviceSpans.length === 0)) return null
 
   let synthesized: DocumentFile
   try {
     synthesized = {
       schemaVersion: JSON.parse(schemaVersion.json),
       document: JSON.parse(document.json),
-      devices: JSON.parse(devices.json),
+      devices: devices
+        ? JSON.parse(devices.json)
+        : partialDeviceSpans!.map((span) => JSON.parse(span.json)),
       view: JSON.parse(view.json),
     } as DocumentFile
   } catch {
     return null
   }
 
+  if (!devices) {
+    synthesized = restrictViewToProjectedDevices(synthesized)
+  }
+
   const issues = collectDocumentFileIssues(synthesized, basePath)
   if (issues.length > 0) return null
 
-  const endIndex = Math.max(schemaVersion.endIndex, document.endIndex, devices.endIndex, view.endIndex)
+  const devicesEndIndex = devices?.endIndex ?? partialDeviceSpans?.at(-1)?.endIndex ?? 0
+  const endIndex = Math.max(schemaVersion.endIndex, document.endIndex, devicesEndIndex, view.endIndex)
   return {
     document: synthesized,
     complete: false,
@@ -271,6 +283,76 @@ function extractDirectPropertyJsonValueSpan(
 ): LiveBlueprintJsonSpan | null {
   const valueStart = findDirectPropertyValueStart(text, objectStartIndex, propertyName)
   return valueStart === null ? null : extractCompleteJsonValueSpanAt(text, valueStart, absoluteOffset)
+}
+
+function restrictViewToProjectedDevices(document: DocumentFile): DocumentFile {
+  const projectedDeviceIds = new Set(document.devices.map((device) => device.id))
+  const projectedLabels = new Set(
+    document.devices.flatMap((device) =>
+      device.terminals
+        .map((terminal) => terminal.label?.trim())
+        .filter((label): label is string => Boolean(label)),
+    ),
+  )
+  const viewDevices = Object.fromEntries(
+    Object.entries(document.view.devices ?? {}).filter(([deviceId]) => projectedDeviceIds.has(deviceId)),
+  )
+  const networkLines = Object.fromEntries(
+    Object.entries(document.view.networkLines ?? {}).filter(([, networkLine]) =>
+      projectedLabels.has(networkLine.label.trim()),
+    ),
+  )
+
+  return {
+    ...document,
+    view: {
+      ...document.view,
+      devices: viewDevices,
+      networkLines,
+    },
+  }
+}
+
+function extractCompleteDirectArrayObjectElementSpans(
+  text: string,
+  objectStartIndex: number,
+  propertyName: string,
+  absoluteOffset: number,
+): LiveBlueprintJsonSpan[] | null {
+  const arrayStart = findDirectPropertyValueStart(text, objectStartIndex, propertyName)
+  if (arrayStart === null || text[arrayStart] !== '[') return null
+
+  const spans: LiveBlueprintJsonSpan[] = []
+  let cursor = skipJsonWhitespace(text, arrayStart + 1)
+
+  while (cursor < text.length) {
+    if (text[cursor] === ']') {
+      break
+    }
+
+    if (text[cursor] === ',') {
+      cursor = skipJsonWhitespace(text, cursor + 1)
+      continue
+    }
+
+    if (text[cursor] !== '{') {
+      break
+    }
+
+    const span = extractCompleteObjectSpanAt(text, cursor, absoluteOffset)
+    if (!span) {
+      break
+    }
+
+    spans.push(span)
+    cursor = skipJsonWhitespace(text, span.endIndex - absoluteOffset)
+
+    if (text[cursor] === ',') {
+      cursor = skipJsonWhitespace(text, cursor + 1)
+    }
+  }
+
+  return spans
 }
 
 function findDirectPropertyValueStart(

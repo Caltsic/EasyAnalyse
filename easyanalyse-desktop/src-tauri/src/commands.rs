@@ -1139,6 +1139,89 @@ mod tests {
     }
 
     #[test]
+    fn project_live_blueprint_lifecycle_smoke() {
+        let project_path = unique_temp_path("live-lifecycle-smoke.easyanalyse");
+        let document = default_document("Live lifecycle smoke");
+        save_document_to_path(
+            project_path.to_string_lossy().to_string(),
+            serde_json::to_value(&document).expect("document should serialize"),
+        )
+        .expect("project document should save");
+
+        let workspace_path = project_path
+            .join("blueprints")
+            .join("workspace.easyanalyse-blueprints.json");
+        save_blueprint_workspace_to_path(
+            workspace_path.to_string_lossy().to_string(),
+            json!({
+                "blueprintWorkspaceVersion": "1.0.0",
+                "blueprints": []
+            }),
+        )
+        .expect("project blueprint workspace should save");
+
+        let live_document = default_document("Recoverable live draft");
+        let raw = format!(
+            "BEGIN_EASYANALYSE_BLUEPRINT_JSON\n{}",
+            serde_json::to_string(&live_document).expect("live document should serialize")
+        );
+        write_live_blueprint_draft_partial(project_path.to_string_lossy().to_string(), raw.clone())
+            .expect("live draft partial should write");
+        let active_manifest = read_project_manifest(&project_path)
+            .expect("manifest should read")
+            .expect("manifest should exist after write");
+        let active_live_draft = active_manifest.live_draft.expect("live draft metadata should exist");
+        assert_eq!(active_live_draft.status, ProjectLiveDraftStatus::Active);
+        assert_eq!(active_live_draft.version, 1);
+        assert_eq!(active_live_draft.byte_length, Some(raw.as_bytes().len() as u64));
+        assert_eq!(
+            read_live_blueprint_draft_partial(project_path.to_string_lossy().to_string())
+                .expect("active live draft should read"),
+            Some(raw.clone())
+        );
+
+        assert!(
+            delete_live_blueprint_draft_partial(project_path.to_string_lossy().to_string())
+                .expect("live draft partial should delete")
+        );
+        assert!(
+            read_live_blueprint_draft_partial(project_path.to_string_lossy().to_string())
+                .expect("cleared live draft read should not fail")
+                .is_none()
+        );
+        let cleared_manifest = read_project_manifest(&project_path)
+            .expect("manifest should read after clear")
+            .expect("manifest should still exist after clear");
+        let cleared_live_draft = cleared_manifest.live_draft.expect("cleared metadata should exist");
+        assert_eq!(cleared_live_draft.status, ProjectLiveDraftStatus::Cleared);
+        assert_eq!(cleared_live_draft.version, 2);
+        assert_eq!(cleared_live_draft.byte_length, None);
+
+        let second_raw = raw.replace("Recoverable live draft", "Second live draft");
+        write_live_blueprint_draft_partial(project_path.to_string_lossy().to_string(), second_raw.clone())
+            .expect("second live draft partial should write");
+        let second_manifest = read_project_manifest(&project_path)
+            .expect("manifest should read after second write")
+            .expect("manifest should still exist after second write");
+        let second_live_draft = second_manifest.live_draft.expect("second metadata should exist");
+        assert_eq!(second_live_draft.status, ProjectLiveDraftStatus::Active);
+        assert_eq!(second_live_draft.version, 3);
+        assert_eq!(
+            read_live_blueprint_draft_partial(project_path.to_string_lossy().to_string())
+                .expect("second active live draft should read"),
+            Some(second_raw)
+        );
+
+        let opened = open_document_from_path(project_path.to_string_lossy().to_string())
+            .expect("project document should open after lifecycle smoke")
+            .document
+            .expect("project should return a document");
+
+        let _ = fs::remove_dir_all(&project_path);
+        assert_eq!(opened.document.title, "Live lifecycle smoke");
+    }
+
+    #[test]
     fn decodes_utf8_json_with_bom() {
         let text = decode_json_text(&[0xEF, 0xBB, 0xBF, b'{', b'"', b'a', b'"', b':', b'1', b'}'])
             .expect("utf-8 bom json should decode");

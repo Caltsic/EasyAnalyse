@@ -202,6 +202,32 @@ describe('editorStore.openProject', () => {
     expect(useEditorStore.getState().document).toBe(beforeDocument)
     expect(useEditorStore.getState().statusMessage).toBe('Open cancelled')
   })
+
+  it('does not restore a cleared or missing live blueprint draft from a project', async () => {
+    const projectPath = '/tmp/cleared.easyanalyse'
+    const projectDocument = createDocument({
+      document: { id: 'doc-cleared-project', title: 'Cleared project' },
+    })
+    dialogMocks.open.mockResolvedValue(projectPath)
+    tauriMocks.openDocumentFromPath.mockResolvedValue({
+      path: projectPath,
+      document: projectDocument,
+      report: validationReport(projectDocument),
+    })
+    tauriMocks.getBlueprintSidecarPathCommand.mockResolvedValue(
+      '/tmp/cleared.easyanalyse/blueprints/workspace.easyanalyse-blueprints.json',
+    )
+    tauriMocks.loadBlueprintWorkspaceFromPath.mockResolvedValue(null)
+    tauriMocks.readLiveBlueprintDraftPartialCommand.mockResolvedValue(null)
+    useEditorStore.setState({ locale: 'en-US' })
+
+    await useEditorStore.getState().openProject()
+
+    expect(tauriMocks.readLiveBlueprintDraftPartialCommand).toHaveBeenCalledWith(projectPath)
+    expect(useBlueprintStore.getState().liveDraft.status).toBe('idle')
+    expect(useEditorStore.getState().statusMessage).toContain('Opened')
+    expect(useEditorStore.getState().statusMessage).not.toContain('Recovered an unfinished live blueprint draft')
+  })
 })
 
 describe('editorStore.applyBlueprintDocument', () => {

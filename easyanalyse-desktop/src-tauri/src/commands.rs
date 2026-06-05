@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 #[cfg(target_os = "linux")]
 use std::process::{Command, Stdio};
 
+use chrono::{SecondsFormat, Utc};
 use easyanalyse_core::{
     default_document, validate_value, CoreError, DocumentFile, ValidationReport,
 };
@@ -51,6 +52,57 @@ const SECRET_REF_PREFIX: &str = "secret-ref:";
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 const SECRET_KEYRING_SERVICE: &str = "EasyAnalyse API Keys";
 const SECRET_STORE_WEAK_SECURITY_WARNING: &str = "Weak security: stored in local app data secret file fallback instead of an OS keychain or credential manager.";
+const EASYANALYSE_PROJECT_FORMAT_VERSION: &str = "1.0.0";
+const EASYANALYSE_PROJECT_MANIFEST_FILE_NAME: &str = "project.easyanalyse-project.json";
+const EASYANALYSE_PROJECT_DOCUMENT_RELATIVE_PATH: &str = "working-copy/document.json";
+const EASYANALYSE_PROJECT_BLUEPRINT_WORKSPACE_RELATIVE_PATH: &str = "blueprints/workspace.easyanalyse-blueprints.json";
+const LIVE_BLUEPRINT_DRAFT_PARTIAL_RELATIVE_PATH: &str = "working-copy/live-draft.raw.json.partial";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EasyAnalyseProjectManifest {
+    project_format_version: String,
+    created_at: String,
+    updated_at: String,
+    working_copy: ProjectWorkingCopyManifest,
+    blueprint_workspace: ProjectBlueprintWorkspaceManifest,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    live_draft: Option<ProjectLiveDraftManifest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectWorkingCopyManifest {
+    document_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectBlueprintWorkspaceManifest {
+    path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum ProjectLiveDraftStatus {
+    Active,
+    Cleared,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectLiveDraftManifest {
+    status: ProjectLiveDraftStatus,
+    version: u64,
+    partial_path: String,
+    updated_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    byte_length: Option<u64>,
+}
 
 #[tauri::command]
 pub fn secret_store_status() -> SecretStoreSecurityStatus {
@@ -396,6 +448,7 @@ pub fn save_document_to_path(path: String, document: Value) -> Result<SaveDocume
     if is_project {
         let document_path = easyanalyse_project_document_path(&final_path)?;
         write_text_atomically(&document_path, &content)?;
+        update_project_manifest_document_saved(&final_path)?;
     } else {
         fs::write(&final_path, content).map_err(error_to_string)?;
     }
@@ -412,6 +465,7 @@ pub fn write_live_blueprint_draft_partial(project_path: String, raw: String) -> 
     ensure_easyanalyse_project_path(project_path)?;
     let partial_path = easyanalyse_project_live_draft_partial_path(project_path)?;
     write_text_atomically(&partial_path, &raw)?;
+    update_project_manifest_live_draft_active(project_path, raw.as_bytes().len() as u64)?;
     Ok(partial_path.to_string_lossy().to_string())
 }
 
@@ -420,9 +474,28 @@ pub fn read_live_blueprint_draft_partial(project_path: String) -> Result<Option<
     let project_path = Path::new(&project_path);
     ensure_easyanalyse_project_path(project_path)?;
     let partial_path = easyanalyse_project_live_draft_partial_path(project_path)?;
+    let manifest = read_project_manifest(project_path)?;
+    if manifest
+        .as_ref()
+        .and_then(|item| item.live_draft.as_ref())
+        .is_some_and(|live_draft| live_draft.status == ProjectLiveDraftStatus::Cleared)
+    {
+        return Ok(None);
+    }
+
     match fs::read_to_string(&partial_path) {
-        Ok(content) => Ok(Some(content)),
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+        Ok(content) => {
+            if manifest.and_then(|item| item.live_draft).is_none() {
+                update_project_manifest_live_draft_active(project_path, content.as_bytes().len() as u64)?;
+            }
+            Ok(Some(content))
+        }
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            if manifest.and_then(|item| item.live_draft).is_some() {
+                update_project_manifest_live_draft_cleared(project_path)?;
+            }
+            Ok(None)
+        }
         Err(error) => Err(error.to_string()),
     }
 }
@@ -432,11 +505,13 @@ pub fn delete_live_blueprint_draft_partial(project_path: String) -> Result<bool,
     let project_path = Path::new(&project_path);
     ensure_easyanalyse_project_path(project_path)?;
     let partial_path = easyanalyse_project_live_draft_partial_path(project_path)?;
-    match fs::remove_file(&partial_path) {
+    let deleted = match fs::remove_file(&partial_path) {
         Ok(()) => Ok(true),
         Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error.to_string()),
-    }
+    }?;
+    update_project_manifest_live_draft_cleared(project_path)?;
+    Ok(deleted)
 }
 
 #[tauri::command]
@@ -465,7 +540,12 @@ pub fn load_blueprint_workspace_from_path(path: String) -> Result<Option<Value>,
 pub fn save_blueprint_workspace_to_path(path: String, workspace: Value) -> Result<(), String> {
     ensure_blueprint_sidecar_path(&path)?;
     let content = serde_json::to_string_pretty(&workspace).map_err(error_to_string)?;
-    write_text_atomically(Path::new(&path), &content)
+    let workspace_path = Path::new(&path);
+    write_text_atomically(workspace_path, &content)?;
+    if let Some(project_path) = project_path_from_blueprint_workspace_path(workspace_path) {
+        update_project_manifest_blueprint_workspace_saved(&project_path)?;
+    }
+    Ok(())
 }
 
 fn decode_json_text(bytes: &[u8]) -> Result<String, String> {
@@ -546,6 +626,153 @@ fn easyanalyse_project_document_path(project_path: &Path) -> Result<PathBuf, Str
 
 fn easyanalyse_project_live_draft_partial_path(project_path: &Path) -> Result<PathBuf, String> {
     Ok(easyanalyse_project_working_copy_dir(project_path)?.join("live-draft.raw.json.partial"))
+}
+
+fn easyanalyse_project_manifest_path(project_path: &Path) -> Result<PathBuf, String> {
+    ensure_easyanalyse_project_path(project_path)?;
+    Ok(project_path.join(EASYANALYSE_PROJECT_MANIFEST_FILE_NAME))
+}
+
+fn now_iso_string() -> String {
+    Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
+}
+
+fn create_project_manifest(now: &str) -> EasyAnalyseProjectManifest {
+    EasyAnalyseProjectManifest {
+        project_format_version: EASYANALYSE_PROJECT_FORMAT_VERSION.to_string(),
+        created_at: now.to_string(),
+        updated_at: now.to_string(),
+        working_copy: ProjectWorkingCopyManifest {
+            document_path: EASYANALYSE_PROJECT_DOCUMENT_RELATIVE_PATH.to_string(),
+            updated_at: None,
+        },
+        blueprint_workspace: ProjectBlueprintWorkspaceManifest {
+            path: EASYANALYSE_PROJECT_BLUEPRINT_WORKSPACE_RELATIVE_PATH.to_string(),
+            updated_at: None,
+        },
+        live_draft: None,
+    }
+}
+
+fn normalize_project_manifest(mut manifest: EasyAnalyseProjectManifest, now: &str) -> EasyAnalyseProjectManifest {
+    if manifest.project_format_version != EASYANALYSE_PROJECT_FORMAT_VERSION {
+        return create_project_manifest(now);
+    }
+
+    if manifest.created_at.trim().is_empty() {
+        manifest.created_at = now.to_string();
+    }
+    if manifest.updated_at.trim().is_empty() {
+        manifest.updated_at = manifest.created_at.clone();
+    }
+    manifest.working_copy.document_path = EASYANALYSE_PROJECT_DOCUMENT_RELATIVE_PATH.to_string();
+    manifest.blueprint_workspace.path = EASYANALYSE_PROJECT_BLUEPRINT_WORKSPACE_RELATIVE_PATH.to_string();
+    if let Some(live_draft) = manifest.live_draft.as_mut() {
+        live_draft.version = live_draft.version.max(1);
+        live_draft.partial_path = LIVE_BLUEPRINT_DRAFT_PARTIAL_RELATIVE_PATH.to_string();
+        if live_draft.updated_at.trim().is_empty() {
+            live_draft.updated_at = now.to_string();
+        }
+    }
+
+    manifest
+}
+
+fn read_project_manifest(project_path: &Path) -> Result<Option<EasyAnalyseProjectManifest>, String> {
+    let path = easyanalyse_project_manifest_path(project_path)?;
+    let content = match fs::read_to_string(&path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.to_string()),
+    };
+    let manifest = match serde_json::from_str::<EasyAnalyseProjectManifest>(&content) {
+        Ok(manifest) => manifest,
+        Err(_) => return Ok(None),
+    };
+
+    Ok(Some(normalize_project_manifest(manifest, &now_iso_string())))
+}
+
+fn read_or_create_project_manifest(project_path: &Path, now: &str) -> Result<EasyAnalyseProjectManifest, String> {
+    Ok(read_project_manifest(project_path)?.unwrap_or_else(|| create_project_manifest(now)))
+}
+
+fn write_project_manifest(project_path: &Path, manifest: &EasyAnalyseProjectManifest) -> Result<(), String> {
+    let path = easyanalyse_project_manifest_path(project_path)?;
+    let content = serde_json::to_string_pretty(manifest).map_err(error_to_string)?;
+    write_text_atomically(&path, &content)
+}
+
+fn update_project_manifest_document_saved(project_path: &Path) -> Result<(), String> {
+    let now = now_iso_string();
+    let mut manifest = read_or_create_project_manifest(project_path, &now)?;
+    manifest.updated_at = now.clone();
+    manifest.working_copy.document_path = EASYANALYSE_PROJECT_DOCUMENT_RELATIVE_PATH.to_string();
+    manifest.working_copy.updated_at = Some(now);
+    write_project_manifest(project_path, &manifest)
+}
+
+fn update_project_manifest_blueprint_workspace_saved(project_path: &Path) -> Result<(), String> {
+    let now = now_iso_string();
+    let mut manifest = read_or_create_project_manifest(project_path, &now)?;
+    manifest.updated_at = now.clone();
+    manifest.blueprint_workspace.path = EASYANALYSE_PROJECT_BLUEPRINT_WORKSPACE_RELATIVE_PATH.to_string();
+    manifest.blueprint_workspace.updated_at = Some(now);
+    write_project_manifest(project_path, &manifest)
+}
+
+fn update_project_manifest_live_draft_active(project_path: &Path, byte_length: u64) -> Result<(), String> {
+    let now = now_iso_string();
+    let mut manifest = read_or_create_project_manifest(project_path, &now)?;
+    let version = manifest
+        .live_draft
+        .as_ref()
+        .map(|live_draft| live_draft.version.saturating_add(1))
+        .unwrap_or(1);
+    manifest.updated_at = now.clone();
+    manifest.live_draft = Some(ProjectLiveDraftManifest {
+        status: ProjectLiveDraftStatus::Active,
+        version,
+        partial_path: LIVE_BLUEPRINT_DRAFT_PARTIAL_RELATIVE_PATH.to_string(),
+        updated_at: now,
+        byte_length: Some(byte_length),
+    });
+    write_project_manifest(project_path, &manifest)
+}
+
+fn update_project_manifest_live_draft_cleared(project_path: &Path) -> Result<(), String> {
+    let now = now_iso_string();
+    let mut manifest = read_or_create_project_manifest(project_path, &now)?;
+    let version = manifest
+        .live_draft
+        .as_ref()
+        .map(|live_draft| live_draft.version.saturating_add(1))
+        .unwrap_or(1);
+    manifest.updated_at = now.clone();
+    manifest.live_draft = Some(ProjectLiveDraftManifest {
+        status: ProjectLiveDraftStatus::Cleared,
+        version,
+        partial_path: LIVE_BLUEPRINT_DRAFT_PARTIAL_RELATIVE_PATH.to_string(),
+        updated_at: now,
+        byte_length: None,
+    });
+    write_project_manifest(project_path, &manifest)
+}
+
+fn project_path_from_blueprint_workspace_path(path: &Path) -> Option<PathBuf> {
+    if path.file_name().and_then(|value| value.to_str()) != Some("workspace.easyanalyse-blueprints.json") {
+        return None;
+    }
+    let blueprints_dir = path.parent()?;
+    if blueprints_dir.file_name().and_then(|value| value.to_str()) != Some("blueprints") {
+        return None;
+    }
+    let project_path = blueprints_dir.parent()?;
+    if is_easyanalyse_project_path(project_path) {
+        Some(project_path.to_path_buf())
+    } else {
+        None
+    }
 }
 
 fn write_text_atomically(path: &Path, content: &str) -> Result<(), String> {
@@ -631,8 +858,12 @@ mod tests {
     use super::{
         decode_json_text, get_blueprint_sidecar_path, load_blueprint_workspace_from_path,
         delete_live_blueprint_draft_partial, open_document_from_path, read_live_blueprint_draft_partial,
-        save_blueprint_workspace_to_path, save_document_to_path, secret_store_status_for_native_availability,
-        write_live_blueprint_draft_partial,
+        read_project_manifest, save_blueprint_workspace_to_path, save_document_to_path,
+        secret_store_status_for_native_availability, update_project_manifest_live_draft_cleared,
+        write_live_blueprint_draft_partial, EASYANALYSE_PROJECT_BLUEPRINT_WORKSPACE_RELATIVE_PATH,
+        EASYANALYSE_PROJECT_DOCUMENT_RELATIVE_PATH, EASYANALYSE_PROJECT_FORMAT_VERSION,
+        EASYANALYSE_PROJECT_MANIFEST_FILE_NAME, LIVE_BLUEPRINT_DRAFT_PARTIAL_RELATIVE_PATH,
+        ProjectLiveDraftStatus,
     };
     #[cfg(unix)]
     use super::write_secret_map_to_path;
@@ -723,6 +954,31 @@ mod tests {
     }
 
     #[test]
+    fn project_blueprint_workspace_save_updates_manifest() {
+        let project_path = unique_temp_path("workspace-manifest.easyanalyse");
+        let workspace_path = project_path
+            .join("blueprints")
+            .join("workspace.easyanalyse-blueprints.json");
+
+        save_blueprint_workspace_to_path(
+            workspace_path.to_string_lossy().to_string(),
+            json!({
+                "blueprintWorkspaceVersion": "1.0.0",
+                "blueprints": []
+            }),
+        )
+        .expect("project blueprint workspace should save");
+
+        let manifest = read_project_manifest(&project_path)
+            .expect("project manifest should read")
+            .expect("workspace save should create manifest");
+
+        let _ = fs::remove_dir_all(&project_path);
+        assert_eq!(manifest.blueprint_workspace.path, EASYANALYSE_PROJECT_BLUEPRINT_WORKSPACE_RELATIVE_PATH);
+        assert!(manifest.blueprint_workspace.updated_at.is_some());
+    }
+
+    #[test]
     fn blueprint_sidecar_io_rejects_non_sidecar_paths() {
         let path = unique_temp_path("workspace.json");
 
@@ -746,16 +1002,25 @@ mod tests {
         .expect("project document should save");
 
         let document_path = project_path.join("working-copy").join("document.json");
+        let manifest_path = project_path.join(EASYANALYSE_PROJECT_MANIFEST_FILE_NAME);
         assert_eq!(saved.path, project_path.to_string_lossy().to_string());
         assert!(document_path.exists(), "project working copy document should exist");
+        assert!(manifest_path.exists(), "project manifest should exist");
 
         let opened = open_document_from_path(project_path.to_string_lossy().to_string())
             .expect("project document should reopen");
         let opened_document = opened.document.expect("project should contain a document");
+        let manifest = read_project_manifest(&project_path)
+            .expect("project manifest should read")
+            .expect("project manifest should exist");
 
         let _ = fs::remove_dir_all(&project_path);
         assert_eq!(opened.path.as_deref(), Some(project_path.to_string_lossy().as_ref()));
         assert_eq!(opened_document.document.title, "Project roundtrip");
+        assert_eq!(manifest.project_format_version, EASYANALYSE_PROJECT_FORMAT_VERSION);
+        assert_eq!(manifest.working_copy.document_path, EASYANALYSE_PROJECT_DOCUMENT_RELATIVE_PATH);
+        assert!(manifest.working_copy.updated_at.is_some());
+        assert_eq!(manifest.blueprint_workspace.path, EASYANALYSE_PROJECT_BLUEPRINT_WORKSPACE_RELATIVE_PATH);
     }
 
     #[test]
@@ -778,6 +1043,14 @@ mod tests {
         let expected = project_path.join("working-copy").join("live-draft.raw.json.partial");
         assert_eq!(partial_path, expected.to_string_lossy().to_string());
         assert_eq!(fs::read_to_string(&expected).expect("partial draft should be readable"), raw);
+        let active_manifest = read_project_manifest(&project_path)
+            .expect("project manifest should read")
+            .expect("partial write should create a manifest");
+        let active_live_draft = active_manifest.live_draft.expect("active live draft metadata should exist");
+        assert_eq!(active_live_draft.status, ProjectLiveDraftStatus::Active);
+        assert_eq!(active_live_draft.version, 1);
+        assert_eq!(active_live_draft.partial_path, LIVE_BLUEPRINT_DRAFT_PARTIAL_RELATIVE_PATH);
+        assert_eq!(active_live_draft.byte_length, Some(raw.as_bytes().len() as u64));
         assert_eq!(
             read_live_blueprint_draft_partial(project_path.to_string_lossy().to_string())
                 .expect("partial draft should read"),
@@ -787,6 +1060,14 @@ mod tests {
             delete_live_blueprint_draft_partial(project_path.to_string_lossy().to_string())
                 .expect("partial draft should delete")
         );
+        let cleared_manifest = read_project_manifest(&project_path)
+            .expect("project manifest should read")
+            .expect("partial delete should preserve manifest");
+        let cleared_live_draft = cleared_manifest.live_draft.expect("cleared live draft metadata should exist");
+        assert_eq!(cleared_live_draft.status, ProjectLiveDraftStatus::Cleared);
+        assert_eq!(cleared_live_draft.version, 2);
+        assert_eq!(cleared_live_draft.partial_path, LIVE_BLUEPRINT_DRAFT_PARTIAL_RELATIVE_PATH);
+        assert_eq!(cleared_live_draft.byte_length, None);
         assert!(
             read_live_blueprint_draft_partial(project_path.to_string_lossy().to_string())
                 .expect("deleted partial should not fail")
@@ -815,6 +1096,46 @@ mod tests {
         assert!(error.contains(".easyanalyse"), "{error}");
         assert!(read_error.contains(".easyanalyse"), "{read_error}");
         assert!(delete_error.contains(".easyanalyse"), "{delete_error}");
+    }
+
+    #[test]
+    fn live_blueprint_partial_read_honors_manifest_recovery_state() {
+        let cleared_project_path = unique_temp_path("cleared-live-draft.easyanalyse");
+        let partial_path = cleared_project_path.join("working-copy").join("live-draft.raw.json.partial");
+        fs::create_dir_all(partial_path.parent().expect("partial should have a parent"))
+            .expect("project working copy should be created");
+        fs::write(&partial_path, "stale raw").expect("stale partial should write");
+        update_project_manifest_live_draft_cleared(&cleared_project_path)
+            .expect("cleared metadata should write");
+
+        assert!(
+            read_live_blueprint_draft_partial(cleared_project_path.to_string_lossy().to_string())
+                .expect("cleared partial read should not fail")
+                .is_none(),
+            "cleared manifest state should suppress stale partial recovery"
+        );
+
+        let legacy_project_path = unique_temp_path("legacy-live-draft.easyanalyse");
+        let legacy_partial_path = legacy_project_path.join("working-copy").join("live-draft.raw.json.partial");
+        fs::create_dir_all(legacy_partial_path.parent().expect("legacy partial should have a parent"))
+            .expect("legacy working copy should be created");
+        fs::write(&legacy_partial_path, "legacy raw").expect("legacy partial should write");
+
+        assert_eq!(
+            read_live_blueprint_draft_partial(legacy_project_path.to_string_lossy().to_string())
+                .expect("legacy partial should still recover"),
+            Some("legacy raw".to_string())
+        );
+        let legacy_manifest = read_project_manifest(&legacy_project_path)
+            .expect("legacy manifest should read")
+            .expect("legacy recovery should create manifest metadata");
+        assert_eq!(
+            legacy_manifest.live_draft.expect("legacy live draft should be marked active").status,
+            ProjectLiveDraftStatus::Active
+        );
+
+        let _ = fs::remove_dir_all(&cleared_project_path);
+        let _ = fs::remove_dir_all(&legacy_project_path);
     }
 
     #[test]

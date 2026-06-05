@@ -795,6 +795,9 @@ describe('blueprintStore', () => {
     expect(useBlueprintStore.getState().workspace?.blueprints[0]?.extensions?.simulation?.manifest.name).toBe(
       'RC simulation preview',
     )
+    expect(inserted[0]?.extensions?.simulation?.manifest.inputSchema).toEqual(simulation.manifest.inputSchema)
+    expect(inserted[0]?.extensions?.simulation?.defaultInput).toEqual(simulation.defaultInput)
+    expect(inserted[0]?.extensions?.simulation?.notes).toEqual(simulation.notes)
   })
 
   it('promotes simulation artifacts from candidate document extensions into blueprint extensions', async () => {

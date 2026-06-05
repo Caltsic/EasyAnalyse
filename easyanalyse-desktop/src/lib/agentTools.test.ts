@@ -123,6 +123,15 @@ describe('agentTools', () => {
     expect(data.candidate.document.schemaVersion).toBe('4.0.0')
     expect(data.candidate.document.devices.map((device) => device.id)).toEqual(expect.arrayContaining(['r1', 'r2', 'c1', 'c2', 'u1']))
     expect(data.candidate.document.devices.flatMap((device) => device.terminals.map((terminal) => terminal.label))).toEqual(expect.arrayContaining(['VIN', 'VOUT', 'GND', 'SK_N1', 'SK_N2']))
+    expect(data.candidate.simulation).toMatchObject({
+      schemaVersion: 'easyanalyse-simulation-v1',
+      manifest: {
+        schemaVersion: 'easyanalyse-simulation-v1',
+        capabilities: expect.arrayContaining(['frequency-response']),
+      },
+      scriptLanguage: 'javascript',
+    })
+    expect(data.candidate.simulation?.workerScript).toContain('function run')
     expect(data.calculatedValues.topology).toBe('sallen-key')
     expect(data.assumptions.join(' ')).toContain('Sallen-Key')
     expect(mainDocument.document.title).toBe('Tool test')

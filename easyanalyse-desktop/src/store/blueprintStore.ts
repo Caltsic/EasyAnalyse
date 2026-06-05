@@ -189,13 +189,9 @@ function cloneDocumentSnapshot(document: DocumentFile): DocumentFile {
   return JSON.parse(JSON.stringify(document)) as DocumentFile
 }
 
-function cloneSimulationArtifact(artifact: SimulationArtifact): SimulationArtifact {
-  return JSON.parse(JSON.stringify(artifact)) as SimulationArtifact
-}
-
 function getCandidateSimulationArtifact(candidate: AgentBlueprintCandidate): SimulationArtifact | undefined {
   if (candidate.simulation !== undefined) {
-    return cloneSimulationArtifact(candidate.simulation)
+    return normalizeSimulationArtifact(candidate.simulation)
   }
 
   return normalizeSimulationArtifact(candidate.document.extensions?.simulation)

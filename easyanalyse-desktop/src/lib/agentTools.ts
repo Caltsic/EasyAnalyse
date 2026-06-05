@@ -852,6 +852,7 @@ function buildBlueprintCandidateToolParameters(options: { includeOptions?: boole
           issues: { type: 'array' },
           highlightedLabels: { type: 'array', items: { type: 'string' } },
           notes: { type: 'array', items: { type: 'string' } },
+          simulation: { type: 'object', additionalProperties: true },
           document: {
             type: 'object',
             additionalProperties: true,
@@ -975,7 +976,7 @@ function parseDocumentInput(value: unknown): { ok: true; value: unknown } | { ok
 
 function collectCandidateFormatIssues(candidate: AgentBlueprintCandidate): ValidationIssue[] {
   const issues: ValidationIssue[] = []
-  const allowedKeys = new Set(['title', 'summary', 'rationale', 'tradeoffs', 'document', 'highlightedLabels', 'notes', 'issues', 'selfCheck', 'toolIssues'])
+  const allowedKeys = new Set(['title', 'summary', 'rationale', 'tradeoffs', 'document', 'highlightedLabels', 'notes', 'issues', 'selfCheck', 'toolIssues', 'simulation'])
   Object.keys(candidate as unknown as Record<string, unknown>).forEach((key) => {
     if (!allowedKeys.has(key)) issues.push(issue('error', 'format.unknown_field', `Unknown blueprint candidate field '${key}'.`, null, `candidate.${key}`))
   })

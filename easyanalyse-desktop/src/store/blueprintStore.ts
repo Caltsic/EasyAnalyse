@@ -12,6 +12,7 @@ import {
   validateDocumentCommand,
 } from '../lib/tauri'
 import { getErrorMessage } from '../lib/errors'
+import { isRecord } from '../lib/guards'
 import type { LiveBlueprintDraftResult } from '../lib/liveBlueprintDraft'
 import type {
   AgentBlueprintCandidate,
@@ -25,6 +26,13 @@ import type {
   BlueprintWorkspaceFile,
 } from '../types/blueprint'
 import type { DocumentFile, ValidationReport } from '../types/document'
+import {
+  SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+  type SimulationArtifact,
+  type SimulationWorkerManifest,
+} from '../types/simulation'
+
+const MAX_SIMULATION_WORKER_SCRIPT_CHARS = 80_000
 
 interface AgentCandidateInsertionContext {
   mainDocument: DocumentFile
@@ -179,6 +187,71 @@ function isReportValid(report: ValidationReport): boolean {
 
 function cloneDocumentSnapshot(document: DocumentFile): DocumentFile {
   return JSON.parse(JSON.stringify(document)) as DocumentFile
+}
+
+function cloneSimulationArtifact(artifact: SimulationArtifact): SimulationArtifact {
+  return JSON.parse(JSON.stringify(artifact)) as SimulationArtifact
+}
+
+function getCandidateSimulationArtifact(candidate: AgentBlueprintCandidate): SimulationArtifact | undefined {
+  if (candidate.simulation !== undefined) {
+    return cloneSimulationArtifact(candidate.simulation)
+  }
+
+  return normalizeSimulationArtifact(candidate.document.extensions?.simulation)
+}
+
+function normalizeSimulationArtifact(value: unknown): SimulationArtifact | undefined {
+  if (!isRecord(value) || value.schemaVersion !== SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION) {
+    return undefined
+  }
+  if (
+    !isRecord(value.manifest) ||
+    typeof value.workerScript !== 'string' ||
+    value.workerScript.length === 0 ||
+    value.workerScript.length > MAX_SIMULATION_WORKER_SCRIPT_CHARS
+  ) {
+    return undefined
+  }
+  if (value.scriptLanguage !== undefined && value.scriptLanguage !== 'javascript') {
+    return undefined
+  }
+
+  const manifest = normalizeSimulationManifest(value.manifest)
+  if (manifest === null) {
+    return undefined
+  }
+
+  return {
+    schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+    manifest,
+    workerScript: value.workerScript,
+    ...(value.scriptLanguage === 'javascript' ? { scriptLanguage: 'javascript' } : {}),
+    ...(value.defaultInput === undefined ? {} : { defaultInput: JSON.parse(JSON.stringify(value.defaultInput)) }),
+    ...(Array.isArray(value.notes) ? { notes: value.notes.filter((item): item is string => typeof item === 'string') } : {}),
+  }
+}
+
+function normalizeSimulationManifest(value: Record<string, unknown>): SimulationWorkerManifest | null {
+  if (
+    value.schemaVersion !== SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION ||
+    typeof value.name !== 'string' ||
+    value.name.trim().length === 0
+  ) {
+    return null
+  }
+
+  return {
+    schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+    name: value.name.trim(),
+    ...(typeof value.version === 'string' ? { version: value.version } : {}),
+    ...(typeof value.description === 'string' ? { description: value.description } : {}),
+    ...(Array.isArray(value.capabilities)
+      ? { capabilities: value.capabilities.filter((item): item is string => typeof item === 'string') }
+      : {}),
+    ...(value.inputSchema === undefined ? {} : { inputSchema: JSON.parse(JSON.stringify(value.inputSchema)) }),
+    ...(value.outputSchema === undefined ? {} : { outputSchema: JSON.parse(JSON.stringify(value.outputSchema)) }),
+  }
 }
 
 function createIdleLiveDraft(): BlueprintLiveDraftState {
@@ -366,8 +439,9 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
     }
 
     const records = await Promise.all(
-      candidates.map((candidate, index) =>
-        createBlueprintFromDocument({
+      candidates.map((candidate, index) => {
+        const simulation = getCandidateSimulationArtifact(candidate)
+        return createBlueprintFromDocument({
           document: candidate.document,
           title: candidate.title,
           description: candidate.summary,
@@ -386,9 +460,10 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
               selfCheck: candidate.selfCheck,
               toolIssues: candidate.toolIssues ?? [],
             },
+            ...(simulation === undefined ? {} : { simulation }),
           },
-        }),
-      ),
+        })
+      }),
     )
     if (insertionVersion !== candidateInsertionVersion) {
       return []

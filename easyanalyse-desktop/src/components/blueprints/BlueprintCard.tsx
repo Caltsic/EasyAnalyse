@@ -86,6 +86,7 @@ export function BlueprintCard({
         <span>{t('sourceLabel')}: {formatSource(record.source, t)}</span>
         <span>{t('issuesLabel')}: {issueCount}</span>
         <span>{t('warningsLabel')}: {warningCount}</span>
+        {record.extensions?.simulation ? <span>{t('simulationAvailable')}</span> : null}
       </div>
 
       <div className="blueprint-card__runtime">

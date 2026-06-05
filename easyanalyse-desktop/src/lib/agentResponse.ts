@@ -11,6 +11,11 @@ import type {
   AgentResponseSemanticVersion,
 } from '../types/agent'
 import type { DocumentFile, ValidationIssue } from '../types/document'
+import {
+  SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+  type SimulationArtifact,
+  type SimulationWorkerManifest,
+} from '../types/simulation'
 import { isRecord } from './guards'
 
 export const AGENT_RESPONSE_SCHEMA_VERSION = 'agent-response-v1'
@@ -28,6 +33,7 @@ const FORBIDDEN_OLD_TOPOLOGY_FIELDS = new Set([
   'ports',
 ])
 const FORBIDDEN_DEVICE_OR_TERMINAL_FIELDS = new Set(['components', 'ports', 'signalId'])
+const MAX_SIMULATION_WORKER_SCRIPT_CHARS = 80_000
 
 type JsonRecord = Record<string, unknown>
 
@@ -156,6 +162,7 @@ function parseBlueprintCandidate(
   }
   const document = deepClone(root.document, documentPath) as DocumentFile
   const issues = collectDocumentCandidateIssues(document, candidateIndex)
+  const simulation = parseOptionalSimulationArtifact(root.simulation, candidateIndex, issues)
 
   return {
     candidate: {
@@ -174,8 +181,82 @@ function parseBlueprintCandidate(
           }),
       notes: root.notes === undefined ? [] : requireStringArray(root.notes, `blueprints[${candidateIndex}].notes`),
       issues,
+      ...(simulation ? { simulation } : {}),
     },
     issues,
+  }
+}
+
+function parseOptionalSimulationArtifact(
+  value: unknown,
+  candidateIndex: number,
+  issues: ValidationIssue[],
+): SimulationArtifact | undefined {
+  if (value === undefined) return undefined
+
+  const path = `blueprints[${candidateIndex}].simulation`
+  try {
+    return parseSimulationArtifact(value, path)
+  } catch (error) {
+    issues.push({
+      severity: 'warning',
+      code: 'invalid-simulation-artifact',
+      message: error instanceof Error ? error.message : String(error),
+      path,
+    })
+    return undefined
+  }
+}
+
+function parseSimulationArtifact(value: unknown, path: string): SimulationArtifact {
+  const root = asObject(value, path)
+  if (root.schemaVersion !== SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION) {
+    throw new Error(`${path}.schemaVersion must be ${SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION}`)
+  }
+
+  const workerScript = requireString(root.workerScript, `${path}.workerScript`)
+  if (workerScript.length === 0) {
+    throw new Error(`${path}.workerScript must not be empty`)
+  }
+  if (workerScript.length > MAX_SIMULATION_WORKER_SCRIPT_CHARS) {
+    throw new Error(
+      `${path}.workerScript must be ${MAX_SIMULATION_WORKER_SCRIPT_CHARS} characters or fewer`,
+    )
+  }
+
+  const scriptLanguage = root.scriptLanguage
+  if (scriptLanguage !== undefined && scriptLanguage !== 'javascript') {
+    throw new Error(`${path}.scriptLanguage must be javascript when provided`)
+  }
+
+  return {
+    schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+    manifest: parseSimulationManifest(root.manifest, `${path}.manifest`),
+    workerScript,
+    ...(scriptLanguage === 'javascript' ? { scriptLanguage } : {}),
+    ...(root.defaultInput === undefined ? {} : { defaultInput: deepClone(root.defaultInput, `${path}.defaultInput`) as SimulationArtifact['defaultInput'] }),
+    ...(root.notes === undefined ? {} : { notes: requireStringArray(root.notes, `${path}.notes`) }),
+  }
+}
+
+function parseSimulationManifest(value: unknown, path: string): SimulationWorkerManifest {
+  const root = asObject(value, path)
+  if (root.schemaVersion !== SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION) {
+    throw new Error(`${path}.schemaVersion must be ${SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION}`)
+  }
+  const name = requireString(root.name, `${path}.name`).trim()
+  if (name.length === 0) {
+    throw new Error(`${path}.name must not be empty`)
+  }
+
+  return {
+    schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+    name,
+    ...(typeof root.version === 'string' ? { version: root.version } : {}),
+    ...(typeof root.description === 'string' ? { description: root.description } : {}),
+    ...(root.capabilities === undefined ? {} : { capabilities: requireStringArray(root.capabilities, `${path}.capabilities`) }),
+    ...(root.inputSchema === undefined ? {} : { inputSchema: deepClone(root.inputSchema, `${path}.inputSchema`) }),
+    ...(root.outputSchema === undefined ? {} : { outputSchema: deepClone(root.outputSchema, `${path}.outputSchema`) }),
   }
 }
 

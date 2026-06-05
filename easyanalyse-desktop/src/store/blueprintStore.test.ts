@@ -5,6 +5,7 @@ import type { AgentBlueprintCandidate } from '../types/agent'
 import type { AgentThreadWorkspace } from '../types/agentThread'
 import type { BlueprintWorkspaceFile } from '../types/blueprint'
 import type { DocumentFile, ValidationReport } from '../types/document'
+import { SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION, type SimulationArtifact } from '../types/simulation'
 import { useBlueprintStore } from './blueprintStore'
 import { useEditorStore } from './editorStore'
 import { createEmptyBlueprintWorkspace } from '../lib/blueprintWorkspace'
@@ -93,6 +94,26 @@ function createAgentCandidate(document: DocumentFile = createDocument({ document
     tradeoffs: [],
     document,
     issues: [],
+  }
+}
+
+function createSimulationArtifact(overrides: Partial<SimulationArtifact> = {}): SimulationArtifact {
+  return {
+    schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+    manifest: {
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+      name: 'RC simulation preview',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          resistance: { type: 'number', minimum: 100, maximum: 10000 },
+        },
+      },
+    },
+    workerScript: 'function simulate() { return { points: [{ t: 0, vout: 0 }, { t: 1, vout: 1 }] } }',
+    scriptLanguage: 'javascript',
+    defaultInput: { parameters: { resistance: 1000 } },
+    ...overrides,
   }
 }
 
@@ -753,6 +774,50 @@ describe('blueprintStore', () => {
     })
     expect(inserted[0]?.baseMainDocumentHash).toBe(dirtyHash)
     expect(state.dirty).toBe(true)
+  })
+
+  it('stores agent candidate simulation artifacts in blueprint extensions', async () => {
+    const mainDocument = createDocument({ document: { id: 'doc-sim-main', title: 'Simulation main' } })
+    const simulation = createSimulationArtifact()
+    const candidate = {
+      ...createAgentCandidate(createDocument({ document: { id: 'candidate-sim', title: 'Sim candidate' } })),
+      simulation,
+    }
+
+    const inserted = await useBlueprintStore.getState().addAgentBlueprintCandidates(
+      [candidate],
+      { mainDocument, filePath: null },
+    )
+
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0]?.extensions?.simulation).toEqual(simulation)
+    expect(inserted[0]?.extensions?.simulation).not.toBe(simulation)
+    expect(useBlueprintStore.getState().workspace?.blueprints[0]?.extensions?.simulation?.manifest.name).toBe(
+      'RC simulation preview',
+    )
+  })
+
+  it('promotes simulation artifacts from candidate document extensions into blueprint extensions', async () => {
+    const mainDocument = createDocument({ document: { id: 'doc-sim-extension-main', title: 'Simulation main' } })
+    const simulation = createSimulationArtifact({ notes: ['from document extension'] })
+    const candidateDocument = createDocument({
+      document: { id: 'candidate-sim-extension', title: 'Extension simulation candidate' },
+      extensions: {
+        simulation,
+      },
+    })
+
+    const inserted = await useBlueprintStore.getState().addAgentBlueprintCandidates(
+      [createAgentCandidate(candidateDocument)],
+      { mainDocument, filePath: null },
+    )
+
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0]?.extensions?.simulation).toMatchObject({
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+      manifest: { name: 'RC simulation preview' },
+      notes: ['from document extension'],
+    })
   })
 
   it('retains concurrent agent candidate insertions for the same main document', async () => {

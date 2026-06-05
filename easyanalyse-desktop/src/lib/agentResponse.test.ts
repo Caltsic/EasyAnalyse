@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentBlueprintCandidate } from '../types/agent'
 import type { DocumentFile } from '../types/document'
+import { SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION, type SimulationArtifact } from '../types/simulation'
 import { AGENT_RESPONSE_SEMANTIC_VERSION, parseAgentResponse } from './agentResponse'
 
 function createDocument(overrides: Partial<DocumentFile> = {}): DocumentFile {
@@ -29,6 +30,30 @@ function createDocument(overrides: Partial<DocumentFile> = {}): DocumentFile {
       devices: { r1: { position: { x: 10, y: 20 }, shape: 'rectangle' } },
       networkLines: { vin: { label: 'VIN', position: { x: 0, y: 20 } } },
     },
+    ...overrides,
+  }
+}
+
+function createSimulationArtifact(overrides: Partial<SimulationArtifact> = {}): SimulationArtifact {
+  return {
+    schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+    manifest: {
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+      name: 'RC step preview',
+      description: 'Time-domain preview',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          resistance: { type: 'number', minimum: 100, maximum: 10000 },
+        },
+      },
+    },
+    workerScript: 'function simulate(input) { return { points: [{ t: 0, vout: 0 }, { t: 1, vout: 1 }] } }',
+    scriptLanguage: 'javascript',
+    defaultInput: {
+      parameters: { resistance: 1000 },
+    },
+    notes: ['Preview only'],
     ...overrides,
   }
 }
@@ -125,6 +150,83 @@ describe('parseAgentResponse', () => {
     expect(parsed.response.kind).toBe('blueprints')
     if (parsed.response.kind !== 'blueprints') throw new Error('expected blueprints')
     expect(parsed.response.blueprints[0].notes).toEqual([])
+  })
+
+  it('retains optional simulation artifacts on blueprint candidates', () => {
+    const simulation = createSimulationArtifact()
+    const parsed = parseAgentResponse({
+      schemaVersion: 'agent-response-v1',
+      semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
+      kind: 'blueprints',
+      summary: 'Candidate with simulation',
+      blueprints: [
+        {
+          title: 'Simulated candidate',
+          summary: 'Includes a preview worker.',
+          rationale: 'The Agent provided a lightweight math model.',
+          tradeoffs: [],
+          document: createDocument(),
+          simulation,
+        },
+      ],
+    })
+
+    expect(parsed.ok).toBe(true)
+    expect(parsed.issues).toEqual([])
+    expect(parsed.response.kind).toBe('blueprints')
+    if (parsed.response.kind !== 'blueprints') throw new Error('expected blueprints')
+    expect(parsed.response.blueprints[0].simulation).toEqual(simulation)
+    expect(parsed.response.blueprints[0].simulation).not.toBe(simulation)
+  })
+
+  it('keeps a blueprint candidate when an optional simulation artifact is malformed', () => {
+    const parsed = parseAgentResponse({
+      schemaVersion: 'agent-response-v1',
+      semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
+      kind: 'blueprints',
+      summary: 'Candidate with malformed simulation',
+      blueprints: [
+        {
+          title: 'Malformed simulation',
+          summary: 'The circuit still remains useful.',
+          rationale: 'Simulation is advisory metadata.',
+          tradeoffs: [],
+          document: createDocument(),
+          simulation: {
+            schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+            manifest: {
+              schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+              name: 'bad',
+            },
+            workerScript: '',
+          },
+        },
+      ],
+    })
+
+    expect(parsed.ok).toBe(true)
+    expect(parsed.response.kind).toBe('blueprints')
+    if (parsed.response.kind !== 'blueprints') throw new Error('expected blueprints')
+    expect(parsed.response.blueprints).toHaveLength(1)
+    expect(parsed.response.blueprints[0].simulation).toBeUndefined()
+    expect(parsed.response.blueprints[0].issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: 'warning',
+          code: 'invalid-simulation-artifact',
+          path: 'blueprints[0].simulation',
+        }),
+      ]),
+    )
+    expect(parsed.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          candidateIndex: 0,
+          code: 'invalid-simulation-artifact',
+          path: 'blueprints[0].simulation',
+        }),
+      ]),
+    )
   })
 
   it('parses question and error responses', () => {

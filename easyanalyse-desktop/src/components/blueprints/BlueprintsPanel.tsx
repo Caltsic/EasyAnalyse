@@ -11,6 +11,7 @@ import { Button, EmptyState } from '../ui'
 import { ApplyBlueprintDialog } from './ApplyBlueprintDialog'
 import { BlueprintCard } from './BlueprintCard'
 import { BlueprintPreviewCanvas } from './BlueprintPreviewCanvas'
+import { BlueprintSimulationCard } from './BlueprintSimulationCard'
 
 type BlueprintTranslate = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) => string
 
@@ -404,6 +405,9 @@ export function BlueprintsPanel() {
               {t('liveBlueprintNoPreviewHint')}
             </EmptyState>
           )}
+          {selectedBlueprintPreviewVisible && selectedBlueprint?.extensions?.simulation ? (
+            <BlueprintSimulationCard record={selectedBlueprint} t={t} />
+          ) : null}
         </section>
       )}
       {pendingApplyRecord && (

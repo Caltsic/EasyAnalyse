@@ -1,6 +1,7 @@
 import type { DocumentFile, ValidationIssue, ValidationReport } from './document'
 import type { AgentSelfCheckReport } from './agentTools'
 import type { AgentThreadWorkspace } from './agentThread'
+import type { SimulationArtifact } from './simulation'
 
 export type BlueprintWorkspaceVersion = '1.0.0'
 export type BlueprintLifecycleStatus = 'active' | 'archived' | 'deleted'
@@ -59,6 +60,7 @@ export interface BlueprintRecordExtensions extends Record<string, unknown> {
     selfCheck?: AgentSelfCheckReport
     toolIssues?: ValidationIssue[]
   }
+  simulation?: SimulationArtifact
 }
 
 export interface BlueprintAppliedInfo {

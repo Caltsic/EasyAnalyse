@@ -9,11 +9,15 @@ import { useBlueprintStore } from '../../store/blueprintStore'
 import { useEditorStore } from '../../store/editorStore'
 import type { BlueprintRecord } from '../../types/blueprint'
 import type { DocumentFile } from '../../types/document'
+import { SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION, type SimulationArtifact } from '../../types/simulation'
 import { ApplyBlueprintDialog } from './ApplyBlueprintDialog'
 
 const previewCanvasMockState = vi.hoisted(() => ({ throwOnRender: false }))
 const tauriMocks = vi.hoisted(() => ({
   deleteLiveBlueprintDraftPartialCommand: vi.fn(),
+}))
+const simulationMocks = vi.hoisted(() => ({
+  runSimulationWorker: vi.fn(),
 }))
 
 vi.mock('./BlueprintPreviewCanvas', () => ({
@@ -30,6 +34,21 @@ vi.mock('./BlueprintPreviewCanvas', () => ({
 vi.mock('../../lib/tauri', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/tauri')>()),
   deleteLiveBlueprintDraftPartialCommand: tauriMocks.deleteLiveBlueprintDraftPartialCommand,
+}))
+
+vi.mock('../../lib/simulationWorkerSandbox', () => ({
+  runSimulationWorker: simulationMocks.runSimulationWorker,
+  SimulationWorkerSandboxError: class SimulationWorkerSandboxError extends Error {
+    code: string
+    detail: unknown
+
+    constructor(error: { code: string; message: string; detail?: unknown }) {
+      super(error.message)
+      this.name = 'SimulationWorkerSandboxError'
+      this.code = error.code
+      this.detail = error.detail
+    }
+  },
 }))
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -136,6 +155,27 @@ async function createBlueprintRecord(overrides: Partial<BlueprintRecord> = {}): 
   }
 }
 
+function createSimulationArtifact(overrides: Partial<SimulationArtifact> = {}): SimulationArtifact {
+  return {
+    schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+    manifest: {
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+      name: 'RC simulation preview',
+      description: 'Step response',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          resistance: { type: 'number', minimum: 100, maximum: 10000, multipleOf: 100 },
+        },
+      },
+    },
+    workerScript: 'function simulate() { return { points: [{ t: 0, vout: 0 }, { t: 1, vout: 1 }] } }',
+    scriptLanguage: 'javascript',
+    defaultInput: { parameters: { resistance: 1000 } },
+    ...overrides,
+  }
+}
+
 async function renderApplyDialog(props: Partial<ComponentProps<typeof ApplyBlueprintDialog>> = {}) {
   const mainDocument = createDocument()
   const record = props.record ?? await createBlueprintRecord()
@@ -183,6 +223,15 @@ afterEach(() => {
 beforeEach(() => {
   previewCanvasMockState.throwOnRender = false
   tauriMocks.deleteLiveBlueprintDraftPartialCommand.mockResolvedValue(false)
+  simulationMocks.runSimulationWorker.mockResolvedValue({
+    points: [
+      { t: 0, vout: 0 },
+      { t: 1, vout: 1 },
+    ],
+    summary: 'simulated response',
+    truncated: false,
+    durationMs: 12,
+  })
   resetStores()
 })
 
@@ -485,6 +534,54 @@ describe('BlueprintsPanel', () => {
     } finally {
       consoleError.mockRestore()
     }
+  })
+
+  it('shows a simulation card for the selected blueprint and runs it only after user action', async () => {
+    const main = createDocument()
+    const mainHash = await hashDocument(main)
+    const record = await createBlueprintRecord({
+      id: 'bp-simulation-preview',
+      title: 'Simulation preview blueprint',
+      baseMainDocumentHash: mainHash,
+      extensions: {
+        simulation: createSimulationArtifact(),
+      },
+    })
+    resetStores(main)
+    useBlueprintStore.setState({
+      workspace: {
+        ...createEmptyBlueprintWorkspace({
+          mainDocument: { documentId: main.document.id, hash: mainHash },
+        }),
+        blueprints: [record],
+      },
+      selectedBlueprintId: record.id,
+    })
+
+    const host = await renderPanel()
+
+    expect(host.textContent).toContain('Simulation preview')
+    expect(host.textContent).toContain('RC simulation preview')
+    expect(host.textContent).toContain('Step response')
+    expect(simulationMocks.runSimulationWorker).not.toHaveBeenCalled()
+
+    await act(async () => {
+      firstButtonByText(host, 'Run simulation')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(simulationMocks.runSimulationWorker).toHaveBeenCalledTimes(1))
+    })
+
+    expect(simulationMocks.runSimulationWorker).toHaveBeenCalledWith(
+      record.extensions?.simulation?.workerScript,
+      expect.objectContaining({
+        document: record.document,
+        parameters: expect.objectContaining({ resistance: 1000 }),
+      }),
+      expect.objectContaining({ timeoutMs: 5000, maxOutputPoints: 1000 }),
+    )
+    expect(host.textContent).toContain('simulated response')
+    expect(host.textContent).toContain('2 points')
   })
 
   it('does not focus the destructive confirm action by default or apply from root Enter/Space', async () => {

@@ -11,6 +11,7 @@ import type {
 } from '../types/blueprint'
 import type { DocumentFile } from '../types/document'
 import { DOCUMENT_HASH_ALGORITHM, hashDocument } from './documentHash'
+import { isEasyAnalyseProjectPath } from './easyAnalyseProject'
 
 const BLUEPRINT_WORKSPACE_VERSION = '1.0.0' satisfies BlueprintWorkspaceVersion
 const LIFECYCLE_STATUSES = new Set<BlueprintLifecycleStatus>(['active', 'archived', 'deleted'])
@@ -178,6 +179,10 @@ export function deserializeBlueprintWorkspace(json: string): BlueprintWorkspaceF
 }
 
 export function getBlueprintSidecarPath(documentPath: string): string {
+  if (isEasyAnalyseProjectPath(documentPath)) {
+    return `${documentPath.replace(/[\\/]+$/, '')}/blueprints/workspace.easyanalyse-blueprints.json`
+  }
+
   const slashIndex = documentPath.lastIndexOf('/')
   const directory = slashIndex >= 0 ? documentPath.slice(0, slashIndex + 1) : ''
   const fileName = slashIndex >= 0 ? documentPath.slice(slashIndex + 1) : documentPath

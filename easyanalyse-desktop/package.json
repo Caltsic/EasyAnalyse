@@ -10,6 +10,7 @@
     "build": "npm run generate:icons && tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:live-blueprint-smoke": "vitest run --run src/lib/liveBlueprintDraft.test.ts src/lib/easyAnalyseProject.test.ts src/lib/blueprintWorkspace.test.ts src/store/editorStore.test.ts src/components/agent/AgentPanel.test.tsx src/components/blueprints/BlueprintsPanel.test.tsx && cargo test --manifest-path src-tauri/Cargo.toml project_live_blueprint_lifecycle_smoke",
     "verify": "npm run typecheck && npm run lint && npm test && npm run build",
     "preview": "vite preview",
     "tauri": "tauri",

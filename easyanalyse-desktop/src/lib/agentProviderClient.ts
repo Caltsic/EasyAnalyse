@@ -44,6 +44,7 @@ export interface RunConfiguredAgentProviderInput {
   getCurrentSelection?: AgentToolRuntimeContext['getCurrentSelection']
   getEditorFocus?: AgentToolRuntimeContext['getEditorFocus']
   getEasyAnalyseFormatRules?: AgentToolRuntimeContext['getEasyAnalyseFormatRules']
+  beginBlueprintGeneration?: AgentToolRuntimeContext['beginBlueprintGeneration']
   toolExecutor?: AgentToolExecutor
   progress?: AgentProviderProgressHandler
   selfCheck?: {
@@ -95,6 +96,7 @@ export function buildAgentSystemPrompt(): string {
     'For circuit generation or modification, prefer kind "blueprints" and return one or more complete semantic v4 DocumentFile candidates.',
     'Never mutate the main document directly. All circuit changes must be represented as blueprint candidates.',
     'Use tools when they help. For blueprint candidates, check_blueprint_format is the hard format gate; fix ok=false format results before returning or creating the candidate.',
+    'Before starting a new generated blueprint or live blueprint JSON stream, call begin_blueprint_generation so EasyAnalyse can let the user save or cancel the current canvas state.',
     'For filter requests, prefer generate_filter_blueprint before hand-authoring JSON. It returns a complete AgentBlueprintCandidate with deterministic filter topology, component values, network labels, and a default layout; review it, then store it with create_blueprint_candidate or return it as a blueprint response.',
     'check_blueprint_candidate, validate_document, and check_layout_overlaps are advisory quality checks. Their semantic/layout issues are hints, not a requirement to reach 0 issues before final JSON.',
     'When calling blueprint candidate tools, the arguments MUST be exactly shaped as {"candidate":{"title":"...","summary":"...","rationale":"...","tradeoffs":[],"document":{...},"issues":[]}}. Do not pass only a document, and do not put candidate fields at the tool argument top level.',
@@ -140,6 +142,7 @@ export function buildAgentUserPrompt(input: {
     '- Use only terminal.label equality for connectivity; do not create wires/nodes/junctions/signalId/ports/components.',
     '- Ensure every device and terminal has id/name, every terminal direction is input or output, and value/frequency/voltage properties exist where the part type requires them.',
     '- Use check_blueprint_format to verify hard persisted JSON format when uncertain.',
+    '- Call begin_blueprint_generation before you begin creating a new circuit blueprint from scratch or replacing the current circuit design.',
     '- Place devices on a wide top-left coordinate grid and keep view.networkLines outside device bounds or omit them.',
     '- For any repair after a hard format tool result, change only the fields needed by the reported issues whenever possible.',
   )
@@ -276,6 +279,7 @@ export async function runConfiguredAgentProvider(input: RunConfiguredAgentProvid
           getCurrentSelection: input.getCurrentSelection,
           getEditorFocus: input.getEditorFocus,
           getEasyAnalyseFormatRules: input.getEasyAnalyseFormatRules,
+          beginBlueprintGeneration: input.beginBlueprintGeneration,
           validateDocument: input.validateDocument,
           createBlueprintCandidate: input.createBlueprintCandidate,
           toolExecutor: input.toolExecutor,

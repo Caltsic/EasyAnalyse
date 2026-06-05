@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DocumentFile, ValidationReport } from '../types/document'
 import { AGENT_RESPONSE_SEMANTIC_VERSION } from './agentResponse'
 import { buildAgentSystemPrompt, buildAgentThreadHistorySummary, buildAgentUserPrompt, runConfiguredAgentProvider } from './agentProviderClient'
+import { LIVE_BLUEPRINT_JSON_MARKER } from './liveBlueprintDraft'
 import type { OpenAiCompatibleFetch } from './openAiCompatibleProvider'
 
 function createDocument(position = { x: 10, y: 10 }): DocumentFile {
@@ -41,6 +42,22 @@ function responseFor(document: DocumentFile) {
 
 function body(content: unknown) {
   return { choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(content) } }] }
+}
+
+function sseResponse(events: unknown[]): Response {
+  const encoder = new TextEncoder()
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        events.forEach((event) => {
+          const data = event === '[DONE]' ? '[DONE]' : JSON.stringify(event)
+          controller.enqueue(encoder.encode(`data: ${data}\n\n`))
+        })
+        controller.close()
+      },
+    }),
+    { headers: { 'Content-Type': 'text/event-stream' } },
+  )
 }
 
 const validationOk: ValidationReport = { detectedFormat: 'semantic-v4', schemaValid: true, semanticValid: true, issueCount: 0, issues: [] }
@@ -136,6 +153,41 @@ describe('agentProviderClient M7 self-check and examples', () => {
       'Agent provider run completed.',
     ]))
     expect(progress.mock.calls.map(([event]) => event.message)).not.toContain('Requesting self-check repair attempt 1.')
+  })
+
+  it('passes streamed OpenAI-compatible content through provider progress events', async () => {
+    const document = createDocument({ x: 240, y: 10 })
+    const finalContent = JSON.stringify(responseFor(document))
+    const splitAt = Math.floor(finalContent.length / 2)
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async (_url, init) => {
+      const requestBody = JSON.parse(init.body)
+      expect(requestBody.stream).toBe(true)
+      expect(requestBody.tools).toBeUndefined()
+      return sseResponse([
+        { id: 'chatcmpl-client-stream', choices: [{ index: 0, delta: { content: finalContent.slice(0, splitAt) } }] },
+        { id: 'chatcmpl-client-stream', choices: [{ index: 0, delta: { content: finalContent.slice(splitAt) }, finish_reason: 'stop' }] },
+        '[DONE]',
+      ])
+    })
+    const progress = vi.fn()
+
+    const result = await runConfiguredAgentProvider({
+      provider: { id: 'deepseek', name: 'DeepSeek', kind: 'deepseek', baseUrl: 'https://api.deepseek.test/v1', models: ['deepseek-chat'], defaultModel: 'deepseek-chat' },
+      modelId: 'deepseek-chat',
+      apiKey: ['sk', 'unit', 'key'].join('-'),
+      prompt: 'Stream a blueprint',
+      fetchImpl: fetchMock,
+      progress,
+      maxToolIterations: 0,
+      selfCheck: { enabled: false, repairOnIssues: false, maxRepairAttempts: 0 },
+    })
+
+    expect(result.response.kind).toBe('blueprints')
+    const streamed = progress.mock.calls
+      .map(([event]) => event.detail?.streamedContent)
+      .filter((value): value is string => typeof value === 'string')
+    expect(streamed.at(0)).toBe(`${LIVE_BLUEPRINT_JSON_MARKER}\n${finalContent.slice(0, splitAt)}`)
+    expect(streamed.at(-1)).toBe(`${LIVE_BLUEPRINT_JSON_MARKER}\n${finalContent}`)
   })
 
   it('does not impose a default timeout on long provider runs', async () => {

@@ -18,6 +18,7 @@ import type {
   AgentToolName,
   AgentToolRuntimeContext,
   AgentToolResult,
+  BeginBlueprintGenerationData,
   CheckBlueprintCandidateData,
   CheckBlueprintFormatData,
   CheckDocumentFormatData,
@@ -52,6 +53,26 @@ const EASYANALYSE_FORMAT_RULES = [
 
 export function getAgentToolSchemas() {
   return [
+    {
+      type: 'function' as const,
+      function: {
+        name: 'begin_blueprint_generation',
+        description:
+          [
+            'Call this before starting a new generated blueprint or live blueprint JSON stream.',
+            'The EasyAnalyse UI may ask the user whether to save the current canvas before generation continues.',
+            'If the result has allowed=false, stop generating and explain that the user cancelled.',
+          ].join(' '),
+        parameters: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            intent: { type: 'string', description: 'Short reason for beginning blueprint generation.' },
+            title: { type: 'string', description: 'Optional intended blueprint title.' },
+          },
+        },
+      },
+    },
     {
       type: 'function' as const,
       function: {
@@ -352,6 +373,7 @@ export async function runAgentTool(
   context: AgentToolContext = {},
 ): Promise<AgentToolResult> {
   try {
+    if (toolName === 'begin_blueprint_generation') return beginBlueprintGenerationTool(args, context)
     if (toolName === 'get_current_document') return getCurrentDocumentTool(context)
     if (toolName === 'get_blueprint_workspace') return getBlueprintWorkspaceTool(args, context)
     if (toolName === 'get_blueprint_candidate') return getBlueprintCandidateTool(args, context)
@@ -388,6 +410,34 @@ async function getCurrentDocumentTool(context: AgentToolRuntimeContext): Promise
     hasDocument: Boolean(document),
     document: document ? cloneDocument(document) : null,
   })
+}
+
+async function beginBlueprintGenerationTool(
+  args: unknown,
+  context: AgentToolRuntimeContext,
+): Promise<AgentToolResult<BeginBlueprintGenerationData>> {
+  const intent = getStringArg(args, 'intent')
+  const title = getStringArg(args, 'title')
+  const request = {
+    ...(intent ? { intent } : {}),
+    ...(title ? { title } : {}),
+  }
+  const fallback: BeginBlueprintGenerationData = {
+    allowed: true,
+    action: 'auto_continue',
+    canvasHadCircuit: false,
+    message: 'Blueprint generation may begin. No runtime save gate is available.',
+  }
+  const data = context.beginBlueprintGeneration ? await context.beginBlueprintGeneration(request) : fallback
+  return result(
+    'begin_blueprint_generation',
+    data.allowed,
+    data.allowed ? data.message : data.message || 'Blueprint generation was cancelled by the user.',
+    data.allowed
+      ? []
+      : [issue('warning', 'agent_tool.blueprint_generation_cancelled', data.message || 'Blueprint generation was cancelled by the user.', null, null)],
+    data,
+  )
 }
 
 async function getBlueprintWorkspaceTool(
@@ -802,6 +852,7 @@ function buildBlueprintCandidateToolParameters(options: { includeOptions?: boole
           issues: { type: 'array' },
           highlightedLabels: { type: 'array', items: { type: 'string' } },
           notes: { type: 'array', items: { type: 'string' } },
+          simulation: { type: 'object', additionalProperties: true },
           document: {
             type: 'object',
             additionalProperties: true,
@@ -925,7 +976,7 @@ function parseDocumentInput(value: unknown): { ok: true; value: unknown } | { ok
 
 function collectCandidateFormatIssues(candidate: AgentBlueprintCandidate): ValidationIssue[] {
   const issues: ValidationIssue[] = []
-  const allowedKeys = new Set(['title', 'summary', 'rationale', 'tradeoffs', 'document', 'highlightedLabels', 'notes', 'issues', 'selfCheck', 'toolIssues'])
+  const allowedKeys = new Set(['title', 'summary', 'rationale', 'tradeoffs', 'document', 'highlightedLabels', 'notes', 'issues', 'selfCheck', 'toolIssues', 'simulation'])
   Object.keys(candidate as unknown as Record<string, unknown>).forEach((key) => {
     if (!allowedKeys.has(key)) issues.push(issue('error', 'format.unknown_field', `Unknown blueprint candidate field '${key}'.`, null, `candidate.${key}`))
   })
@@ -1380,7 +1431,8 @@ function isDocumentFile(value: unknown): value is DocumentFile {
 }
 
 function isAgentToolName(value: string): value is AgentToolName {
-  return value === 'get_current_document'
+  return value === 'begin_blueprint_generation'
+    || value === 'get_current_document'
     || value === 'get_blueprint_workspace'
     || value === 'get_blueprint_candidate'
     || value === 'compare_blueprint_candidate'

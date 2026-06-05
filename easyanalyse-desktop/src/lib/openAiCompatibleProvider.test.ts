@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DocumentFile } from '../types/document'
 import { AGENT_RESPONSE_SEMANTIC_VERSION } from './agentResponse'
+import { LIVE_BLUEPRINT_JSON_MARKER } from './liveBlueprintDraft'
 import {
   AgentProviderError,
   buildOpenAiCompatiblePayload,
@@ -125,6 +126,23 @@ function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+function sseResponse(events: unknown[], status = 200): Response {
+  const encoder = new TextEncoder()
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      events.forEach((event) => {
+        const data = event === '[DONE]' ? '[DONE]' : JSON.stringify(event)
+        controller.enqueue(encoder.encode(`data: ${data}\n\n`))
+      })
+      controller.close()
+    },
+  })
+  return new Response(body, {
+    status,
+    headers: { 'Content-Type': 'text/event-stream' },
   })
 }
 
@@ -329,6 +347,89 @@ describe('openAiCompatibleProvider', () => {
     expect(result.response.kind).toBe('blueprints')
     expect(result.toolTrace).toEqual([expect.objectContaining({ toolName: 'check_blueprint_candidate' })])
     expectNoApiKey(result.toolTrace)
+  })
+
+  it('streams tool-call and final-content rounds while emitting accumulated candidate content for live blueprint preview', async () => {
+    const finalContent = JSON.stringify(agentBlueprints(createDocument({ view: { canvas: { units: 'px' }, devices: {}, networkLines: {} } })))
+    const splitAt = Math.floor(finalContent.length / 2)
+    const firstDelta = finalContent.slice(0, splitAt)
+    const secondDelta = finalContent.slice(splitAt)
+    let callCount = 0
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => {
+      callCount += 1
+      if (callCount === 1) {
+        return sseResponse([
+          {
+            id: 'chatcmpl-tool-before-stream',
+            model: 'gpt-test',
+            choices: [{
+              index: 0,
+              delta: {
+                role: 'assistant',
+                tool_calls: [{
+                  index: 0,
+                  id: 'call-current-document',
+                  type: 'function',
+                  function: { name: 'get_current_document', arguments: '{' },
+                }],
+              },
+            }],
+          },
+          {
+            id: 'chatcmpl-tool-before-stream',
+            model: 'gpt-test',
+            choices: [{
+              index: 0,
+              delta: { tool_calls: [{ index: 0, function: { arguments: '}' } }] },
+              finish_reason: 'tool_calls',
+            }],
+          },
+          '[DONE]',
+        ])
+      }
+      return sseResponse([
+        {
+          id: 'chatcmpl-stream-final',
+          model: 'gpt-test',
+          choices: [{ index: 0, delta: { role: 'assistant', content: firstDelta } }],
+        },
+        {
+          id: 'chatcmpl-stream-final',
+          model: 'gpt-test',
+          choices: [{ index: 0, delta: { content: secondDelta }, finish_reason: 'stop' }],
+        },
+        '[DONE]',
+      ])
+    })
+    const progress = vi.fn()
+
+    const result = await runOpenAiCompatibleProvider({
+      ...baseBuildInput(),
+      fetch: fetchMock,
+      currentDocument: createDocument(),
+      progress,
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const firstRequestBody = JSON.parse(fetchMock.mock.calls[0]![1].body)
+    const finalRequestBody = JSON.parse(fetchMock.mock.calls[1]![1].body)
+    expect(firstRequestBody).toMatchObject({ stream: true, tool_choice: 'auto' })
+    expect(finalRequestBody).toMatchObject({ stream: true, tool_choice: 'auto' })
+    expect(finalRequestBody.tools).toEqual(expect.any(Array))
+    expect(result.response.kind).toBe('blueprints')
+
+    const streamedEvents = progress.mock.calls
+      .map(([event]) => event)
+      .filter((event) => typeof event.detail?.streamedContent === 'string')
+    expect(streamedEvents).toHaveLength(3)
+    expect(streamedEvents[0]?.detail?.streamedContent).toBe(`${LIVE_BLUEPRINT_JSON_MARKER}\n${firstDelta}`)
+    expect(streamedEvents[1]?.detail?.streamedContent).toBe(`${LIVE_BLUEPRINT_JSON_MARKER}\n${finalContent}`)
+    expect(streamedEvents[2]?.detail).toMatchObject({
+      streamedContent: `${LIVE_BLUEPRINT_JSON_MARKER}\n${finalContent}`,
+      done: true,
+      finishReason: 'stop',
+    })
+    expect(JSON.stringify(streamedEvents)).not.toContain(apiKey)
   })
 
   it('accepts final blueprints after advisory check_blueprint_candidate issues', async () => {
@@ -739,30 +840,46 @@ describe('openAiCompatibleProvider', () => {
 
   it('replays DeepSeek v4 reasoning content when continuing after tool calls', async () => {
     const rawReasoning = 'DeepSeek v4 thinking state that must be echoed with the tool call.'
-    const toolCallBody = {
-      id: 'chatcmpl-deepseek-tool',
-      choices: [
-        {
-          index: 0,
-          finish_reason: 'tool_calls',
-          message: {
-            role: 'assistant',
-            content: null,
-            reasoning_content: rawReasoning,
-            tool_calls: [
-              {
-                id: 'call-current-document',
-                type: 'function',
-                function: { name: 'get_current_document', arguments: '{}' },
-              },
-            ],
-          },
-        },
-      ],
-    }
     const finalBody = openAiChatBody(agentMessage('你好，我在。'))
     let callCount = 0
-    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => jsonResponse(callCount++ === 0 ? toolCallBody : finalBody))
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => {
+      callCount += 1
+      if (callCount === 1) {
+        return sseResponse([
+          {
+            id: 'chatcmpl-deepseek-tool',
+            model: 'deepseek-v4-pro',
+            choices: [{
+              index: 0,
+              delta: {
+                role: 'assistant',
+                reasoning_content: rawReasoning.slice(0, 24),
+                tool_calls: [{
+                  index: 0,
+                  id: 'call-current-document',
+                  type: 'function',
+                  function: { name: 'get_current_document', arguments: '{' },
+                }],
+              },
+            }],
+          },
+          {
+            id: 'chatcmpl-deepseek-tool',
+            model: 'deepseek-v4-pro',
+            choices: [{
+              index: 0,
+              delta: {
+                reasoning_content: rawReasoning.slice(24),
+                tool_calls: [{ index: 0, function: { arguments: '}' } }],
+              },
+              finish_reason: 'tool_calls',
+            }],
+          },
+          '[DONE]',
+        ])
+      }
+      return jsonResponse(finalBody)
+    })
 
     const result = await runOpenAiCompatibleProvider({
       ...baseBuildInput({ userPrompt: '你好' }),
@@ -774,6 +891,8 @@ describe('openAiCompatibleProvider', () => {
     })
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
+    const firstBody = JSON.parse(fetchMock.mock.calls[0]![1].body)
+    expect(firstBody.stream).toBe(true)
     const secondBody = JSON.parse(fetchMock.mock.calls[1]![1].body)
     expect(secondBody.model).toBe('deepseek-v4-pro')
     expect(secondBody.reasoning_effort).toBe('high')

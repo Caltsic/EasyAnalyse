@@ -66,6 +66,14 @@
   background: var(--panel-bg);
 }
 
+.blueprints-panel__preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .blueprints-panel__preview-header h3,
 .blueprints-panel__preview-header p {
   margin: 0;
@@ -76,6 +84,43 @@
   font-size: 0.88rem;
 }
 
+.blueprints-panel__preview-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.blueprints-panel__live-diagnostics {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--warning, #f59e0b) 46%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warning, #f59e0b) 10%, var(--panel-bg));
+  color: var(--text);
+  font-size: 0.84rem;
+  overflow-wrap: anywhere;
+}
+
+.blueprints-panel__live-diagnostics strong {
+  font-size: 0.82rem;
+}
+
+.blueprints-panel__live-diagnostics ul {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.blueprints-panel__preview-empty {
+  min-height: 120px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--canvas-bg);
+}
+
 .blueprints-panel__preview-canvas {
   height: 220px;
   min-height: 180px;
@@ -83,6 +128,106 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--canvas-bg);
+}
+
+.blueprint-simulation-card {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--control-bg-soft);
+}
+
+.blueprint-simulation-card__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.blueprint-simulation-card__header h4 {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.blueprint-simulation-card__header p,
+.blueprint-simulation-card__summary,
+.blueprint-simulation-card__error {
+  margin: 4px 0 0;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+.blueprint-simulation-card__error {
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.blueprint-simulation-card__parameters {
+  display: grid;
+  gap: 8px;
+}
+
+.blueprint-simulation-card__parameters label {
+  display: grid;
+  grid-template-columns: minmax(70px, 0.8fr) minmax(90px, 1.4fr) minmax(76px, 0.8fr);
+  gap: 8px;
+  align-items: center;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.blueprint-simulation-card__parameters input[type='number'] {
+  width: 100%;
+  min-width: 0;
+}
+
+.blueprint-simulation-card__status {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.blueprint-simulation-card__status.is-error {
+  color: var(--danger);
+}
+
+.blueprint-simulation-card__chart {
+  display: grid;
+  gap: 4px;
+}
+
+.blueprint-simulation-card__chart svg {
+  width: 100%;
+  height: 120px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-bg);
+}
+
+.blueprint-simulation-card__chart line {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.blueprint-simulation-card__chart polyline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.blueprint-simulation-card__chart div {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.78rem;
 }
 
 .blueprint-card {

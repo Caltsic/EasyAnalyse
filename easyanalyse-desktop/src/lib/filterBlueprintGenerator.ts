@@ -1,5 +1,9 @@
 import type { AgentBlueprintCandidate } from '../types/agent'
 import type { DeviceDefinition, DocumentFile, ValidationIssue } from '../types/document'
+import {
+  SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+  type SimulationArtifact,
+} from '../types/simulation'
 
 export type FilterBlueprintType = 'lowpass' | 'highpass'
 export type FilterBlueprintTopology = 'auto' | 'passive-rc' | 'sallen-key'
@@ -124,7 +128,21 @@ function generatePassiveRcFilter(input: GenerateFilterBlueprintInput): GenerateF
   ]
   const warnings = ['A first-order passive RC filter has low roll-off and Q is not independently adjustable.']
   return {
-    candidate: candidate(title, document, assumptions, warnings, ['Passive RC filters are simple but load-sensitive.']),
+    candidate: candidate(
+      title,
+      document,
+      assumptions,
+      warnings,
+      ['Passive RC filters are simple but load-sensitive.'],
+      createFilterSimulationArtifact({
+        title,
+        filterType: input.filterType,
+        topology: 'passive-rc',
+        cutoffFrequencyHz: rc.actualCutoffFrequencyHz,
+        resistorOhms: rc.resistorOhms,
+        capacitorFarads: rc.capacitorFarads,
+      }),
+    ),
     assumptions,
     warnings,
     calculatedValues: {
@@ -226,7 +244,16 @@ function generateSallenKeyLowpass(input: GenerateFilterBlueprintInput): Generate
   return {
     candidate: candidate(title, document, assumptions, warnings, [
       'Equal-component Sallen-Key filters are simple but high-Q designs should be checked with real op-amp and tolerance models.',
-    ]),
+    ], createFilterSimulationArtifact({
+      title,
+      filterType: 'lowpass',
+      topology: 'sallen-key',
+      cutoffFrequencyHz: rc.actualCutoffFrequencyHz,
+      resistorOhms: rc.resistorOhms,
+      capacitorFarads: rc.capacitorFarads,
+      q: effectiveQ,
+      gain,
+    })),
     assumptions,
     warnings,
     calculatedValues: {
@@ -320,6 +347,7 @@ function candidate(
   assumptions: string[],
   warnings: string[],
   tradeoffs: string[],
+  simulation?: SimulationArtifact,
 ): AgentBlueprintCandidate {
   return {
     title,
@@ -330,7 +358,142 @@ function candidate(
     highlightedLabels: ['VIN', 'VOUT', 'GND', 'VCC', 'SK_N1', 'SK_N2'].filter((label) => documentUsesLabel(document, label)),
     notes: assumptions,
     issues: warnings.map((message, index) => warningIssue(`filter.warning.${index + 1}`, message)),
+    ...(simulation ? { simulation } : {}),
   }
+}
+
+function createFilterSimulationArtifact(input: {
+  title: string
+  filterType: FilterBlueprintType
+  topology: Exclude<FilterBlueprintTopology, 'auto'>
+  cutoffFrequencyHz: number
+  resistorOhms: number
+  capacitorFarads: number
+  q?: number
+  gain?: number
+}): SimulationArtifact {
+  const defaultStart = Math.max(1, input.cutoffFrequencyHz / 100)
+  const defaultStop = input.cutoffFrequencyHz * 100
+  const defaultGain = input.gain ?? 1
+  const defaultQ = input.q ?? (input.topology === 'sallen-key' ? 0.707 : 0.5)
+  return {
+    schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+    manifest: {
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+      name: `${input.title} frequency response`,
+      version: '1.0.0',
+      description: 'Lightweight magnitude preview generated from the deterministic filter topology.',
+      capabilities: ['frequency-response', 'parameter-sweep'],
+      inputSchema: {
+        type: 'object',
+        properties: {
+          cutoffFrequencyHz: { type: 'number', minimum: 1, maximum: 1_000_000 },
+          startFrequencyHz: { type: 'number', minimum: 1, maximum: 1_000_000 },
+          stopFrequencyHz: { type: 'number', minimum: 1, maximum: 10_000_000 },
+          pointCount: { type: 'integer', minimum: 16, maximum: 500, multipleOf: 1 },
+          ...(input.topology === 'sallen-key'
+            ? {
+                q: { type: 'number', minimum: 0.1, maximum: 50 },
+                gain: { type: 'number', minimum: 0.1, maximum: 10 },
+              }
+            : {}),
+        },
+      },
+      outputSchema: {
+        type: 'object',
+        properties: {
+          points: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                frequencyHz: { type: 'number' },
+                magnitudeDb: { type: 'number' },
+              },
+            },
+          },
+        },
+      },
+    },
+    scriptLanguage: 'javascript',
+    defaultInput: {
+      parameters: {
+        cutoffFrequencyHz: input.cutoffFrequencyHz,
+        startFrequencyHz: defaultStart,
+        stopFrequencyHz: defaultStop,
+        pointCount: 160,
+        ...(input.topology === 'sallen-key' ? { q: defaultQ, gain: defaultGain } : {}),
+      },
+    },
+    workerScript: buildFilterWorkerScript({
+      filterType: input.filterType,
+      topology: input.topology,
+      cutoffFrequencyHz: input.cutoffFrequencyHz,
+      q: defaultQ,
+      gain: defaultGain,
+    }),
+    notes: [
+      `Generated from R=${formatResistance(input.resistorOhms)}, C=${formatCapacitance(input.capacitorFarads)}, fc=${formatFrequency(input.cutoffFrequencyHz)}.`,
+      'Preview uses ideal transfer functions and is not a SPICE substitute.',
+    ],
+  }
+}
+
+function buildFilterWorkerScript(input: {
+  filterType: FilterBlueprintType
+  topology: Exclude<FilterBlueprintTopology, 'auto'>
+  cutoffFrequencyHz: number
+  q: number
+  gain: number
+}): string {
+  return [
+    'function run(input) {',
+    '  const parameters = input && input.parameters ? input.parameters : {};',
+    `  const filterType = ${JSON.stringify(input.filterType)};`,
+    `  const topology = ${JSON.stringify(input.topology)};`,
+    `  const defaultCutoff = ${formatFiniteScriptNumber(input.cutoffFrequencyHz)};`,
+    `  const defaultQ = ${formatFiniteScriptNumber(input.q)};`,
+    `  const defaultGain = ${formatFiniteScriptNumber(input.gain)};`,
+    '  const cutoff = positiveNumber(parameters.cutoffFrequencyHz, defaultCutoff);',
+    '  const start = positiveNumber(parameters.startFrequencyHz, Math.max(1, cutoff / 100));',
+    '  const stop = Math.max(start * 1.01, positiveNumber(parameters.stopFrequencyHz, cutoff * 100));',
+    '  const count = Math.max(16, Math.min(500, Math.round(positiveNumber(parameters.pointCount, 160))));',
+    '  const q = positiveNumber(parameters.q, defaultQ);',
+    '  const gain = positiveNumber(parameters.gain, defaultGain);',
+    '  const points = [];',
+    '  for (let index = 0; index < count; index += 1) {',
+    '    const t = count === 1 ? 0 : index / (count - 1);',
+    '    const frequencyHz = start * Math.pow(stop / start, t);',
+    '    const ratio = frequencyHz / cutoff;',
+    '    const magnitude = transferMagnitude(filterType, topology, ratio, q, gain);',
+    '    const magnitudeDb = 20 * Math.log10(Math.max(magnitude, 1e-12));',
+    '    points.push({ frequencyHz, magnitudeDb });',
+    '  }',
+    '  return {',
+    '    points,',
+    '    summary: `${topology} ${filterType} preview: fc=${cutoff.toPrecision(4)} Hz, ${points.length} points`,',
+    '    metadata: { filterType, topology, cutoffFrequencyHz: cutoff, q, gain }',
+    '  };',
+    '}',
+    '',
+    'function transferMagnitude(filterType, topology, ratio, q, gain) {',
+    '  if (topology === "sallen-key") {',
+    '    return gain / Math.sqrt(Math.pow(1 - ratio * ratio, 2) + Math.pow(ratio / q, 2));',
+    '  }',
+    '  if (filterType === "highpass") {',
+    '    return ratio / Math.sqrt(1 + ratio * ratio);',
+    '  }',
+    '  return 1 / Math.sqrt(1 + ratio * ratio);',
+    '}',
+    '',
+    'function positiveNumber(value, fallback) {',
+    '  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;',
+    '}',
+  ].join('\n')
+}
+
+function formatFiniteScriptNumber(value: number): string {
+  return Number.isFinite(value) ? String(value) : '1'
 }
 
 function documentUsesLabel(document: DocumentFile, label: string): boolean {

@@ -1,5 +1,6 @@
 import type { DocumentFile, ValidationIssue } from './document'
 import type { AgentSelfCheckReport } from './agentTools'
+import type { SimulationArtifact } from './simulation'
 
 export type AgentResponseSchemaVersion = 'agent-response-v1'
 export type AgentResponseSemanticVersion = 'easyanalyse-semantic-v4'
@@ -33,6 +34,7 @@ export interface AgentBlueprintCandidate {
   issues: ValidationIssue[]
   selfCheck?: AgentSelfCheckReport
   toolIssues?: ValidationIssue[]
+  simulation?: SimulationArtifact
 }
 
 export interface AgentBlueprintsResponse extends AgentResponseBase {

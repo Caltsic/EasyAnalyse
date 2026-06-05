@@ -9,6 +9,7 @@ import type {
   ValidationReport,
 } from '../types/document'
 import type { BlueprintWorkspaceFile } from '../types/blueprint'
+import { isEasyAnalyseProjectPath } from './easyAnalyseProject'
 
 export function isTauriRuntime() {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -40,6 +41,27 @@ export async function loadBlueprintWorkspaceFromPath(path: string) {
 
 export async function saveBlueprintWorkspaceToPath(path: string, workspace: BlueprintWorkspaceFile) {
   return invoke<void>('save_blueprint_workspace_to_path', { path, workspace })
+}
+
+export async function writeLiveBlueprintDraftPartialCommand(projectPath: string, raw: string) {
+  if (!isEasyAnalyseProjectPath(projectPath) || !isTauriRuntime()) {
+    return null
+  }
+  return invoke<string>('write_live_blueprint_draft_partial', { projectPath, raw })
+}
+
+export async function readLiveBlueprintDraftPartialCommand(projectPath: string) {
+  if (!isEasyAnalyseProjectPath(projectPath) || !isTauriRuntime()) {
+    return null
+  }
+  return invoke<string | null>('read_live_blueprint_draft_partial', { projectPath })
+}
+
+export async function deleteLiveBlueprintDraftPartialCommand(projectPath: string) {
+  if (!isEasyAnalyseProjectPath(projectPath) || !isTauriRuntime()) {
+    return false
+  }
+  return invoke<boolean>('delete_live_blueprint_draft_partial', { projectPath })
 }
 
 export async function startMobileShare(document: DocumentFile, snapshot: MobileRenderSnapshot) {

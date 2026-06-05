@@ -403,6 +403,63 @@
   cursor: not-allowed;
 }
 
+.agent-begin-blueprint-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 34;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: var(--modal-scrim);
+}
+
+.agent-begin-blueprint-dialog {
+  width: min(560px, 100%);
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-bg);
+  box-shadow: 0 18px 60px rgb(0 0 0 / 28%);
+}
+
+.agent-begin-blueprint-dialog__header h3,
+.agent-begin-blueprint-dialog__header p,
+.agent-begin-blueprint-dialog__error {
+  margin: 0;
+}
+
+.agent-begin-blueprint-dialog__header p,
+.agent-begin-blueprint-dialog__note {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.agent-begin-blueprint-dialog__note {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--control-bg-soft);
+}
+
+.agent-begin-blueprint-dialog__error {
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 42%, var(--border));
+  border-radius: 8px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.agent-begin-blueprint-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 @keyframes agent-spin {
   to {
     transform: rotate(360deg);

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { hashDocument } from '../../lib/documentHash'
 import { getErrorMessage } from '../../lib/errors'
 import { translate } from '../../lib/i18n'
-import { useBlueprintStore } from '../../store/blueprintStore'
+import { deleteLiveBlueprintDraftPartialCommand } from '../../lib/tauri'
+import { useBlueprintStore, type BlueprintLiveDraftState } from '../../store/blueprintStore'
 import { useEditorStore } from '../../store/editorStore'
 import type { BlueprintRecord } from '../../types/blueprint'
 import { AppErrorBoundary } from '../AppErrorBoundary'
@@ -10,6 +11,49 @@ import { Button, EmptyState } from '../ui'
 import { ApplyBlueprintDialog } from './ApplyBlueprintDialog'
 import { BlueprintCard } from './BlueprintCard'
 import { BlueprintPreviewCanvas } from './BlueprintPreviewCanvas'
+import { BlueprintSimulationCard } from './BlueprintSimulationCard'
+
+type BlueprintTranslate = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) => string
+
+function describeLiveDraftStatus(
+  liveDraft: Pick<BlueprintLiveDraftState, 'displayDocument' | 'hasCompleteJson' | 'status'>,
+  t: BlueprintTranslate,
+): string {
+  const hasDisplayableDraft = liveDraft.displayDocument !== null
+  if (liveDraft.status === 'ready' && liveDraft.hasCompleteJson) return t('liveBlueprintStatusReady')
+  if (liveDraft.status === 'partial-json') {
+    return hasDisplayableDraft ? t('liveBlueprintStatusPartialPreview') : t('liveBlueprintStatusBuildingPreview')
+  }
+  if (liveDraft.status === 'waiting-for-json') return t('liveBlueprintStatusBuildingPreview')
+  if (liveDraft.status === 'invalid-json' || liveDraft.status === 'invalid-document') {
+    return hasDisplayableDraft ? t('liveBlueprintStatusKeepingLastGood') : t('liveBlueprintStatusDiagnosticsOnly')
+  }
+  if (liveDraft.status === 'marker-missing') return t('liveBlueprintStatusWaitingForMarker')
+  return t('liveBlueprintStatusIdle')
+}
+
+function liveDraftDiagnosticLines(liveDraft: BlueprintLiveDraftState, t: BlueprintTranslate): string[] {
+  const error = liveDraft.error
+  if (!error) return []
+
+  const lines = [
+    error.message,
+    t('liveBlueprintDiagnosticCode', { code: error.code }),
+  ]
+  if (typeof error.line === 'number' && typeof error.column === 'number') {
+    lines.push(t('liveBlueprintDiagnosticLocation', { line: error.line, column: error.column }))
+  }
+  if (error.excerpt) {
+    lines.push(t('liveBlueprintDiagnosticExcerpt', { excerpt: error.excerpt }))
+  }
+  for (const issue of error.issues ?? []) {
+    lines.push(issue.path
+      ? t('liveBlueprintDiagnosticIssueWithPath', { path: issue.path, code: issue.code, message: issue.message })
+      : t('liveBlueprintDiagnosticIssue', { code: issue.code, message: issue.message }))
+  }
+
+  return lines
+}
 
 export function BlueprintsPanel() {
   const document = useEditorStore((state) => state.document)
@@ -23,9 +67,12 @@ export function BlueprintsPanel() {
   const loadError = useBlueprintStore((state) => state.loadError)
   const saveError = useBlueprintStore((state) => state.saveError)
   const validationError = useBlueprintStore((state) => state.validationError)
+  const liveDraft = useBlueprintStore((state) => state.liveDraft)
   const loadForMainDocument = useBlueprintStore((state) => state.loadForMainDocument)
   const saveWorkspace = useBlueprintStore((state) => state.saveWorkspace)
   const createSnapshotFromDocument = useBlueprintStore((state) => state.createSnapshotFromDocument)
+  const acceptLiveBlueprintDraft = useBlueprintStore((state) => state.acceptLiveBlueprintDraft)
+  const clearLiveBlueprintDraft = useBlueprintStore((state) => state.clearLiveBlueprintDraft)
   const validateBlueprint = useBlueprintStore((state) => state.validateBlueprint)
   const archiveBlueprint = useBlueprintStore((state) => state.archiveBlueprint)
   const deleteBlueprint = useBlueprintStore((state) => state.deleteBlueprint)
@@ -61,15 +108,41 @@ export function BlueprintsPanel() {
     }
   }, [document])
 
+  const t = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) =>
+    translate(locale, key, params)
   const blueprints = useMemo(() => workspace?.blueprints ?? [], [workspace])
   const selectedBlueprint = useMemo(
     () => blueprints.find((record) => record.id === selectedBlueprintId) ?? null,
     [blueprints, selectedBlueprintId],
   )
+  const livePreviewDocument = liveDraft.displayDocument
+  const liveDraftActive = liveDraft.status !== 'idle'
+  const liveDiagnostics = liveDraftActive ? liveDraftDiagnosticLines(liveDraft, t) : []
+  const livePreviewPanelVisible = liveDraftActive && (livePreviewDocument !== null || liveDiagnostics.length > 0)
+  const selectedBlueprintPreviewVisible = !livePreviewPanelVisible
+    && selectedBlueprint !== null
+    && selectedBlueprint.lifecycleStatus !== 'deleted'
+  const previewDocument = livePreviewPanelVisible
+    ? livePreviewDocument
+    : selectedBlueprintPreviewVisible
+      ? selectedBlueprint.document
+      : null
+  const previewResetKey = livePreviewPanelVisible
+    ? `live:${liveDraft.updatedAt ?? 'draft'}`
+    : selectedBlueprint
+      ? `${selectedBlueprint.id}:${selectedBlueprint.documentHash}`
+      : ''
+  const previewTitle = livePreviewPanelVisible
+    ? t('liveBlueprintPreviewTitle')
+    : selectedBlueprint
+      ? t('previewTitle', { title: selectedBlueprint.title })
+      : ''
+  const previewDescription = livePreviewPanelVisible
+    ? t('liveBlueprintPreviewStatus', { status: describeLiveDraftStatus(liveDraft, t) })
+    : t('previewHint')
+  const liveDraftAcceptable = livePreviewDocument !== null && liveDraft.status === 'ready' && liveDraft.hasCompleteJson
   const applyModalOpen = pendingApplyRecord !== null
   const blueprintActionsDisabled = topActionBusy || applyModalOpen || applyBusy
-  const t = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) =>
-    translate(locale, key, params)
 
   const runTopAction = async (message: string, action: () => Promise<void>) => {
     if (activeTopActionTokenRef.current !== null) {
@@ -111,6 +184,34 @@ export function BlueprintsPanel() {
   const handleReload = async () => {
     await runTopAction(t('reloadingWorkspace'), async () => {
       await loadForMainDocument(filePath, document)
+    })
+  }
+
+  const clearProjectLiveDraftPartial = async () => {
+    if (filePath !== null) {
+      await deleteLiveBlueprintDraftPartialCommand(filePath)
+    }
+  }
+
+  const handleAcceptLiveDraft = async () => {
+    if (!liveDraftAcceptable) return
+    await runTopAction(t('acceptingLiveDraft'), async () => {
+      const accepted = await acceptLiveBlueprintDraft({
+        mainDocument: document,
+        filePath,
+        title: livePreviewDocument.document.title,
+        description: t('acceptedLiveDraftDescription'),
+      })
+      if (accepted !== null) {
+        await clearProjectLiveDraftPartial()
+      }
+    })
+  }
+
+  const handleDiscardLiveDraft = async () => {
+    await runTopAction(t('discardingLiveDraft'), async () => {
+      clearLiveBlueprintDraft({ suppressCurrentSession: true })
+      await clearProjectLiveDraftPartial()
     })
   }
 
@@ -245,27 +346,68 @@ export function BlueprintsPanel() {
           ))}
         </div>
       )}
-      {selectedBlueprint && selectedBlueprint.lifecycleStatus !== 'deleted' && (
+      {(livePreviewPanelVisible || selectedBlueprintPreviewVisible) && (
         <section className="blueprints-panel__preview" aria-label={t('selectedBlueprintPreview')}>
           <div className="blueprints-panel__preview-header">
-            <h3>{t('previewTitle', { title: selectedBlueprint.title })}</h3>
-            <p>{t('previewHint')}</p>
+            <div>
+              <h3>{previewTitle}</h3>
+              <p>{previewDescription}</p>
+            </div>
+            {livePreviewPanelVisible ? (
+              <div className="blueprints-panel__preview-actions">
+                <Button
+                  type="button"
+                  onClick={() => void handleAcceptLiveDraft()}
+                  disabled={topActionBusy || !liveDraftAcceptable}
+                >
+                  {t('acceptLiveDraft')}
+                </Button>
+                <Button
+                  className="ghost-button"
+                  variant="ghost"
+                  type="button"
+                  onClick={() => void handleDiscardLiveDraft()}
+                  disabled={topActionBusy}
+                >
+                  {t('discardLiveDraft')}
+                </Button>
+              </div>
+            ) : null}
           </div>
-          <AppErrorBoundary
-            compact
-            resetKey={`${selectedBlueprint.id}:${selectedBlueprint.documentHash}`}
-            title={t('blueprintPreviewFailed')}
-            description={t('blueprintPreviewFailedDescription')}
-            detailsLabel={t('errorDetails')}
-            tryAgainLabel={t('tryAgain')}
-            reloadLabel={t('reload')}
-          >
-            <BlueprintPreviewCanvas
-              document={selectedBlueprint.document}
-              locale={locale}
-              className="blueprints-panel__preview-canvas"
-            />
-          </AppErrorBoundary>
+          {liveDiagnostics.length > 0 ? (
+            <div className="blueprints-panel__live-diagnostics" role="status" aria-live="polite">
+              <strong>{t('liveBlueprintDiagnosticsTitle')}</strong>
+              <ul>
+                {liveDiagnostics.map((line, index) => (
+                  <li key={`${index}:${line}`}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {previewDocument ? (
+            <AppErrorBoundary
+              compact
+              resetKey={previewResetKey}
+              title={t('blueprintPreviewFailed')}
+              description={t('blueprintPreviewFailedDescription')}
+              detailsLabel={t('errorDetails')}
+              tryAgainLabel={t('tryAgain')}
+              reloadLabel={t('reload')}
+            >
+              <BlueprintPreviewCanvas
+                document={previewDocument}
+                locale={locale}
+                className="blueprints-panel__preview-canvas"
+              />
+            </AppErrorBoundary>
+          ) : (
+            <EmptyState className="blueprints-panel__preview-empty" title={t('liveBlueprintNoPreviewTitle')}>
+              {t('liveBlueprintNoPreviewHint')}
+            </EmptyState>
+          )}
+          {selectedBlueprintPreviewVisible && selectedBlueprint?.extensions?.simulation ? (
+            <BlueprintSimulationCard record={selectedBlueprint} t={t} />
+          ) : null}
         </section>
       )}
       {pendingApplyRecord && (

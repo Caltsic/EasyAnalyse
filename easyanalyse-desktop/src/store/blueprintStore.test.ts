@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { hashDocument } from '../lib/documentHash'
+import { LIVE_BLUEPRINT_JSON_MARKER, parseLiveBlueprintDraft } from '../lib/liveBlueprintDraft'
 import type { AgentBlueprintCandidate } from '../types/agent'
 import type { AgentThreadWorkspace } from '../types/agentThread'
 import type { BlueprintWorkspaceFile } from '../types/blueprint'
 import type { DocumentFile, ValidationReport } from '../types/document'
+import { SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION, type SimulationArtifact } from '../types/simulation'
 import { useBlueprintStore } from './blueprintStore'
 import { useEditorStore } from './editorStore'
 import { createEmptyBlueprintWorkspace } from '../lib/blueprintWorkspace'
@@ -61,6 +63,16 @@ function resetBlueprintStore() {
     loadError: null,
     saveError: null,
     validationError: null,
+    liveDraft: {
+      status: 'idle',
+      sessionId: null,
+      raw: '',
+      markerFound: false,
+      hasCompleteJson: false,
+      displayDocument: null,
+      lastGoodDocument: null,
+      updatedAt: null,
+    },
   })
 }
 
@@ -85,6 +97,26 @@ function createAgentCandidate(document: DocumentFile = createDocument({ document
   }
 }
 
+function createSimulationArtifact(overrides: Partial<SimulationArtifact> = {}): SimulationArtifact {
+  return {
+    schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+    manifest: {
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+      name: 'RC simulation preview',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          resistance: { type: 'number', minimum: 100, maximum: 10000 },
+        },
+      },
+    },
+    workerScript: 'function simulate() { return { points: [{ t: 0, vout: 0 }, { t: 1, vout: 1 }] } }',
+    scriptLanguage: 'javascript',
+    defaultInput: { parameters: { resistance: 1000 } },
+    ...overrides,
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   resetBlueprintStore()
@@ -92,6 +124,168 @@ beforeEach(() => {
 })
 
 describe('blueprintStore', () => {
+  it('stores live draft preview state without dirtying or creating blueprint records', () => {
+    const initialDocument = createDocument({ document: { id: 'last-good', title: 'Last good live draft' } })
+    const liveDocument = createDocument({ document: { id: 'live-ready', title: 'Live ready draft' } })
+
+    useBlueprintStore.getState().startLiveBlueprintDraft()
+    const partial = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n{"schemaVersion":"4.0.0"`, {
+      lastGood: initialDocument,
+    })
+    useBlueprintStore.getState().updateLiveBlueprintDraft(partial, 'partial')
+
+    expect(useBlueprintStore.getState().dirty).toBe(false)
+    expect(useBlueprintStore.getState().workspace?.blueprints ?? []).toHaveLength(0)
+    expect(useBlueprintStore.getState().liveDraft.status).toBe('partial-json')
+    expect(useBlueprintStore.getState().liveDraft.displayDocument?.document.id).toBe('last-good')
+
+    const readyRaw = `${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(liveDocument)}`
+    const ready = parseLiveBlueprintDraft(readyRaw, {
+      lastGood: useBlueprintStore.getState().liveDraft.lastGoodDocument,
+    })
+    useBlueprintStore.getState().updateLiveBlueprintDraft(ready, readyRaw)
+
+    const state = useBlueprintStore.getState()
+    expect(state.dirty).toBe(false)
+    expect(state.workspace?.blueprints ?? []).toHaveLength(0)
+    expect(state.liveDraft.status).toBe('ready')
+    expect(state.liveDraft.displayDocument?.document.title).toBe('Live ready draft')
+    expect(state.liveDraft.displayDocument).not.toBe(liveDocument)
+  })
+
+  it('accepts a live draft as an agent blueprint for the current main document', async () => {
+    const mainDocument = createDocument({ document: { id: 'main-doc', title: 'Main document' } })
+    const liveDocument = createDocument({ document: { id: 'live-doc', title: 'Accepted live draft' } })
+    const readyRaw = `${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(liveDocument)}`
+    const ready = parseLiveBlueprintDraft(readyRaw)
+    tauriMocks.getBlueprintSidecarPathCommand.mockResolvedValue('/tmp/project.easyanalyse/blueprints/workspace.easyanalyse-blueprints.json')
+    tauriMocks.loadBlueprintWorkspaceFromPath.mockResolvedValue(null)
+    await useBlueprintStore.getState().loadForMainDocument('/tmp/project.easyanalyse', mainDocument)
+    useBlueprintStore.getState().startLiveBlueprintDraft()
+    useBlueprintStore.getState().updateLiveBlueprintDraft(ready, readyRaw)
+
+    const accepted = await useBlueprintStore.getState().acceptLiveBlueprintDraft({
+      mainDocument,
+      filePath: '/tmp/project.easyanalyse',
+      title: 'Accepted from live',
+      description: 'Accepted description',
+    })
+
+    const state = useBlueprintStore.getState()
+    const mainHash = await hashDocument(mainDocument)
+    expect(accepted).not.toBeNull()
+    expect(state.workspace?.blueprints).toHaveLength(1)
+    expect(state.workspace?.blueprints[0]).toMatchObject({
+      title: 'Accepted from live',
+      description: 'Accepted description',
+      source: 'agent',
+      baseMainDocumentHash: mainHash,
+      tags: ['agent', 'live-draft'],
+    })
+    expect(state.workspace?.mainDocument).toMatchObject({
+      documentId: 'main-doc',
+      path: '/tmp/project.easyanalyse',
+      hash: mainHash,
+    })
+    expect(state.selectedBlueprintId).toBe(accepted?.id)
+    expect(state.liveDraft.status).toBe('idle')
+    expect(state.liveDraft.displayDocument).toBeNull()
+    expect(state.dirty).toBe(true)
+  })
+
+  it('replaces an existing blueprint document from the current canvas snapshot', async () => {
+    const mainDocument = createDocument({ document: { id: 'main-replace', title: 'Main replace' } })
+    const originalBlueprintDocument = createDocument({ document: { id: 'bp-original-doc', title: 'Original blueprint document' } })
+    const replacementDocument = createDocument({ document: { id: 'bp-replacement-doc', title: 'Replacement canvas' } })
+    await useBlueprintStore.getState().loadForMainDocument('/tmp/replace.easyanalyse', mainDocument)
+    const original = await useBlueprintStore.getState().createSnapshotFromDocument(originalBlueprintDocument, {
+      title: 'Selected source blueprint',
+    })
+
+    const replaced = await useBlueprintStore.getState().replaceBlueprintFromDocument(original.id, replacementDocument, {
+      notes: 'Saved before generation.',
+    })
+
+    expect(replaced).not.toBeNull()
+    const state = useBlueprintStore.getState()
+    const record = state.workspace?.blueprints.find((item) => item.id === original.id)
+    expect(record).toMatchObject({
+      id: original.id,
+      title: 'Selected source blueprint',
+      document: expect.objectContaining({ document: expect.objectContaining({ id: 'bp-replacement-doc' }) }),
+      validationState: 'unknown',
+      notes: 'Saved before generation.',
+    })
+    expect(record?.documentHash).not.toBe(original.documentHash)
+    expect(state.selectedBlueprintId).toBe(original.id)
+    expect(state.dirty).toBe(true)
+  })
+
+  it('suppresses further updates from an accepted live draft session', async () => {
+    const mainDocument = createDocument({ document: { id: 'main-session', title: 'Main session' } })
+    const firstLiveDocument = createDocument({ document: { id: 'live-session-1', title: 'Accepted session draft' } })
+    const laterLiveDocument = createDocument({ document: { id: 'live-session-2', title: 'Later ignored draft' } })
+    const sessionId = 'agent-panel-session-test'
+    await useBlueprintStore.getState().loadForMainDocument('/tmp/session.easyanalyse', mainDocument)
+    useBlueprintStore.getState().startLiveBlueprintDraft({ sessionId })
+    useBlueprintStore.getState().updateLiveBlueprintDraft(
+      parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(firstLiveDocument)}`),
+      `${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(firstLiveDocument)}`,
+      { sessionId },
+    )
+
+    await useBlueprintStore.getState().acceptLiveBlueprintDraft({
+      mainDocument,
+      filePath: '/tmp/session.easyanalyse',
+      title: 'Accepted session draft',
+    })
+    expect(useBlueprintStore.getState().isLiveBlueprintDraftSessionSuppressed(sessionId)).toBe(true)
+
+    const startedAgain = useBlueprintStore.getState().startLiveBlueprintDraft({ sessionId })
+    const updatedAgain = useBlueprintStore.getState().updateLiveBlueprintDraft(
+      parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(laterLiveDocument)}`),
+      `${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(laterLiveDocument)}`,
+      { sessionId },
+    )
+
+    expect(startedAgain).toBe(false)
+    expect(updatedAgain).toBe(false)
+    expect(useBlueprintStore.getState().liveDraft.status).toBe('idle')
+    expect(useBlueprintStore.getState().workspace?.blueprints).toHaveLength(1)
+    expect(useBlueprintStore.getState().workspace?.blueprints[0]?.title).toBe('Accepted session draft')
+
+    const nextSessionId = 'agent-panel-session-next'
+    const nextStarted = useBlueprintStore.getState().startLiveBlueprintDraft({ sessionId: nextSessionId })
+    expect(nextStarted).toBe(true)
+    expect(useBlueprintStore.getState().liveDraft.sessionId).toBe(nextSessionId)
+  })
+
+  it('clears transient live draft state when loading a main document', async () => {
+    const liveDocument = createDocument({ document: { id: 'live', title: 'Live draft before load' } })
+    const result = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(liveDocument)}`)
+    useBlueprintStore.getState().startLiveBlueprintDraft()
+    useBlueprintStore.getState().updateLiveBlueprintDraft(result, 'raw live draft')
+
+    await useBlueprintStore.getState().loadForMainDocument(null, createDocument())
+
+    expect(useBlueprintStore.getState().liveDraft.status).toBe('idle')
+    expect(useBlueprintStore.getState().liveDraft.displayDocument).toBeNull()
+  })
+
+  it('clears transient live draft state when rebinding after the main document is saved', async () => {
+    const liveDocument = createDocument({ document: { id: 'live-before-rebind', title: 'Live draft before rebind' } })
+    const result = parseLiveBlueprintDraft(`${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(liveDocument)}`)
+    tauriMocks.getBlueprintSidecarPathCommand.mockResolvedValue('/tmp/rebound.easyanalyse-blueprints.json')
+    useBlueprintStore.getState().startLiveBlueprintDraft()
+    useBlueprintStore.getState().updateLiveBlueprintDraft(result, 'raw live draft')
+
+    await useBlueprintStore.getState().rebindForSavedDocument('/tmp/rebound.easyanalyse.json', createDocument())
+
+    expect(useBlueprintStore.getState().liveDraft.status).toBe('idle')
+    expect(useBlueprintStore.getState().liveDraft.displayDocument).toBeNull()
+    expect(useBlueprintStore.getState().sidecarPath).toBe('/tmp/rebound.easyanalyse-blueprints.json')
+  })
+
   it('createSnapshotFromDocument does not mutate the source document or change the main document hash', async () => {
     const document = createDocument()
     const beforeJson = JSON.stringify(document)
@@ -580,6 +774,53 @@ describe('blueprintStore', () => {
     })
     expect(inserted[0]?.baseMainDocumentHash).toBe(dirtyHash)
     expect(state.dirty).toBe(true)
+  })
+
+  it('stores agent candidate simulation artifacts in blueprint extensions', async () => {
+    const mainDocument = createDocument({ document: { id: 'doc-sim-main', title: 'Simulation main' } })
+    const simulation = createSimulationArtifact()
+    const candidate = {
+      ...createAgentCandidate(createDocument({ document: { id: 'candidate-sim', title: 'Sim candidate' } })),
+      simulation,
+    }
+
+    const inserted = await useBlueprintStore.getState().addAgentBlueprintCandidates(
+      [candidate],
+      { mainDocument, filePath: null },
+    )
+
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0]?.extensions?.simulation).toEqual(simulation)
+    expect(inserted[0]?.extensions?.simulation).not.toBe(simulation)
+    expect(useBlueprintStore.getState().workspace?.blueprints[0]?.extensions?.simulation?.manifest.name).toBe(
+      'RC simulation preview',
+    )
+    expect(inserted[0]?.extensions?.simulation?.manifest.inputSchema).toEqual(simulation.manifest.inputSchema)
+    expect(inserted[0]?.extensions?.simulation?.defaultInput).toEqual(simulation.defaultInput)
+    expect(inserted[0]?.extensions?.simulation?.notes).toEqual(simulation.notes)
+  })
+
+  it('promotes simulation artifacts from candidate document extensions into blueprint extensions', async () => {
+    const mainDocument = createDocument({ document: { id: 'doc-sim-extension-main', title: 'Simulation main' } })
+    const simulation = createSimulationArtifact({ notes: ['from document extension'] })
+    const candidateDocument = createDocument({
+      document: { id: 'candidate-sim-extension', title: 'Extension simulation candidate' },
+      extensions: {
+        simulation,
+      },
+    })
+
+    const inserted = await useBlueprintStore.getState().addAgentBlueprintCandidates(
+      [createAgentCandidate(candidateDocument)],
+      { mainDocument, filePath: null },
+    )
+
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0]?.extensions?.simulation).toMatchObject({
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+      manifest: { name: 'RC simulation preview' },
+      notes: ['from document extension'],
+    })
   })
 
   it('retains concurrent agent candidate insertions for the same main document', async () => {

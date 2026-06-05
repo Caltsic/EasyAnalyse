@@ -256,6 +256,9 @@ describe('blueprintWorkspace', () => {
     expect(getBlueprintSidecarPath('/path/foo.easyanalyse.json')).toBe(
       '/path/foo.easyanalyse.easyanalyse-blueprints.json',
     )
+    expect(getBlueprintSidecarPath('/path/foo.easyanalyse')).toBe(
+      '/path/foo.easyanalyse/blueprints/workspace.easyanalyse-blueprints.json',
+    )
     expect(getBlueprintSidecarPath('foo')).toBe('foo.easyanalyse-blueprints.json')
   })
 })

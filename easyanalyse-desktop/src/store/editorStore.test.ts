@@ -3,6 +3,7 @@ import type { DocumentFile, ValidationReport } from '../types/document'
 import { useEditorStore } from './editorStore'
 import { useBlueprintStore } from './blueprintStore'
 import { hashDocument } from '../lib/documentHash'
+import { LIVE_BLUEPRINT_JSON_MARKER } from '../lib/liveBlueprintDraft'
 
 const dialogMocks = vi.hoisted(() => ({
   open: vi.fn(),
@@ -13,6 +14,7 @@ const tauriMocks = vi.hoisted(() => ({
   isTauriRuntime: vi.fn(),
   openDocumentFromPath: vi.fn(),
   saveDocumentToPath: vi.fn(),
+  readLiveBlueprintDraftPartialCommand: vi.fn(),
   validateDocumentCommand: vi.fn(),
   getBlueprintSidecarPathCommand: vi.fn(),
   loadBlueprintWorkspaceFromPath: vi.fn(),
@@ -29,6 +31,7 @@ vi.mock('../lib/tauri', async (importOriginal) => ({
   isTauriRuntime: tauriMocks.isTauriRuntime,
   openDocumentFromPath: tauriMocks.openDocumentFromPath,
   saveDocumentToPath: tauriMocks.saveDocumentToPath,
+  readLiveBlueprintDraftPartialCommand: tauriMocks.readLiveBlueprintDraftPartialCommand,
   validateDocumentCommand: tauriMocks.validateDocumentCommand,
   getBlueprintSidecarPathCommand: tauriMocks.getBlueprintSidecarPathCommand,
   loadBlueprintWorkspaceFromPath: tauriMocks.loadBlueprintWorkspaceFromPath,
@@ -114,6 +117,16 @@ beforeEach(() => {
     loadError: null,
     saveError: null,
     validationError: null,
+    liveDraft: {
+      status: 'idle',
+      sessionId: null,
+      raw: '',
+      markerFound: false,
+      hasCompleteJson: false,
+      displayDocument: null,
+      lastGoodDocument: null,
+      updatedAt: null,
+    },
   })
 })
 
@@ -133,6 +146,87 @@ describe('editorStore.initialize', () => {
 
     const snapshot = await useBlueprintStore.getState().createSnapshotFromDocument(document)
     expect(snapshot.baseMainDocumentHash).toBe(mainHash)
+  })
+})
+
+describe('editorStore.openProject', () => {
+  it('opens a project directory and restores an unfinished live blueprint draft', async () => {
+    const projectPath = '/tmp/filter.easyanalyse'
+    const projectDocument = createDocument({
+      document: { id: 'doc-project', title: 'Project circuit' },
+    })
+    const liveDraftDocument = createDocument({
+      document: { id: 'doc-live-recovered', title: 'Recovered live draft' },
+    })
+    const rawLiveDraft = `${LIVE_BLUEPRINT_JSON_MARKER}\n${JSON.stringify(liveDraftDocument)}`
+    dialogMocks.open.mockResolvedValue(projectPath)
+    tauriMocks.openDocumentFromPath.mockResolvedValue({
+      path: projectPath,
+      document: projectDocument,
+      report: validationReport(projectDocument),
+    })
+    tauriMocks.getBlueprintSidecarPathCommand.mockResolvedValue(
+      '/tmp/filter.easyanalyse/blueprints/workspace.easyanalyse-blueprints.json',
+    )
+    tauriMocks.loadBlueprintWorkspaceFromPath.mockResolvedValue(null)
+    tauriMocks.readLiveBlueprintDraftPartialCommand.mockResolvedValue(rawLiveDraft)
+    useEditorStore.setState({ locale: 'en-US' })
+
+    await useEditorStore.getState().openProject()
+
+    expect(dialogMocks.open).toHaveBeenCalledWith(expect.objectContaining({
+      directory: true,
+      multiple: false,
+    }))
+    expect(tauriMocks.openDocumentFromPath).toHaveBeenCalledWith(projectPath)
+    expect(tauriMocks.readLiveBlueprintDraftPartialCommand).toHaveBeenCalledWith(projectPath)
+    expect(useEditorStore.getState().filePath).toBe(projectPath)
+    expect(useEditorStore.getState().document.document.id).toBe('doc-project')
+    expect(useEditorStore.getState().dirty).toBe(false)
+    expect(useBlueprintStore.getState().sidecarPath).toBe('/tmp/filter.easyanalyse/blueprints/workspace.easyanalyse-blueprints.json')
+    expect(useBlueprintStore.getState().liveDraft.status).toBe('ready')
+    expect(useBlueprintStore.getState().liveDraft.displayDocument?.document.title).toBe('Recovered live draft')
+    expect(useBlueprintStore.getState().dirty).toBe(false)
+    expect(useEditorStore.getState().statusMessage).toContain('Recovered an unfinished live blueprint draft')
+  })
+
+  it('cancels project opening without touching the current document', async () => {
+    const beforeDocument = useEditorStore.getState().document
+    dialogMocks.open.mockResolvedValue(null)
+    useEditorStore.setState({ locale: 'en-US' })
+
+    await useEditorStore.getState().openProject()
+
+    expect(tauriMocks.openDocumentFromPath).not.toHaveBeenCalled()
+    expect(tauriMocks.readLiveBlueprintDraftPartialCommand).not.toHaveBeenCalled()
+    expect(useEditorStore.getState().document).toBe(beforeDocument)
+    expect(useEditorStore.getState().statusMessage).toBe('Open cancelled')
+  })
+
+  it('does not restore a cleared or missing live blueprint draft from a project', async () => {
+    const projectPath = '/tmp/cleared.easyanalyse'
+    const projectDocument = createDocument({
+      document: { id: 'doc-cleared-project', title: 'Cleared project' },
+    })
+    dialogMocks.open.mockResolvedValue(projectPath)
+    tauriMocks.openDocumentFromPath.mockResolvedValue({
+      path: projectPath,
+      document: projectDocument,
+      report: validationReport(projectDocument),
+    })
+    tauriMocks.getBlueprintSidecarPathCommand.mockResolvedValue(
+      '/tmp/cleared.easyanalyse/blueprints/workspace.easyanalyse-blueprints.json',
+    )
+    tauriMocks.loadBlueprintWorkspaceFromPath.mockResolvedValue(null)
+    tauriMocks.readLiveBlueprintDraftPartialCommand.mockResolvedValue(null)
+    useEditorStore.setState({ locale: 'en-US' })
+
+    await useEditorStore.getState().openProject()
+
+    expect(tauriMocks.readLiveBlueprintDraftPartialCommand).toHaveBeenCalledWith(projectPath)
+    expect(useBlueprintStore.getState().liveDraft.status).toBe('idle')
+    expect(useEditorStore.getState().statusMessage).toContain('Opened')
+    expect(useEditorStore.getState().statusMessage).not.toContain('Recovered an unfinished live blueprint draft')
   })
 })
 
@@ -301,6 +395,13 @@ describe('editorStore.saveDocumentAs blueprint rebind', () => {
 
     await useEditorStore.getState().saveDocumentAs()
 
+    expect(dialogMocks.save).toHaveBeenCalledWith(expect.objectContaining({
+      defaultPath: 'Main circuit.easyanalyse',
+      filters: expect.arrayContaining([
+        expect.objectContaining({ extensions: ['easyanalyse'] }),
+        expect.objectContaining({ extensions: ['json'] }),
+      ]),
+    }))
     expect(tauriMocks.saveDocumentToPath).toHaveBeenCalledWith(savedPath, expect.any(Object))
     expect(useEditorStore.getState().filePath).toBe(savedPath)
     expect(useBlueprintStore.getState().sidecarPath).toBe('/tmp/new-main.easyanalyse-blueprints.json')

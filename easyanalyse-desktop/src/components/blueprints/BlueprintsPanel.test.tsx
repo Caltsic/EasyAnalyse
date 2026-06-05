@@ -9,9 +9,16 @@ import { useBlueprintStore } from '../../store/blueprintStore'
 import { useEditorStore } from '../../store/editorStore'
 import type { BlueprintRecord } from '../../types/blueprint'
 import type { DocumentFile } from '../../types/document'
+import { SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION, type SimulationArtifact } from '../../types/simulation'
 import { ApplyBlueprintDialog } from './ApplyBlueprintDialog'
 
 const previewCanvasMockState = vi.hoisted(() => ({ throwOnRender: false }))
+const tauriMocks = vi.hoisted(() => ({
+  deleteLiveBlueprintDraftPartialCommand: vi.fn(),
+}))
+const simulationMocks = vi.hoisted(() => ({
+  runSimulationWorker: vi.fn(),
+}))
 
 vi.mock('./BlueprintPreviewCanvas', () => ({
   BlueprintPreviewCanvas: ({ document, className }: { document: DocumentFile; className?: string }) => {
@@ -21,6 +28,26 @@ vi.mock('./BlueprintPreviewCanvas', () => ({
     return (
       <div aria-label="Blueprint preview canvas" className={className} data-document-title={document.document.title} />
     )
+  },
+}))
+
+vi.mock('../../lib/tauri', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/tauri')>()),
+  deleteLiveBlueprintDraftPartialCommand: tauriMocks.deleteLiveBlueprintDraftPartialCommand,
+}))
+
+vi.mock('../../lib/simulationWorkerSandbox', () => ({
+  runSimulationWorker: simulationMocks.runSimulationWorker,
+  SimulationWorkerSandboxError: class SimulationWorkerSandboxError extends Error {
+    code: string
+    detail: unknown
+
+    constructor(error: { code: string; message: string; detail?: unknown }) {
+      super(error.message)
+      this.name = 'SimulationWorkerSandboxError'
+      this.code = error.code
+      this.detail = error.detail
+    }
   },
 }))
 
@@ -78,6 +105,16 @@ function resetStores(document = createDocument()) {
     loadError: null,
     saveError: null,
     validationError: null,
+    liveDraft: {
+      status: 'idle',
+      sessionId: null,
+      raw: '',
+      markerFound: false,
+      hasCompleteJson: false,
+      displayDocument: null,
+      lastGoodDocument: null,
+      updatedAt: null,
+    },
   })
 }
 
@@ -114,6 +151,27 @@ async function createBlueprintRecord(overrides: Partial<BlueprintRecord> = {}): 
     source: 'manual_snapshot',
     createdAt: '2026-04-27T02:00:00.000Z',
     updatedAt: '2026-04-27T02:00:00.000Z',
+    ...overrides,
+  }
+}
+
+function createSimulationArtifact(overrides: Partial<SimulationArtifact> = {}): SimulationArtifact {
+  return {
+    schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+    manifest: {
+      schemaVersion: SIMULATION_WORKER_MANIFEST_SCHEMA_VERSION,
+      name: 'RC simulation preview',
+      description: 'Step response',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          resistance: { type: 'number', minimum: 100, maximum: 10000, multipleOf: 100 },
+        },
+      },
+    },
+    workerScript: 'function simulate() { return { points: [{ t: 0, vout: 0 }, { t: 1, vout: 1 }] } }',
+    scriptLanguage: 'javascript',
+    defaultInput: { parameters: { resistance: 1000 } },
     ...overrides,
   }
 }
@@ -164,10 +222,287 @@ afterEach(() => {
 
 beforeEach(() => {
   previewCanvasMockState.throwOnRender = false
+  tauriMocks.deleteLiveBlueprintDraftPartialCommand.mockResolvedValue(false)
+  simulationMocks.runSimulationWorker.mockResolvedValue({
+    points: [
+      { t: 0, vout: 0 },
+      { t: 1, vout: 1 },
+    ],
+    summary: 'simulated response',
+    truncated: false,
+    durationMs: 12,
+  })
   resetStores()
 })
 
 describe('BlueprintsPanel', () => {
+  it('renders a transient live draft preview without a persisted blueprint record', async () => {
+    const liveDocument = createDocument({ document: { ...createDocument().document, id: 'live-doc', title: 'Live streamed draft' } })
+    useBlueprintStore.setState({
+      liveDraft: {
+        status: 'ready',
+        sessionId: null,
+        raw: JSON.stringify(liveDocument),
+        markerFound: true,
+        hasCompleteJson: true,
+        displayDocument: liveDocument,
+        lastGoodDocument: liveDocument,
+        updatedAt: '2026-06-05T00:00:00.000Z',
+      },
+    })
+
+    const host = await renderPanel()
+
+    expect(host.textContent).toContain('Live blueprint preview')
+    expect(host.textContent).toContain('showing latest displayable version')
+    const previewCanvas = host.querySelector('[aria-label="Blueprint preview canvas"]') as HTMLElement | null
+    expect(previewCanvas?.dataset.documentTitle).toBe('Live streamed draft')
+    expect(useBlueprintStore.getState().workspace?.blueprints ?? []).toHaveLength(0)
+    expect(useBlueprintStore.getState().dirty).toBe(false)
+  })
+
+  it('prevents accepting a partial live draft projection until the draft is complete', async () => {
+    const liveDocument = createDocument({ document: { ...createDocument().document, id: 'live-partial-doc', title: 'Partial live projection' } })
+    useBlueprintStore.setState({
+      liveDraft: {
+        status: 'partial-json',
+        sessionId: 'agent-panel-partial-accept-test',
+        raw: JSON.stringify(liveDocument),
+        markerFound: true,
+        hasCompleteJson: false,
+        displayDocument: liveDocument,
+        lastGoodDocument: liveDocument,
+        updatedAt: '2026-06-05T00:00:00.000Z',
+      },
+    })
+
+    const host = await renderPanel()
+
+    expect(host.textContent).toContain('Live blueprint preview')
+    expect(host.textContent).toContain('showing a temporary live preview')
+    expect(host.textContent).toContain('content and layout may still change')
+    const previewCanvas = host.querySelector('[aria-label="Blueprint preview canvas"]') as HTMLElement | null
+    expect(previewCanvas?.dataset.documentTitle).toBe('Partial live projection')
+    const acceptButton = firstButtonByText(host, 'Accept draft') as HTMLButtonElement
+    expect(acceptButton.disabled).toBe(true)
+
+    await act(async () => {
+      acceptButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(useBlueprintStore.getState().workspace?.blueprints ?? []).toHaveLength(0)
+  })
+
+  it('shows live JSON diagnostics while keeping the last displayable draft preview', async () => {
+    const lastGood = createDocument({ document: { ...createDocument().document, id: 'live-last-good', title: 'Last displayable draft' } })
+    useBlueprintStore.setState({
+      liveDraft: {
+        status: 'invalid-json',
+        sessionId: 'agent-panel-invalid-json-test',
+        raw: 'BEGIN_EASYANALYSE_BLUEPRINT_JSON\n{"schemaVersion":"4.0.0",',
+        markerFound: true,
+        hasCompleteJson: true,
+        displayDocument: lastGood,
+        lastGoodDocument: lastGood,
+        updatedAt: '2026-06-05T00:00:00.000Z',
+        error: {
+          code: 'invalid-json',
+          message: 'A complete JSON object was extracted but JSON.parse failed: Unexpected token',
+          line: 12,
+          column: 8,
+          excerpt: '"devices": [',
+        },
+      },
+    })
+
+    const host = await renderPanel()
+
+    expect(host.textContent).toContain('keeping last displayable version')
+    expect(host.textContent).toContain('Live diagnostics')
+    expect(host.textContent).toContain('A complete JSON object was extracted but JSON.parse failed')
+    expect(host.textContent).toContain('Code: invalid-json')
+    expect(host.textContent).toContain('Location: line 12, column 8')
+    expect(host.textContent).toContain('Excerpt: "devices": [')
+    const previewCanvas = host.querySelector('[aria-label="Blueprint preview canvas"]') as HTMLElement | null
+    expect(previewCanvas?.dataset.documentTitle).toBe('Last displayable draft')
+  })
+
+  it('shows live document format diagnostics with schema paths', async () => {
+    const lastGood = createDocument({ document: { ...createDocument().document, id: 'live-format-last-good', title: 'Format fallback draft' } })
+    useBlueprintStore.setState({
+      liveDraft: {
+        status: 'invalid-document',
+        sessionId: 'agent-panel-invalid-document-test',
+        raw: JSON.stringify({ schemaVersion: '4.0.0', document: {}, devices: [], view: {} }),
+        markerFound: true,
+        hasCompleteJson: true,
+        displayDocument: lastGood,
+        lastGoodDocument: lastGood,
+        updatedAt: '2026-06-05T00:00:00.000Z',
+        error: {
+          code: 'invalid-document',
+          message: 'Document format check failed',
+          issues: [
+            {
+              path: 'devices[0].terminals',
+              code: 'required',
+              message: 'Expected at least one terminal',
+            },
+          ],
+        },
+      },
+    })
+
+    const host = await renderPanel()
+
+    expect(host.textContent).toContain('Document format check failed')
+    expect(host.textContent).toContain('Code: invalid-document')
+    expect(host.textContent).toContain('devices[0].terminals: required, Expected at least one terminal')
+    const previewCanvas = host.querySelector('[aria-label="Blueprint preview canvas"]') as HTMLElement | null
+    expect(previewCanvas?.dataset.documentTitle).toBe('Format fallback draft')
+  })
+
+  it('shows live diagnostics even before any draft document is displayable', async () => {
+    useBlueprintStore.setState({
+      liveDraft: {
+        status: 'invalid-json',
+        sessionId: 'agent-panel-no-preview-diagnostics-test',
+        raw: 'BEGIN_EASYANALYSE_BLUEPRINT_JSON\n{"schemaVersion":',
+        markerFound: true,
+        hasCompleteJson: false,
+        displayDocument: null,
+        lastGoodDocument: null,
+        updatedAt: '2026-06-05T00:00:00.000Z',
+        error: {
+          code: 'invalid-json',
+          message: 'Waiting for a valid document object',
+          line: 2,
+          column: 18,
+        },
+      },
+    })
+
+    const host = await renderPanel()
+
+    expect(host.textContent).toContain('Live blueprint preview')
+    expect(host.textContent).toContain('waiting for a displayable preview')
+    expect(host.textContent).toContain('Live diagnostics')
+    expect(host.textContent).toContain('Waiting for a valid document object')
+    expect(host.textContent).toContain('No displayable blueprint yet')
+    expect(host.querySelector('[aria-label="Blueprint preview canvas"]')).toBeNull()
+    expect((firstButtonByText(host, 'Accept draft') as HTMLButtonElement).disabled).toBe(true)
+    expect((firstButtonByText(host, 'Discard draft') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('prioritizes live diagnostics over the selected blueprint preview before any draft is displayable', async () => {
+    const selectedDocument = createDocument({ document: { ...createDocument().document, id: 'selected-doc', title: 'Selected blueprint' } })
+    const selectedBlueprint = await createBlueprintRecord({
+      id: 'bp-selected-live-diagnostics',
+      title: 'Selected fallback blueprint',
+      document: selectedDocument,
+      documentHash: await hashDocument(selectedDocument),
+    })
+    useBlueprintStore.setState({
+      workspace: {
+        ...createEmptyBlueprintWorkspace(),
+        blueprints: [selectedBlueprint],
+      },
+      selectedBlueprintId: selectedBlueprint.id,
+      liveDraft: {
+        status: 'invalid-document',
+        sessionId: 'agent-panel-selected-no-preview-diagnostics-test',
+        raw: JSON.stringify({ schemaVersion: '4.0.0', document: {}, devices: [], view: {} }),
+        markerFound: true,
+        hasCompleteJson: true,
+        displayDocument: null,
+        lastGoodDocument: null,
+        updatedAt: '2026-06-05T00:00:00.000Z',
+        error: {
+          code: 'invalid-document',
+          message: 'Draft cannot be displayed yet',
+          issues: [{ path: 'document.title', code: 'required', message: 'Expected a title' }],
+        },
+      },
+    })
+
+    const host = await renderPanel()
+
+    expect(host.textContent).toContain('Live blueprint preview')
+    expect(host.textContent).toContain('Draft cannot be displayed yet')
+    expect(host.textContent).toContain('document.title: required, Expected a title')
+    expect(host.textContent).toContain('No displayable blueprint yet')
+    expect(host.textContent).not.toContain('Preview: Selected fallback blueprint')
+    expect(host.querySelector('[aria-label="Blueprint preview canvas"]')).toBeNull()
+  })
+
+  it('accepts a live draft preview as a persisted blueprint and clears the project partial', async () => {
+    const main = createDocument({ document: { ...createDocument().document, id: 'main-live-accept', title: 'Main live accept' } })
+    const liveDocument = createDocument({ document: { ...createDocument().document, id: 'live-accept', title: 'Accepted live preview' } })
+    resetStores(main)
+    useEditorStore.setState({ filePath: '/tmp/project.easyanalyse' })
+    useBlueprintStore.setState({
+      liveDraft: {
+        status: 'ready',
+        sessionId: null,
+        raw: JSON.stringify(liveDocument),
+        markerFound: true,
+        hasCompleteJson: true,
+        displayDocument: liveDocument,
+        lastGoodDocument: liveDocument,
+        updatedAt: '2026-06-05T00:00:00.000Z',
+      },
+    })
+    tauriMocks.deleteLiveBlueprintDraftPartialCommand.mockResolvedValue(true)
+    const host = await renderPanel()
+
+    await act(async () => {
+      firstButtonByText(host, 'Accept draft')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(useBlueprintStore.getState().workspace?.blueprints).toHaveLength(1))
+    })
+
+    const state = useBlueprintStore.getState()
+    expect(state.liveDraft.status).toBe('idle')
+    expect(state.workspace?.blueprints[0]?.title).toBe('Accepted live preview')
+    expect(state.workspace?.blueprints[0]?.source).toBe('agent')
+    expect(state.workspace?.blueprints[0]?.tags).toContain('live-draft')
+    expect(state.selectedBlueprintId).toBe(state.workspace?.blueprints[0]?.id)
+    expect(state.dirty).toBe(true)
+    expect(tauriMocks.deleteLiveBlueprintDraftPartialCommand).toHaveBeenCalledWith('/tmp/project.easyanalyse')
+  })
+
+  it('discards a live draft preview and clears the project partial without creating a blueprint', async () => {
+    const liveDocument = createDocument({ document: { ...createDocument().document, id: 'live-discard', title: 'Discarded live preview' } })
+    useEditorStore.setState({ filePath: '/tmp/project.easyanalyse' })
+    useBlueprintStore.setState({
+      liveDraft: {
+        status: 'ready',
+        sessionId: 'agent-panel-discard-test',
+        raw: JSON.stringify(liveDocument),
+        markerFound: true,
+        hasCompleteJson: true,
+        displayDocument: liveDocument,
+        lastGoodDocument: liveDocument,
+        updatedAt: '2026-06-05T00:00:00.000Z',
+      },
+    })
+    tauriMocks.deleteLiveBlueprintDraftPartialCommand.mockResolvedValue(true)
+    const host = await renderPanel()
+
+    await act(async () => {
+      firstButtonByText(host, 'Discard draft')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(useBlueprintStore.getState().liveDraft.status).toBe('idle'))
+    })
+
+    expect(useBlueprintStore.getState().workspace?.blueprints ?? []).toHaveLength(0)
+    expect(useBlueprintStore.getState().dirty).toBe(false)
+    expect(useBlueprintStore.getState().isLiveBlueprintDraftSessionSuppressed('agent-panel-discard-test')).toBe(true)
+    expect(tauriMocks.deleteLiveBlueprintDraftPartialCommand).toHaveBeenCalledWith('/tmp/project.easyanalyse')
+  })
+
   it('keeps the panel mounted when the selected blueprint preview fails to render', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     try {
@@ -199,6 +534,54 @@ describe('BlueprintsPanel', () => {
     } finally {
       consoleError.mockRestore()
     }
+  })
+
+  it('shows a simulation card for the selected blueprint and runs it only after user action', async () => {
+    const main = createDocument()
+    const mainHash = await hashDocument(main)
+    const record = await createBlueprintRecord({
+      id: 'bp-simulation-preview',
+      title: 'Simulation preview blueprint',
+      baseMainDocumentHash: mainHash,
+      extensions: {
+        simulation: createSimulationArtifact(),
+      },
+    })
+    resetStores(main)
+    useBlueprintStore.setState({
+      workspace: {
+        ...createEmptyBlueprintWorkspace({
+          mainDocument: { documentId: main.document.id, hash: mainHash },
+        }),
+        blueprints: [record],
+      },
+      selectedBlueprintId: record.id,
+    })
+
+    const host = await renderPanel()
+
+    expect(host.textContent).toContain('Simulation preview')
+    expect(host.textContent).toContain('RC simulation preview')
+    expect(host.textContent).toContain('Step response')
+    expect(simulationMocks.runSimulationWorker).not.toHaveBeenCalled()
+
+    await act(async () => {
+      firstButtonByText(host, 'Run simulation')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(simulationMocks.runSimulationWorker).toHaveBeenCalledTimes(1))
+    })
+
+    expect(simulationMocks.runSimulationWorker).toHaveBeenCalledWith(
+      record.extensions?.simulation?.workerScript,
+      expect.objectContaining({
+        document: record.document,
+        parameters: expect.objectContaining({ resistance: 1000 }),
+      }),
+      expect.objectContaining({ timeoutMs: 5000, maxOutputPoints: 1000 }),
+    )
+    expect(host.textContent).toContain('simulated response')
+    expect(host.textContent).toContain('2 points')
   })
 
   it('does not focus the destructive confirm action by default or apply from root Enter/Space', async () => {

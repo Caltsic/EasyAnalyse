@@ -2,6 +2,7 @@ import { AGENT_RESPONSE_SCHEMA_VERSION, AGENT_RESPONSE_SEMANTIC_VERSION, parseAg
 import { getAgentToolSchemas, runAgentTool } from './agentTools'
 import { getErrorMessage as errorMessage } from './errors'
 import { isRecord } from './guards'
+import { LIVE_BLUEPRINT_JSON_MARKER } from './liveBlueprintDraft'
 import type { AgentResponseParseResult } from '../types/agent'
 import type { AgentToolExecutor, AgentToolRuntimeContext, AgentToolTraceEntry } from '../types/agentTools'
 import type { DocumentFile, ValidationIssue } from '../types/document'
@@ -348,7 +349,7 @@ export async function runOpenAiCompatibleProvider(input: OpenAiCompatibleRunInpu
     const body: Record<string, unknown> = {
       model: modelId,
       messages,
-      stream: false,
+      stream: true,
     }
     applyOpenAiCompatibleGenerationOptions(body, input, { jsonOnly: !allowTools })
     if (allowTools) {
@@ -371,7 +372,7 @@ export async function runOpenAiCompatibleProvider(input: OpenAiCompatibleRunInpu
         : `Sending final JSON request ${step + 1}.`,
       detail: { step: step + 1, toolsEnabled: allowTools, toolIterations, finalizationAttempts },
     })
-    const response = await performOpenAiRequest(input, request)
+    const response = await performOpenAiStreamingRequest(input, request)
     const root = parseOpenAiRoot(response.body, { responseBody: response.body, provider: input.provider, model: input.model, status: response.status })
     const choice = getFirstChoice(root, { responseBody: response.body, provider: input.provider, model: input.model, status: response.status })
     const assistantMessage = isRecord(choice.message) ? choice.message : null
@@ -548,6 +549,7 @@ function buildToolRuntimeContext(input: OpenAiCompatibleRunInput): AgentToolRunt
     ...(input.getEditorFocus ? { getEditorFocus: input.getEditorFocus } : {}),
     ...(input.getEasyAnalyseFormatRules ? { getEasyAnalyseFormatRules: input.getEasyAnalyseFormatRules } : {}),
     ...(input.validateDocument ? { validateDocument: input.validateDocument } : {}),
+    ...(input.beginBlueprintGeneration ? { beginBlueprintGeneration: input.beginBlueprintGeneration } : {}),
     ...(input.createBlueprintCandidate ? { createBlueprintCandidate: input.createBlueprintCandidate } : {}),
   }
 }
@@ -935,6 +937,277 @@ async function performOpenAiRequest(
   const body = await readResponseBody(response, input)
   if (!response.ok) throw mapHttpError(response.status, body, input)
   return { body, status: response.status }
+}
+
+async function performOpenAiStreamingRequest(
+  input: OpenAiCompatibleRunInput,
+  request: ProviderHttpRequest,
+): Promise<{ body: unknown; status: number }> {
+  let response: Response
+  try {
+    response = await input.fetch(request.url, {
+      method: request.method,
+      headers: request.headers,
+      body: request.body,
+      ...(input.signal ? { signal: input.signal } : {}),
+    })
+  } catch (error) {
+    throw mapNetworkError(error, input)
+  }
+
+  if (!response.ok) {
+    const body = await readResponseBody(response, input)
+    throw mapHttpError(response.status, body, input)
+  }
+
+  if (!response.body) {
+    const body = await readResponseBody(response, input)
+    return { body, status: response.status }
+  }
+
+  const streamed = await readOpenAiStreamResponse(response, input, request)
+  return { body: streamed, status: response.status }
+}
+
+interface OpenAiStreamAccumulator {
+  id?: string
+  model?: string
+  finishReason?: string
+  content: string
+  reasoningContent: string
+  reasoningContentLength: number
+  toolCalls: OpenAiStreamToolCall[]
+  usage?: ProviderUsageMetadata
+  sawData: boolean
+  done: boolean
+}
+
+interface OpenAiStreamToolCall {
+  index: number
+  id?: string
+  type?: string
+  name?: string
+  arguments: string
+}
+
+async function readOpenAiStreamResponse(
+  response: Response,
+  input: OpenAiCompatibleRunInput,
+  request: ProviderHttpRequest,
+): Promise<unknown> {
+  const reader = response.body?.getReader()
+  if (!reader) {
+    return readResponseBody(response, input)
+  }
+
+  const decoder = new TextDecoder()
+  const accumulator: OpenAiStreamAccumulator = {
+    content: '',
+    reasoningContent: '',
+    reasoningContentLength: 0,
+    toolCalls: [],
+    sawData: false,
+    done: false,
+  }
+  let buffer = ''
+  let rawText = ''
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      const decoded = decoder.decode(value ?? new Uint8Array(), { stream: !done })
+      rawText += decoded
+      buffer += decoded
+      const consumed = consumeServerSentEventBlocks(buffer, done)
+      buffer = consumed.remainder
+      consumed.blocks.forEach((block) => {
+        handleOpenAiStreamDataBlock(block, accumulator, input)
+      })
+      if (done) break
+    }
+  } catch (error) {
+    if (error instanceof AgentProviderError) throw error
+    throw mapNetworkError(error, input)
+  }
+
+  if (!accumulator.sawData && rawText.trim()) {
+    try {
+      return JSON.parse(rawText)
+    } catch (error) {
+      throw createError({
+        code: 'AGENT_PROVIDER_PARSE_ERROR',
+        message: `OpenAI-compatible provider returned invalid streaming data (HTTP ${response.status}). ${errorMessage(error)}`,
+        retryable: false,
+        status: response.status,
+        provider: input.provider,
+        model: input.model,
+        apiKey: input.apiKey,
+      })
+    }
+  }
+
+  emitProgress(input.progress, {
+    phase: 'response',
+    message: `Provider streaming response completed with ${accumulator.content.length} characters of candidate content.`,
+    detail: {
+      status: response.status,
+      finishReason: accumulator.finishReason,
+      contentLength: accumulator.content.length,
+      reasoningContentLength: accumulator.reasoningContentLength,
+      ...(accumulator.content.length > 0
+        ? { streamedContent: `${LIVE_BLUEPRINT_JSON_MARKER}\n${accumulator.content}` }
+        : {}),
+      done: true,
+    },
+  })
+
+  return buildOpenAiStreamChatCompletion(accumulator, request)
+}
+
+function consumeServerSentEventBlocks(buffer: string, flush: boolean): { blocks: string[]; remainder: string } {
+  const normalized = buffer.replace(/\r\n/g, '\n')
+  const parts = normalized.split('\n\n')
+  const remainder = flush ? '' : parts.pop() ?? ''
+  const blocks = (flush ? parts : parts).map((part) => part.trim()).filter(Boolean)
+  if (flush && remainder.trim()) blocks.push(remainder.trim())
+  return { blocks, remainder }
+}
+
+function handleOpenAiStreamDataBlock(
+  block: string,
+  accumulator: OpenAiStreamAccumulator,
+  input: OpenAiCompatibleRunInput,
+): void {
+  const dataLines = block
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice('data:'.length).trim())
+  if (dataLines.length === 0) return
+
+  for (const data of dataLines) {
+    if (!data) continue
+    accumulator.sawData = true
+    if (data === '[DONE]') {
+      accumulator.done = true
+      continue
+    }
+    let event: unknown
+    try {
+      event = JSON.parse(data)
+    } catch (error) {
+      throw createError({
+        code: 'AGENT_PROVIDER_PARSE_ERROR',
+        message: `OpenAI-compatible provider returned invalid streaming JSON. ${errorMessage(error)}`,
+        retryable: false,
+        provider: input.provider,
+        model: input.model,
+        apiKey: input.apiKey,
+      })
+    }
+    applyOpenAiStreamEvent(event, accumulator, input)
+  }
+}
+
+function applyOpenAiStreamEvent(
+  event: unknown,
+  accumulator: OpenAiStreamAccumulator,
+  input: OpenAiCompatibleRunInput,
+): void {
+  if (!isRecord(event)) return
+  if (typeof event.id === 'string') accumulator.id = event.id
+  if (typeof event.model === 'string') accumulator.model = event.model
+  const usage = normalizeUsage(event.usage)
+  if (usage) accumulator.usage = usage
+
+  const choices = Array.isArray(event.choices) ? event.choices : []
+  choices.forEach((choiceValue) => {
+    if (!isRecord(choiceValue)) return
+    if (typeof choiceValue.finish_reason === 'string') accumulator.finishReason = choiceValue.finish_reason
+    const delta = isRecord(choiceValue.delta) ? choiceValue.delta : {}
+    if (typeof delta.reasoning_content === 'string') {
+      accumulator.reasoningContent += delta.reasoning_content
+      accumulator.reasoningContentLength += delta.reasoning_content.length
+    }
+    if (Array.isArray(delta.tool_calls)) {
+      applyOpenAiStreamToolCalls(delta.tool_calls, accumulator)
+    }
+    if (typeof delta.content !== 'string' || delta.content.length === 0) {
+      return
+    }
+    accumulator.content += delta.content
+    emitProgress(input.progress, {
+      phase: 'response',
+      message: `Provider streamed ${accumulator.content.length} characters of candidate content.`,
+      detail: {
+        contentLength: accumulator.content.length,
+        reasoningContentLength: accumulator.reasoningContentLength,
+        delta: delta.content,
+        streamedContent: `${LIVE_BLUEPRINT_JSON_MARKER}\n${accumulator.content}`,
+        done: false,
+      },
+    })
+  })
+}
+
+function applyOpenAiStreamToolCalls(toolCalls: unknown[], accumulator: OpenAiStreamAccumulator): void {
+  toolCalls.forEach((toolCallValue) => {
+    if (!isRecord(toolCallValue)) return
+    const index = typeof toolCallValue.index === 'number' && Number.isInteger(toolCallValue.index)
+      ? toolCallValue.index
+      : accumulator.toolCalls.length
+    const existing = accumulator.toolCalls.find((item) => item.index === index)
+    const current = existing ?? { index, arguments: '' }
+    if (!existing) accumulator.toolCalls.push(current)
+    if (typeof toolCallValue.id === 'string') current.id = toolCallValue.id
+    if (typeof toolCallValue.type === 'string') current.type = toolCallValue.type
+    const fn = isRecord(toolCallValue.function) ? toolCallValue.function : {}
+    if (typeof fn.name === 'string') current.name = `${current.name ?? ''}${fn.name}`
+    if (typeof fn.arguments === 'string') current.arguments += fn.arguments
+  })
+}
+
+function buildOpenAiStreamChatCompletion(
+  accumulator: OpenAiStreamAccumulator,
+  request: ProviderHttpRequest,
+): JsonRecord {
+  const message: Record<string, unknown> = {
+    role: 'assistant',
+    content: accumulator.content.length > 0 ? accumulator.content : null,
+  }
+  if (accumulator.reasoningContent.length > 0) {
+    message.reasoning_content = accumulator.reasoningContent
+  }
+  if (accumulator.toolCalls.length > 0) {
+    message.tool_calls = accumulator.toolCalls
+      .sort((left, right) => left.index - right.index)
+      .map((toolCall) => ({
+        id: toolCall.id ?? `call-${toolCall.index}`,
+        type: toolCall.type ?? 'function',
+        function: {
+          name: toolCall.name ?? '',
+          arguments: toolCall.arguments,
+        },
+      }))
+  }
+
+  return {
+    ...(accumulator.id ? { id: accumulator.id } : {}),
+    object: 'chat.completion',
+    model: accumulator.model ?? request.metadata.modelId,
+    choices: [
+      {
+        index: 0,
+        finish_reason: accumulator.finishReason ?? (accumulator.done ? 'stop' : undefined),
+        message,
+      },
+    ],
+    ...(accumulator.usage ? { usage: {
+      prompt_tokens: accumulator.usage.promptTokens,
+      completion_tokens: accumulator.usage.completionTokens,
+      total_tokens: accumulator.usage.totalTokens,
+    } } : {}),
+  }
 }
 
 function normalizeToolCall(call: unknown): { id: string; name: string; arguments: string } {

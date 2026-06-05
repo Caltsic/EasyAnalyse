@@ -18,9 +18,12 @@ import {
 import { runMockAgentProvider } from '../../lib/agentMockProvider'
 import { runConfiguredAgentProvider } from '../../lib/agentProviderClient'
 import type { AgentProviderProgressEvent } from '../../lib/agentProviderClient'
+import { isEasyAnalyseProjectPath } from '../../lib/easyAnalyseProject'
 import { getErrorMessage } from '../../lib/errors'
 import { translate, type TranslationKey } from '../../lib/i18n'
+import { parseLiveBlueprintDraft } from '../../lib/liveBlueprintDraft'
 import { defaultSecretStore, isManagedSecretRef, type SecretStore } from '../../lib/secretStore'
+import { writeLiveBlueprintDraftPartialCommand } from '../../lib/tauri'
 import { useAgentThreadStore } from '../../store/agentThreadStore'
 import { useBlueprintStore } from '../../store/blueprintStore'
 import { useEditorStore } from '../../store/editorStore'
@@ -31,10 +34,17 @@ import type {
   AgentResponseParseIssue,
   AgentResponseParseResult,
 } from '../../types/agent'
-import type { AgentRepairTraceEntry, AgentToolTraceEntry } from '../../types/agentTools'
+import type {
+  AgentRepairTraceEntry,
+  AgentToolTraceEntry,
+  BeginBlueprintGenerationAction,
+  BeginBlueprintGenerationData,
+  BeginBlueprintGenerationRequest,
+} from '../../types/agentTools'
 import type { AgentThread, AgentThreadMessage } from '../../types/agentThread'
 import type { DocumentFile } from '../../types/document'
 import type { AgentProviderPublicConfig } from '../../types/settings'
+import { Button, ModalShell } from '../ui'
 
 const MAX_ACTIVITY_ENTRIES = 40
 const DEFAULT_THREAD_ID = 'agent-thread-local'
@@ -78,10 +88,23 @@ interface AgentChatMessage {
   tone?: AgentMessageTone
 }
 
+interface BeginBlueprintGateState {
+  runId: number
+  requestId: string
+  document: DocumentFile
+  intent?: string
+  title?: string
+  canvasDeviceCount: number
+  selectedBlueprintId: string | null
+  busyAction: BeginBlueprintGenerationAction | null
+  error: string | null
+}
+
 export interface AgentPanelProps {
   secretStore?: Pick<SecretStore, 'readSecret'>
   runProvider?: typeof runConfiguredAgentProvider
   runMockProvider?: typeof runMockAgentProvider
+  writeLiveBlueprintDraftPartial?: (projectPath: string, raw: string) => Promise<string | null>
   threads?: AgentThreadSummary[]
   activeThreadId?: string
   onThreadChange?: (threadId: string) => void
@@ -99,6 +122,7 @@ export function AgentPanel({
   secretStore = defaultSecretStore,
   runProvider = runConfiguredAgentProvider,
   runMockProvider = runMockAgentProvider,
+  writeLiveBlueprintDraftPartial = writeLiveBlueprintDraftPartialCommand,
   threads,
   activeThreadId,
   onThreadChange,
@@ -143,6 +167,15 @@ export function AgentPanel({
   const activeAssistantMessageRef = useRef<{ threadId: string; messageId: string } | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
+  const liveDraftLastGoodRef = useRef<DocumentFile | null>(null)
+  const activeRunFilePathRef = useRef<string | null>(null)
+  const liveDraftPartialTimerRef = useRef<number | null>(null)
+  const liveDraftPartialPendingRef = useRef<{ runId: number; sessionId: string; projectPath: string; raw: string } | null>(null)
+  const liveProgressTasksByRunRef = useRef(new Map<number, Set<Promise<void>>>())
+  const beginGateResolveRef = useRef<((data: BeginBlueprintGenerationData) => void) | null>(null)
+  const beginGateDecisionByRunRef = useRef(new Map<number, BeginBlueprintGenerationData>())
+  const beginGatePendingByRunRef = useRef(new Map<number, Promise<BeginBlueprintGenerationData>>())
+  const [beginGate, setBeginGate] = useState<BeginBlueprintGateState | null>(null)
 
   const running = runState.status === 'running'
   const provider = settings.agent.providers.find((item) => item.id === settings.agent.selectedProviderId) ?? null
@@ -202,6 +235,23 @@ export function AgentPanel({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView?.({ block: 'end' })
   }, [visibleMessages.length, running, resolvedActiveThreadId])
+
+  useEffect(() => () => {
+    if (liveDraftPartialTimerRef.current !== null) {
+      window.clearTimeout(liveDraftPartialTimerRef.current)
+      liveDraftPartialTimerRef.current = null
+    }
+    liveDraftPartialPendingRef.current = null
+    if (beginGateResolveRef.current) {
+      beginGateResolveRef.current({
+        allowed: false,
+        action: 'cancelled',
+        canvasHadCircuit: true,
+        message: 'Blueprint generation was cancelled because the Agent panel was unmounted.',
+      })
+      beginGateResolveRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     setThreadMenuOpen(false)
@@ -302,12 +352,124 @@ export function AgentPanel({
       }
       return { ...state, elapsedMs, activity: [...state.activity, entry].slice(-MAX_ACTIVITY_ENTRIES) }
     })
+    if (typeof event.detail?.streamedContent === 'string') {
+      return
+    }
     appendRunToolMessage(runId, {
       title: formatActivityPhase(event.phase),
       content: event.message,
       meta: formatElapsed(elapsedMs),
       tone: event.phase === 'complete' ? 'success' : 'neutral',
     })
+  }
+
+  function handleProviderProgress(
+    runId: number,
+    startedAtMs: number,
+    requestId: string,
+    documentAtStart: DocumentFile,
+    filePathAtStart: string | null,
+    event: AgentProviderProgressEvent,
+  ) {
+    appendActivity(runId, startedAtMs, event)
+    const task = consumeLiveBlueprintProgress(runId, requestId, documentAtStart, filePathAtStart, event)
+      .catch(() => undefined)
+    const existingTasks = liveProgressTasksByRunRef.current.get(runId)
+    const tasks = existingTasks ?? new Set<Promise<void>>()
+    if (!existingTasks) {
+      liveProgressTasksByRunRef.current.set(runId, tasks)
+    }
+    tasks.add(task)
+    void task.finally(() => {
+      const latestTasks = liveProgressTasksByRunRef.current.get(runId)
+      if (!latestTasks) return
+      latestTasks.delete(task)
+      if (latestTasks.size === 0) {
+        liveProgressTasksByRunRef.current.delete(runId)
+      }
+    })
+  }
+
+  async function waitForLiveBlueprintProgress(runId: number) {
+    while (true) {
+      const tasks = liveProgressTasksByRunRef.current.get(runId)
+      if (!tasks || tasks.size === 0) return
+      await Promise.all(Array.from(tasks))
+    }
+  }
+
+  async function consumeLiveBlueprintProgress(
+    runId: number,
+    requestId: string,
+    documentAtStart: DocumentFile,
+    filePathAtStart: string | null,
+    event: AgentProviderProgressEvent,
+  ) {
+    if (activeRunRef.current !== runId) return
+    const liveDraftSessionId = liveDraftSessionIdForRun(runId)
+    const blueprintStore = useBlueprintStore.getState()
+    if (blueprintStore.isLiveBlueprintDraftSessionSuppressed(liveDraftSessionId)) return
+    const streamedContent = typeof event.detail?.streamedContent === 'string' ? event.detail.streamedContent : null
+    if (!streamedContent) return
+
+    const result = parseLiveBlueprintDraft(streamedContent, {
+      lastGood: liveDraftLastGoodRef.current,
+    })
+    if (!result.markerFound) return
+    const allowed = await ensureBeginBlueprintGenerationAllowed(runId, requestId, documentAtStart, {
+      intent: t('beginBlueprintLiveGateIntent'),
+    })
+    if (!allowed || activeRunRef.current !== runId) return
+    const latestEditor = useEditorStore.getState()
+    if (latestEditor.document !== documentAtStart || latestEditor.filePath !== filePathAtStart) return
+
+    const latestBlueprintStore = useBlueprintStore.getState()
+    if (latestBlueprintStore.isLiveBlueprintDraftSessionSuppressed(liveDraftSessionId)) return
+    if (latestBlueprintStore.liveDraft.status === 'idle' || latestBlueprintStore.liveDraft.sessionId !== liveDraftSessionId) {
+      const started = latestBlueprintStore.startLiveBlueprintDraft({ sessionId: liveDraftSessionId })
+      if (!started) return
+    }
+    liveDraftLastGoodRef.current = result.lastGood
+    const updated = useBlueprintStore.getState().updateLiveBlueprintDraft(result, streamedContent, { sessionId: liveDraftSessionId })
+    if (!updated) return
+    scheduleLiveBlueprintPartialWrite(runId, liveDraftSessionId, filePathAtStart, streamedContent)
+  }
+
+  function clearPendingLiveBlueprintPartialWrite() {
+    if (liveDraftPartialTimerRef.current !== null) {
+      window.clearTimeout(liveDraftPartialTimerRef.current)
+      liveDraftPartialTimerRef.current = null
+    }
+    liveDraftPartialPendingRef.current = null
+  }
+
+  function scheduleLiveBlueprintPartialWrite(runId: number, sessionId: string, projectPath: string | null, raw: string) {
+    if (!projectPath || !isEasyAnalyseProjectPath(projectPath)) return
+    liveDraftPartialPendingRef.current = { runId, sessionId, projectPath, raw }
+    if (liveDraftPartialTimerRef.current !== null) {
+      window.clearTimeout(liveDraftPartialTimerRef.current)
+    }
+    liveDraftPartialTimerRef.current = window.setTimeout(() => {
+      void flushLiveBlueprintPartialWrite(runId)
+    }, 250)
+  }
+
+  async function flushLiveBlueprintPartialWrite(runId: number) {
+    const pending = liveDraftPartialPendingRef.current
+    if (pending === null || pending.runId !== runId) return
+    if (liveDraftPartialTimerRef.current !== null) {
+      window.clearTimeout(liveDraftPartialTimerRef.current)
+      liveDraftPartialTimerRef.current = null
+    }
+    liveDraftPartialPendingRef.current = null
+    if (activeRunRef.current !== runId) return
+    if (useBlueprintStore.getState().isLiveBlueprintDraftSessionSuppressed(pending.sessionId)) return
+    if (useEditorStore.getState().filePath !== pending.projectPath) return
+    try {
+      await writeLiveBlueprintDraftPartial(pending.projectPath, pending.raw)
+    } catch {
+      // Partial draft persistence is recovery data; live preview must keep running if it fails.
+    }
   }
 
   async function sendPrompt() {
@@ -330,10 +492,19 @@ export function AgentPanel({
     activeAssistantMessageRef.current = { threadId, messageId: assistantMessageId }
     const documentAtStart = document
     const filePathAtStart = filePath
+    activeRunFilePathRef.current = filePathAtStart
     const threadMessagesAtStart = agentThreads.find((thread) => thread.id === threadId)?.messages ?? []
     const requestId = `agent-panel-${runId}`
     const startedAtMs = Date.now()
     activityIdRef.current = 1
+    liveDraftLastGoodRef.current = null
+    liveProgressTasksByRunRef.current.delete(runId)
+    beginGateDecisionByRunRef.current.delete(runId)
+    beginGatePendingByRunRef.current.delete(runId)
+    beginGateResolveRef.current = null
+    setBeginGate(null)
+    clearPendingLiveBlueprintPartialWrite()
+    useBlueprintStore.getState().clearLiveBlueprintDraft()
 
     setPrompt('')
     touchLocalThread(threadId, trimmedPrompt)
@@ -400,6 +571,16 @@ export function AgentPanel({
         runProvider,
         runMockProvider,
         storeBlueprintCandidates: async (candidates, options) => {
+          if (useBlueprintStore.getState().isLiveBlueprintDraftSessionSuppressed(requestId)) {
+            return []
+          }
+          const allowed = await ensureBeginBlueprintGenerationAllowed(runId, requestId, documentAtStart, {
+            intent: options?.summary ?? t('beginBlueprintStoreGateIntent'),
+            title: candidates[0]?.title,
+          })
+          if (!allowed || activeRunRef.current !== runId) {
+            return []
+          }
           const insertedIds = await addAgentBlueprintCandidatesToCurrentThread(
             candidates,
             {
@@ -422,8 +603,10 @@ export function AgentPanel({
           })
           return insertedIds
         },
-        onProgress: (progressEvent) => appendActivity(runId, startedAtMs, progressEvent),
+        beginBlueprintGeneration: (request) => handleBeginBlueprintGeneration(runId, requestId, documentAtStart, request),
+        onProgress: (progressEvent) => handleProviderProgress(runId, startedAtMs, requestId, documentAtStart, filePathAtStart, progressEvent),
       })
+      await waitForLiveBlueprintProgress(runId)
       if (activeRunRef.current !== runId) return
 
       const latestEditor = useEditorStore.getState()
@@ -455,24 +638,48 @@ export function AgentPanel({
       }
 
       let insertedCount = 0
+      let finalBlueprintStorageSkipped = false
       if (result.response.kind === 'blueprints') {
-        const inserted = await addAgentBlueprintCandidatesToCurrentThread(
-          result.response.blueprints,
-          {
-            mainDocument: documentAtStart,
-            filePath: filePathAtStart,
-            issues: result.issues,
-          },
-          {
-            threadId,
-            toolName: 'final_blueprints',
-            summary: t('finalBlueprintsStored', { count: result.response.blueprints.length }),
-          },
-        )
-        if (activeRunRef.current !== runId) return
-        insertedCount = inserted.length
-        if (insertedCount === 0 && result.response.blueprints.length > 0) {
-          throw new Error(t('generatedButNotStored'))
+        if (useBlueprintStore.getState().isLiveBlueprintDraftSessionSuppressed(requestId)) {
+          finalBlueprintStorageSkipped = true
+          clearPendingLiveBlueprintPartialWrite()
+          liveDraftLastGoodRef.current = null
+          appendRunToolMessage(runId, {
+            title: t('liveDraftFinalStorageSkippedTitle'),
+            content: t('liveDraftFinalStorageSkipped'),
+            tone: 'warning',
+          }, true)
+        } else {
+          const allowed = await ensureBeginBlueprintGenerationAllowed(runId, requestId, documentAtStart, {
+            intent: t('beginBlueprintFinalGateIntent'),
+            title: result.response.blueprints[0]?.title,
+          })
+          if (!allowed || activeRunRef.current !== runId) {
+            return
+          }
+          const inserted = await addAgentBlueprintCandidatesToCurrentThread(
+            result.response.blueprints,
+            {
+              mainDocument: documentAtStart,
+              filePath: filePathAtStart,
+              issues: result.issues,
+            },
+            {
+              threadId,
+              toolName: 'final_blueprints',
+              summary: t('finalBlueprintsStored', { count: result.response.blueprints.length }),
+            },
+          )
+          if (activeRunRef.current !== runId) return
+          insertedCount = inserted.length
+          if (insertedCount === 0 && result.response.blueprints.length > 0) {
+            throw new Error(t('generatedButNotStored'))
+          }
+          if (insertedCount > 0) {
+            void flushLiveBlueprintPartialWrite(runId)
+            useBlueprintStore.getState().clearLiveBlueprintDraft()
+            liveDraftLastGoodRef.current = null
+          }
         }
       }
 
@@ -488,7 +695,9 @@ export function AgentPanel({
         error: null,
         elapsedMs,
       }))
-      const assistantContent = formatResponseMessage(result.response, insertedCount, t)
+      const assistantContent = finalBlueprintStorageSkipped && result.response.kind === 'blueprints'
+        ? formatSuppressedBlueprintResponseMessage(result.response, t)
+        : formatResponseMessage(result.response, insertedCount, t)
       updateActiveAssistantMessage({
         title: assistantTitleFromResponse(result.response, t),
         content: assistantContent,
@@ -515,6 +724,7 @@ export function AgentPanel({
         }, true)
       }
     } catch (error) {
+      await waitForLiveBlueprintProgress(runId)
       if (activeRunRef.current !== runId) return
       const elapsedMs = Math.max(0, Date.now() - startedAtMs)
       const message = getErrorMessage(error)
@@ -542,7 +752,11 @@ export function AgentPanel({
       if (activeRunRef.current === runId) {
         abortControllerRef.current = null
         activeAssistantMessageRef.current = null
+        activeRunFilePathRef.current = null
       }
+      beginGateDecisionByRunRef.current.delete(runId)
+      beginGatePendingByRunRef.current.delete(runId)
+      liveProgressTasksByRunRef.current.delete(runId)
     }
   }
 
@@ -563,6 +777,7 @@ export function AgentPanel({
     const cancelledRunId = activeRunRef.current
     const elapsedMs = runState.startedAtMs === null ? runState.elapsedMs : Math.max(0, Date.now() - runState.startedAtMs)
     activeRunRef.current += 1
+    clearPendingLiveBlueprintPartialWrite()
     setRunState((state) => {
       activityIdRef.current += 1
       const entry: AgentActivityEntry = {
@@ -605,6 +820,148 @@ export function AgentPanel({
     })
     abortControllerRef.current = null
     activeAssistantMessageRef.current = null
+    activeRunFilePathRef.current = null
+    liveProgressTasksByRunRef.current.delete(cancelledRunId)
+    beginGateDecisionByRunRef.current.delete(cancelledRunId)
+    beginGatePendingByRunRef.current.delete(cancelledRunId)
+    if (beginGate?.runId === cancelledRunId) {
+      resolveBeginBlueprintGate({
+        allowed: false,
+        action: 'cancelled',
+        canvasHadCircuit: beginGate.canvasDeviceCount > 0,
+        message: t('beginBlueprintCancelled'),
+      })
+    }
+  }
+
+  function resolveBeginBlueprintGate(data: BeginBlueprintGenerationData) {
+    const runId = beginGate?.runId ?? activeRunRef.current
+    beginGateDecisionByRunRef.current.set(runId, data)
+    beginGatePendingByRunRef.current.delete(runId)
+    beginGateResolveRef.current?.(data)
+    beginGateResolveRef.current = null
+    setBeginGate(null)
+  }
+
+  function handleBeginBlueprintGeneration(
+    runId: number,
+    requestId: string,
+    documentAtStart: DocumentFile,
+    request: BeginBlueprintGenerationRequest,
+  ): Promise<BeginBlueprintGenerationData> {
+    const previousDecision = beginGateDecisionByRunRef.current.get(runId)
+    if (previousDecision) return Promise.resolve(previousDecision)
+    const pendingDecision = beginGatePendingByRunRef.current.get(runId)
+    if (pendingDecision) return pendingDecision
+    const canvasHadCircuit = documentAtStart.devices.length > 0
+    if (!canvasHadCircuit) {
+      const data: BeginBlueprintGenerationData = {
+        allowed: true,
+        action: 'auto_continue',
+        canvasHadCircuit: false,
+        message: t('beginBlueprintAutoContinue'),
+      }
+      beginGateDecisionByRunRef.current.set(runId, data)
+      return Promise.resolve(data)
+    }
+
+    const pending = new Promise<BeginBlueprintGenerationData>((resolve) => {
+      beginGateResolveRef.current = (data) => {
+        beginGateDecisionByRunRef.current.set(runId, data)
+        beginGatePendingByRunRef.current.delete(runId)
+        resolve(data)
+      }
+      setBeginGate({
+        runId,
+        requestId,
+        document: documentAtStart,
+        ...(request.intent ? { intent: request.intent } : {}),
+        ...(request.title ? { title: request.title } : {}),
+        canvasDeviceCount: documentAtStart.devices.length,
+        selectedBlueprintId: useBlueprintStore.getState().selectedBlueprintId,
+        busyAction: null,
+        error: null,
+      })
+    })
+    beginGatePendingByRunRef.current.set(runId, pending)
+    return pending
+  }
+
+  async function ensureBeginBlueprintGenerationAllowed(
+    runId: number,
+    requestId: string,
+    documentAtStart: DocumentFile,
+    request: BeginBlueprintGenerationRequest,
+  ): Promise<boolean> {
+    const result = await handleBeginBlueprintGeneration(runId, requestId, documentAtStart, request)
+    return result.allowed && activeRunRef.current === runId
+  }
+
+  async function handleBeginGateAction(action: BeginBlueprintGenerationAction) {
+    if (!beginGate) return
+    setBeginGate((state) => state ? { ...state, busyAction: action, error: null } : state)
+    try {
+      if (action === 'cancelled') {
+        const cancelledRunId = beginGate.runId
+        if (running && activeRunRef.current === cancelledRunId) {
+          cancelRun()
+        } else {
+          resolveBeginBlueprintGate({
+            allowed: false,
+            action: 'cancelled',
+            canvasHadCircuit: beginGate.canvasDeviceCount > 0,
+            message: t('beginBlueprintCancelled'),
+          })
+        }
+        return
+      }
+
+      if (action === 'save_current_blueprint') {
+        if (!beginGate.selectedBlueprintId) {
+          throw new Error(t('beginBlueprintNoSelectedBlueprint'))
+        }
+        const updated = await useBlueprintStore.getState().replaceBlueprintFromDocument(beginGate.selectedBlueprintId, beginGate.document, {
+          notes: t('beginBlueprintSavedBeforeGeneration'),
+        })
+        if (!updated) {
+          throw new Error(t('beginBlueprintNoSelectedBlueprint'))
+        }
+        resolveBeginBlueprintGate({
+          allowed: true,
+          action,
+          canvasHadCircuit: true,
+          savedBlueprintId: updated.id,
+          savedBlueprintTitle: updated.title,
+          message: t('beginBlueprintSavedCurrentResult', { title: updated.title }),
+        })
+        return
+      }
+
+      if (action === 'save_new_blueprint') {
+        const snapshot = await useBlueprintStore.getState().createSnapshotFromDocument(beginGate.document, {
+          title: beginGate.title || beginGate.document.document.title,
+          description: t('beginBlueprintSavedSnapshotDescription'),
+        })
+        resolveBeginBlueprintGate({
+          allowed: true,
+          action,
+          canvasHadCircuit: true,
+          savedBlueprintId: snapshot.id,
+          savedBlueprintTitle: snapshot.title,
+          message: t('beginBlueprintSavedNewResult', { title: snapshot.title }),
+        })
+        return
+      }
+
+      resolveBeginBlueprintGate({
+        allowed: true,
+        action: 'continue_without_saving',
+        canvasHadCircuit: true,
+        message: t('beginBlueprintContinueWithoutSavingResult'),
+      })
+    } catch (error) {
+      setBeginGate((state) => state ? { ...state, busyAction: null, error: getErrorMessage(error) } : state)
+    }
   }
 
   function changeThread(threadId: string) {
@@ -735,8 +1092,19 @@ export function AgentPanel({
           </button>
         </div>
       </form>
+      {beginGate ? (
+        <BeginBlueprintGenerationDialog
+          gate={beginGate}
+          t={t}
+          onAction={(action) => void handleBeginGateAction(action)}
+        />
+      ) : null}
     </section>
   )
+}
+
+function liveDraftSessionIdForRun(runId: number): string {
+  return `agent-panel-${runId}`
 }
 
 function formatElapsed(elapsedMs: number): string {
@@ -868,6 +1236,83 @@ function AgentStatusBadge({ status, label }: { status: AgentRunState['status']; 
   )
 }
 
+function BeginBlueprintGenerationDialog({
+  gate,
+  t,
+  onAction,
+}: {
+  gate: BeginBlueprintGateState
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string
+  onAction: (action: BeginBlueprintGenerationAction) => void
+}) {
+  const busy = gate.busyAction !== null
+  return (
+    <ModalShell
+      rootClassName="agent-begin-blueprint-dialog__backdrop"
+      panelClassName="agent-begin-blueprint-dialog"
+      ariaLabelledBy="agent-begin-blueprint-dialog-title"
+      ariaDescribedBy="agent-begin-blueprint-dialog-description"
+      closeOnBackdrop={false}
+      closeOnEscape={false}
+      trapFocus
+      initialFocusSelector="button[data-modal-initial-focus]"
+    >
+      <div className="agent-begin-blueprint-dialog__header">
+        <div>
+          <h3 id="agent-begin-blueprint-dialog-title">{t('beginBlueprintGateTitle')}</h3>
+          <p id="agent-begin-blueprint-dialog-description">
+            {t('beginBlueprintGateDescription', { count: gate.canvasDeviceCount })}
+          </p>
+        </div>
+      </div>
+      {gate.intent ? (
+        <div className="agent-begin-blueprint-dialog__note">
+          <strong>{t('beginBlueprintIntent')}</strong>
+          <span>{gate.intent}</span>
+        </div>
+      ) : null}
+      {gate.error ? <p className="agent-begin-blueprint-dialog__error">{gate.error}</p> : null}
+      <div className="agent-begin-blueprint-dialog__actions">
+        <Button
+          type="button"
+          onClick={() => onAction('save_current_blueprint')}
+          disabled={busy || !gate.selectedBlueprintId}
+          title={!gate.selectedBlueprintId ? t('beginBlueprintNoSelectedBlueprint') : undefined}
+        >
+          {gate.busyAction === 'save_current_blueprint' ? t('saving') : t('beginBlueprintSaveCurrent')}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="ghost-button"
+          onClick={() => onAction('save_new_blueprint')}
+          disabled={busy}
+          data-modal-initial-focus
+        >
+          {gate.busyAction === 'save_new_blueprint' ? t('saving') : t('beginBlueprintSaveNew')}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="ghost-button"
+          onClick={() => onAction('continue_without_saving')}
+          disabled={busy}
+        >
+          {t('beginBlueprintContinueWithoutSaving')}
+        </Button>
+        <Button
+          type="button"
+          variant="danger"
+          onClick={() => onAction('cancelled')}
+          disabled={busy}
+        >
+          {t('beginBlueprintCancelGeneration')}
+        </Button>
+      </div>
+    </ModalShell>
+  )
+}
+
 function AgentMessageView({
   message,
   showToolDetailsLabel,
@@ -929,6 +1374,7 @@ async function runSelectedProvider(input: {
       status?: 'running' | 'success' | 'error'
     },
   ) => Promise<string[]>
+  beginBlueprintGeneration?: (request: BeginBlueprintGenerationRequest) => Promise<BeginBlueprintGenerationData>
   onProgress?: (event: AgentProviderProgressEvent) => void
 }): Promise<AgentResponseParseResult> {
   const { provider, modelId } = selectedProviderFromSettings()
@@ -975,6 +1421,7 @@ async function runSelectedProvider(input: {
         focusedNetworkLineId: state.focusedNetworkLineId,
       }
     },
+    beginBlueprintGeneration: input.beginBlueprintGeneration,
     createBlueprintCandidate: async (candidate) => {
       const latestEditor = useEditorStore.getState()
       if (latestEditor.document !== input.currentDocument || latestEditor.filePath !== input.filePath) {
@@ -1050,6 +1497,21 @@ function formatResponseMessage(
   }
 
   return response.message
+}
+
+function formatSuppressedBlueprintResponseMessage(
+  response: Extract<AgentResponse, { kind: 'blueprints' }>,
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string,
+): string {
+  const candidateLines = response.blueprints.map((candidate) => (
+    `- ${candidate.title}: ${candidate.issues.length} issue${candidate.issues.length === 1 ? '' : 's'}`
+  ))
+  return [
+    response.summary,
+    '',
+    t('liveDraftFinalStorageSkipped'),
+    ...candidateLines,
+  ].join('\n')
 }
 
 function formatToolTrace(toolTrace: AgentToolTraceEntry[], repairTrace: AgentRepairTraceEntry[]): string {

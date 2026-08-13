@@ -6,7 +6,7 @@ import {
   type AppSettingsStorage,
 } from '../lib/appSettings'
 import type { SecretStore } from '../lib/secretStore'
-import type { AgentCorrectnessReviewerConfig, AgentProviderPublicConfig, AppSettings } from '../types/settings'
+import type { AgentCorrectnessReviewerConfig, AgentProviderPublicConfig, AgentRuntimePreference, AppSettings } from '../types/settings'
 
 export interface SettingsState {
   settings: AppSettings
@@ -20,6 +20,7 @@ export interface SettingsState {
   clearProviderApiKey(providerId: string, storage?: AppSettingsStorage | null, secretStore?: Pick<SecretStore, 'deleteSecret'>): Promise<void>
   selectProvider(providerId: string | undefined, storage?: AppSettingsStorage | null): void
   selectModel(modelId: string | undefined, storage?: AppSettingsStorage | null): void
+  setAgentRuntime(runtime: AgentRuntimePreference, storage?: AppSettingsStorage | null): void
   setCorrectnessReviewer(reviewer: unknown, storage?: AppSettingsStorage | null): void
 }
 
@@ -67,7 +68,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const current = get().settings
     const providerResult = normalizeAppSettings({
       ...current,
-      agent: { providers: [provider] },
+      agent: { ...current.agent, providers: [provider] },
     })
     const normalizedProvider = providerResult.settings.agent.providers[0]
     if (normalizedProvider === undefined) {
@@ -90,6 +91,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const result = persistSettings({
       ...current,
       agent: {
+        runtime: current.agent.runtime,
         providers: nextProviders,
         selectedProviderId,
         selectedModelId,
@@ -108,6 +110,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const result = persistSettings({
       ...current,
       agent: {
+        runtime: current.agent.runtime,
         providers: nextProviders,
         selectedProviderId: current.agent.selectedProviderId,
         selectedModelId: current.agent.selectedModelId,
@@ -176,6 +179,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         ...current.agent,
         selectedModelId: modelId,
       },
+    }, storage)
+    set({ settings: result.settings, loaded: true, warnings: result.warnings })
+  },
+
+  setAgentRuntime: (runtime, storage = defaultStorage()) => {
+    const current = get().settings
+    const result = persistSettings({
+      ...current,
+      agent: { ...current.agent, runtime },
     }, storage)
     set({ settings: result.settings, loaded: true, warnings: result.warnings })
   },

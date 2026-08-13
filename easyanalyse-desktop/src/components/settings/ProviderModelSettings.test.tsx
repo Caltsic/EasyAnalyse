@@ -55,6 +55,26 @@ describe('ProviderModelSettings', () => {
     container.remove()
   })
 
+  it('switches between legacy and Pi runtimes without changing provider selection', async () => {
+    useSettingsStore.getState().replaceSettings({
+      agent: {
+        providers: [DEEPSEEK_PROVIDER_PRESET],
+        selectedProviderId: DEEPSEEK_PROVIDER_PRESET.id,
+        selectedModelId: DEEPSEEK_PROVIDER_PRESET.defaultModel,
+      },
+    }, null)
+
+    await act(async () => {
+      root.render(<ProviderModelSettings />)
+    })
+
+    expect(field(container, 'agentRuntime').value).toBe('legacy')
+    await changeField(container, 'agentRuntime', 'pi')
+    expect(useSettingsStore.getState().settings.agent.runtime).toBe('pi')
+    expect(useSettingsStore.getState().settings.agent.selectedProviderId).toBe('deepseek')
+    expect(useSettingsStore.getState().settings.agent.selectedModelId).toBe('deepseek-v4-flash')
+  })
+
   it('renders provider/model settings with masked secret status and no editable plaintext ref field', async () => {
     useSettingsStore.getState().replaceSettings({
       agent: {

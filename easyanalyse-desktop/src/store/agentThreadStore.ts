@@ -26,6 +26,7 @@ const TOOL_MESSAGE_STATUSES = new Set<AgentThreadToolMessageStatus>(['running', 
 export interface AgentThreadMessageOptions {
   threadId?: string
   title?: string
+  providerText?: string
 }
 
 export interface AgentThreadCandidateInsertionContext {
@@ -152,6 +153,7 @@ function normalizeAgentThreadMessage(value: unknown): AgentThreadMessage | null 
       role: 'assistant',
       createdAt,
       content: typeof value.content === 'string' ? value.content : '',
+      ...(typeof value.providerText === 'string' ? { providerText: value.providerText } : {}),
     }
   }
 
@@ -445,6 +447,7 @@ export const useAgentThreadStore = create<AgentThreadState>((set, get) => {
         role: 'assistant',
         createdAt: new Date().toISOString(),
         content,
+        ...(options?.providerText !== undefined ? { providerText: options.providerText } : {}),
       }
       return appendToThread(message, options) as AgentThreadAssistantMessage | null
     },

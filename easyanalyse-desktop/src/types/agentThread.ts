@@ -17,6 +17,8 @@ export interface AgentThreadUserMessage extends AgentThreadMessageBase {
 export interface AgentThreadAssistantMessage extends AgentThreadMessageBase {
   role: 'assistant'
   content: string
+  /** Original provider text retained for diagnostics/import; UI history uses content. */
+  providerText?: string
 }
 
 export interface AgentThreadToolMessage extends AgentThreadMessageBase {

@@ -228,4 +228,27 @@ describe('agentProviderClient M7 self-check and examples', () => {
     ]))
     expect(result.toolTrace?.some((entry) => entry.toolName === 'check_blueprint_candidate')).toBe(true)
   })
+
+  it('preserves the provider response when local self-check throws', async () => {
+    const document = createDocument({ x: 240, y: 10 })
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => (
+      new Response(JSON.stringify(body(responseFor(document))), { status: 200 })
+    ))
+
+    const result = await runConfiguredAgentProvider({
+      provider: { id: 'deepseek', name: 'DeepSeek', kind: 'deepseek', baseUrl: 'https://api.deepseek.test/v1', models: ['deepseek-chat'], defaultModel: 'deepseek-chat' },
+      modelId: 'deepseek-chat',
+      apiKey: ['sk', 'unit', 'key'].join('-'),
+      prompt: 'Preserve this candidate',
+      fetchImpl: fetchMock,
+      validateDocument: () => { throw new Error('local validation unavailable') },
+      selfCheck: { enabled: true, repairOnIssues: true, maxRepairAttempts: 1 },
+    })
+
+    expect(result.response.kind).toBe('blueprints')
+    expect(result.conversationText).toBe('candidate')
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.stringContaining('Local blueprint self-check failed; preserved the provider response'),
+    ]))
+  })
 })

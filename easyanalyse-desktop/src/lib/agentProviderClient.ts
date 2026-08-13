@@ -1,7 +1,13 @@
 import { selfCheckBlueprintCandidates } from './agentTools'
 import { selectAgentReferenceExamples, formatAgentReferenceExamplesForPrompt } from './agentExampleLibrary'
+import {
+  EASYANALYSE_BLUEPRINT_CANDIDATE_CONTRACT,
+  EASYANALYSE_LAYOUT_AUTHORING_RULES,
+  EASYANALYSE_SEMANTIC_V4_CONTRACT,
+} from './agentSemanticPrompt'
 import { runAnthropicProvider, type AnthropicFetch } from './anthropicProvider'
 import { checkAgentContextBudget, runProviderWithControls, type ProviderRetryOptions } from './agentProviderRuntime'
+import { getErrorMessage } from './errors'
 import {
   AgentProviderError,
   runOpenAiCompatibleProvider,
@@ -62,31 +68,6 @@ const DEFAULT_RETRY: ProviderRetryOptions = {
   maxAttempts: 1,
 }
 
-const EASYANALYSE_SEMANTIC_V4_CONTRACT = [
-  'Canonical EasyAnalyse semantic v4 contract:',
-  '- The persisted circuit format is semantic-first. It has devices, terminals, terminal labels, and view metadata. It never has wires, nodes, junctions, bend points, free terminal coordinates, terminal-label coordinates, signal objects, signalId, component wrappers, or port wrappers.',
-  '- Top-level DocumentFile shape is exactly { schemaVersion:"4.0.0", document:{...}, devices:[...], view:{...}, extensions? }. Required top-level fields are schemaVersion, document, devices, view.',
-  '- document metadata needs a stable non-empty id and title. source should be human, ai, mixed, or imported when present. Use language "zh-CN" when responding to Chinese circuit requests unless the user asks otherwise.',
-  '- Each device is one hardware block. Device id values are globally unique. Each device needs id, name, kind, terminals[]. reference is recommended. properties may contain value, voltage, outputVoltage, nominalVoltage, frequency, partNumber, package, topology.',
-  '- Resistors, capacitors, inductors, ferrite beads, and other value-bearing passives must carry properties.value. Crystals, oscillators, and resonators must carry properties.frequency. Supply/regulator/source devices should carry voltage/outputVoltage/nominalVoltage.',
-  '- Prefer canonical kinds: resistor, capacitor, electrolytic-capacitor, inductor, ferrite-bead, led, diode, flyback-diode, rectifier-diode, zener-diode, tvs-diode, nmos, pmos, npn-transistor, pnp-transistor, switch, push-button, crystal, oscillator, resonator, op-amp, controller, regulator, power-source, ground, connector, sensor, driver, transformer, relay, fuse, test-point.',
-  '- Terminal id values are globally unique. Every terminal needs id, name, direction, and usually label. Allowed direction values are only input and output. Optional side is left/right/top/bottom/auto; optional order keeps side order deterministic.',
-  '- Connectivity is defined only by exact terminal.label equality. If VIN appears on three terminals, those three terminals are connected. view.networkLines never create connectivity.',
-  '- For two-terminal passive devices, choose a readable signal flow: upstream terminal input, downstream terminal output, return-to-ground terminal output. Power entry pins and ground pins are usually input; regulated or driven rails are usually output.',
-  '- view.canvas.units must be "px". view.devices is keyed by device id. view.devices[deviceId].position is the top-left of the rendered device bounds, not its center. view.networkLines is keyed by visual line id.',
-  '- Built-in schematic templates are selected from devices[*].kind. Do not invent persisted shape names to express a package, role, polarity, or symbol variant. Package belongs in properties.package.',
-  '- The renderer can enlarge effective device bounds around labels and terminals. Leave clear space between devices and between visual rails and devices.',
-].join('\n')
-
-const EASYANALYSE_LAYOUT_AUTHORING_RULES = [
-  'Canonical layout rules:',
-  '- Use a wide grid for generated blueprints. A safe default is x=80,380,680,980,1280,1580 and y=96,320,544,768,992. Keep default rectangular devices at least 280 px apart horizontally and 180 px apart vertically.',
-  '- For op-amp stages, put input source and bias/filter parts to the left, the op-amp near the middle, feedback parts above or below the op-amp, output/load parts to the right, and supply/ground rails outside the active device row.',
-  '- For filters and cascaded amplifiers, use left-to-right stage order. Do not stack many devices at the same x/y. Split dense feedback networks onto separate rows.',
-  '- view.networkLines are optional visual rails for labels already used by terminals. Good rail positions are above the top device row, below the bottom device row, or to the outside of the device columns. Do not run a networkLine through a device rectangle. If a clean rail cannot be drawn, omit the networkLine.',
-  '- If a tool reports layout.device.overlap, prefer changing only view.devices positions. If it reports layout.network-line.device-overlap, prefer changing only that view.networkLines entry, or remove it if it is not essential. If it reports layout.text.device-overlap, increase spacing around the related terminal/network label or move the nearby device/rail.',
-].join('\n')
-
 export function buildAgentSystemPrompt(): string {
   return [
     'You are the EasyAnalyse desktop circuit blueprint agent.',
@@ -102,6 +83,7 @@ export function buildAgentSystemPrompt(): string {
     'When calling blueprint candidate tools, the arguments MUST be exactly shaped as {"candidate":{"title":"...","summary":"...","rationale":"...","tradeoffs":[],"document":{...},"issues":[]}}. Do not pass only a document, and do not put candidate fields at the tool argument top level.',
     EASYANALYSE_SEMANTIC_V4_CONTRACT,
     EASYANALYSE_LAYOUT_AUTHORING_RULES,
+    EASYANALYSE_BLUEPRINT_CANDIDATE_CONTRACT,
     'For kind "blueprints", the top-level "blueprints" property MUST be an array, even when returning exactly one candidate. Never use a singular "blueprint" object.',
     'Each candidate MUST include title, summary, rationale, tradeoffs array, complete document, and issues array. Use view.canvas.units "px".',
     'candidate.issues is for human-visible caveats and advisory validation/layout findings; it is not a substitute for fixing hard format errors from check_blueprint_format.',
@@ -244,7 +226,7 @@ export async function runConfiguredAgentProvider(input: RunConfiguredAgentProvid
     operation: async ({ signal, attempt }) => {
       emitProgress(input.progress, { phase: 'request', message: `Starting provider attempt ${attempt}.`, detail: { attempt } })
       const selfCheckOptions = input.selfCheck ?? { enabled: true, repairOnIssues: true, maxRepairAttempts: 1 }
-      const runOnce = async (nextUserPrompt: string): Promise<ProviderParseResult> => {
+      const runOnce = async (nextUserPrompt: string, allowArtifactWrites = true): Promise<ProviderParseResult> => {
         if (provider.kind === 'anthropic') {
           emitProgress(input.progress, { phase: 'request', message: 'Sending Anthropic provider request.' })
           const result = await runAnthropicProvider({
@@ -281,14 +263,31 @@ export async function runConfiguredAgentProvider(input: RunConfiguredAgentProvid
           userRequest: input.prompt,
           reviewCircuitCorrectness: input.reviewCircuitCorrectness,
           validateDocument: input.validateDocument,
-          createBlueprintCandidate: input.createBlueprintCandidate,
+          createBlueprintCandidate: allowArtifactWrites ? input.createBlueprintCandidate : undefined,
           toolExecutor: input.toolExecutor,
           progress: input.progress,
         })
       }
 
-      let checked = await applyPostProviderSelfCheck(await runOnce(userPrompt), selfCheckOptions, input.validateDocument, input.progress)
+      const initial = await runOnce(userPrompt)
+      let checked: ProviderParseResult
+      try {
+        checked = await applyPostProviderSelfCheck(initial, selfCheckOptions, input.validateDocument, input.progress)
+      } catch (error) {
+        checked = appendDiagnostic(
+          initial,
+          `Local blueprint self-check failed; preserved the provider response. ${getErrorMessage(error)}`,
+        )
+      }
       if (!selfCheckOptions.enabled || !selfCheckOptions.repairOnIssues || checked.response.kind !== 'blueprints') {
+        emitProgress(input.progress, { phase: 'complete', message: 'Agent provider run completed.', detail: { kind: checked.response.kind } })
+        return checked
+      }
+      if (checked.toolTrace?.some((entry) => entry.toolName === 'create_blueprint_candidate' && entry.ok)) {
+        checked = appendDiagnostic(
+          checked,
+          'Skipped post-provider Blueprint repair because create_blueprint_candidate already stored an artifact for this run.',
+        )
         emitProgress(input.progress, { phase: 'complete', message: 'Agent provider run completed.', detail: { kind: checked.response.kind } })
         return checked
       }
@@ -298,20 +297,74 @@ export async function runConfiguredAgentProvider(input: RunConfiguredAgentProvid
         if (!blueprintResponseHasSelfCheckIssues(checked)) break
         emitProgress(input.progress, { phase: 'repair', message: `Requesting self-check repair attempt ${attempt}.`, detail: { attempt } })
         const repairPrompt = buildSelfCheckRepairPrompt(input.prompt, checked)
-        const repaired = await applyPostProviderSelfCheck(await runOnce(repairPrompt), { ...selfCheckOptions, repairOnIssues: false }, input.validateDocument, input.progress)
+        let repaired: ProviderParseResult
+        try {
+          const repairResult = await runOnce(repairPrompt, false)
+          repaired = await applyPostProviderSelfCheck(
+            repairResult,
+            { ...selfCheckOptions, repairOnIssues: false },
+            input.validateDocument,
+            input.progress,
+          )
+        } catch (error) {
+          repairTrace.push({
+            attempt,
+            ok: false,
+            summary: 'Self-check repair attempt failed; the prior provider response was preserved.',
+          })
+          checked = appendDiagnostic(
+            { ...checked, repairTrace: [...(checked.repairTrace ?? []), ...repairTrace] },
+            `Self-check repair attempt ${attempt} failed; preserved the prior provider response. ${getErrorMessage(error)}`,
+          )
+          break
+        }
         const repairedOk = repaired.response.kind === 'blueprints' && !blueprintResponseHasSelfCheckIssues(repaired)
         repairTrace.push({
           attempt,
           ok: repairedOk,
-          summary: repairedOk ? 'Self-check repair attempt returned candidates without hard format issues.' : 'Self-check repair attempt returned candidates that still have hard format issues.',
+          summary: repairedOk
+            ? 'Self-check repair attempt returned candidates without hard format issues.'
+            : repaired.response.kind === 'blueprints'
+              ? 'Self-check repair attempt returned candidates that still have hard format issues; the prior candidates were preserved.'
+              : 'Self-check repair attempt returned no blueprint candidates; the prior candidates were preserved.',
         })
-        checked = { ...repaired, repairTrace: [...(repaired.repairTrace ?? []), ...repairTrace] }
-        if (repairedOk) break
+        if (repairedOk) {
+          checked = {
+            ...repaired,
+            rawText: joinProviderText(checked.rawText, repaired.rawText),
+            toolTrace: mergeToolTrace(checked.toolTrace, repaired.toolTrace),
+            diagnostics: [...(checked.diagnostics ?? []), ...(repaired.diagnostics ?? [])],
+            repairTrace: [...(repaired.repairTrace ?? []), ...repairTrace],
+          }
+          break
+        }
+        checked = appendDiagnostic(
+          { ...checked, repairTrace: [...(checked.repairTrace ?? []), ...repairTrace] },
+          repaired.response.kind === 'blueprints'
+            ? `Self-check repair attempt ${attempt} still had hard format issues; preserved the prior provider response.`
+            : `Self-check repair attempt ${attempt} returned ${repaired.response.kind}; preserved the prior blueprint response.`,
+        )
       }
       emitProgress(input.progress, { phase: 'complete', message: 'Agent provider run completed.', detail: { kind: checked.response.kind } })
       return checked
     },
   })
+}
+
+function appendDiagnostic(result: ProviderParseResult, message: string): ProviderParseResult {
+  return { ...result, diagnostics: [...(result.diagnostics ?? []), message] }
+}
+
+function mergeToolTrace(
+  initial: ProviderParseResult['toolTrace'],
+  repaired: ProviderParseResult['toolTrace'],
+): NonNullable<ProviderParseResult['toolTrace']> {
+  return [...(initial ?? []), ...(repaired ?? [])]
+}
+
+function joinProviderText(initial?: string, repaired?: string): string | undefined {
+  const values = [initial, repaired].filter((value): value is string => typeof value === 'string' && value.length > 0)
+  return values.length > 0 ? values.join('\n\n') : undefined
 }
 
 async function applyPostProviderSelfCheck(

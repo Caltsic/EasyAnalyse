@@ -66,6 +66,20 @@ beforeEach(() => {
 })
 
 describe('agentThreadStore', () => {
+  it('retains raw provider text on assistant messages without using it as visible content', async () => {
+    useBlueprintStore.setState({ workspace: await createWorkspaceForDocument() })
+    useAgentThreadStore.getState().ensureThread({ title: 'Raw provider thread' })
+    const message = useAgentThreadStore.getState().appendAssistantMessage('Visible answer', {
+      providerText: '  raw provider body\r\n',
+    })
+
+    expect(message).toMatchObject({
+      role: 'assistant',
+      content: 'Visible answer',
+      providerText: '  raw provider body\r\n',
+    })
+  })
+
   it('creates threads and persists messages in workspace.extensions.agentThreads for an unsaved workspace', async () => {
     useBlueprintStore.setState({
       workspace: await createWorkspaceForDocument(),

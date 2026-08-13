@@ -40,7 +40,7 @@ describe('app settings normalization', () => {
     expect(DEFAULT_APP_SETTINGS).toEqual({
       basic: { locale: 'system' },
       appearance: { theme: 'system' },
-      agent: { providers: [], correctnessReviewer: { mode: 'inherit-main' } },
+      agent: { runtime: 'legacy', providers: [], correctnessReviewer: { mode: 'inherit-main' } },
     })
     expect(normalizeAppSettings(undefined).settings).toEqual(DEFAULT_APP_SETTINGS)
   })
@@ -54,6 +54,7 @@ describe('app settings normalization', () => {
       appearance: { accentColor: 'pink' },
       basic: { locale: 'en-US', unknownBasicField: 'ignored' },
       agent: {
+        runtime: 'legacy',
         providers: [
           {
             id: 'deepseek-main',
@@ -78,6 +79,7 @@ describe('app settings normalization', () => {
       basic: { locale: 'en-US' },
       appearance: { theme: 'dark' },
       agent: {
+        runtime: 'legacy',
         providers: [
           {
             id: 'deepseek-main',
@@ -108,6 +110,7 @@ describe('app settings normalization', () => {
       basic: { locale: 'zh-CN' },
       appearance: { theme: 'light' },
       agent: {
+        runtime: 'legacy',
         providers: [
           {
             id: 'openai-like',
@@ -135,6 +138,7 @@ describe('app settings normalization', () => {
       basic: { locale: 'zh-CN' },
       appearance: { theme: 'light' },
       agent: {
+        runtime: 'legacy',
         providers: [
           {
             id: 'openai-like',
@@ -220,6 +224,14 @@ describe('app settings normalization', () => {
 
     expect(settings.basic).toEqual({ locale: 'system' })
     expect(warnings.some((warning) => warning.includes('basic.locale'))).toBe(true)
+  })
+
+  it('normalizes the Agent runtime feature flag and falls back to legacy', () => {
+    expect(normalizeAppSettings({ agent: { runtime: 'pi' } }).settings.agent.runtime).toBe('pi')
+
+    const invalid = normalizeAppSettings({ agent: { runtime: 'future-runtime' } })
+    expect(invalid.settings.agent.runtime).toBe('legacy')
+    expect(invalid.warnings).toContain('Ignored invalid agent.runtime; using legacy runtime.')
   })
 
   it('normalizes provider and model selection to existing public config', () => {

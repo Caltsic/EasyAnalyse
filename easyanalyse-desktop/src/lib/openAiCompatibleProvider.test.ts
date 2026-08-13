@@ -274,6 +274,77 @@ describe('openAiCompatibleProvider', () => {
     })
   })
 
+  it('preserves assistant text when a later tool-loop request fails', async () => {
+    const firstBody = {
+      id: 'chatcmpl-partial-before-tool',
+      choices: [{
+        index: 0,
+        finish_reason: 'tool_calls',
+        message: {
+          role: 'assistant',
+          content: 'The useful answer arrived before the next request failed.',
+          tool_calls: [{
+            id: 'call-current-document-partial',
+            type: 'function',
+            function: { name: 'get_current_document', arguments: '{}' },
+          }],
+        },
+      }],
+    }
+    let callCount = 0
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => {
+      if (callCount++ === 0) return jsonResponse(firstBody)
+      throw new Error('synthetic finalization network failure')
+    })
+
+    const result = await runOpenAiCompatibleProvider({
+      ...baseBuildInput(),
+      fetch: fetchMock,
+      currentDocument: createDocument(),
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(result.conversationStatus).toBe('partial')
+    expect(result.conversationText).toBe('The useful answer arrived before the next request failed.')
+    expect(result.response).toMatchObject({
+      kind: 'message',
+      markdown: 'The useful answer arrived before the next request failed.',
+    })
+    expect(result.diagnostics).toEqual(expect.arrayContaining([expect.stringContaining('preserved all received assistant text')]))
+  })
+
+  it('retains assistant text from successful tool-call turns in the final conversation', async () => {
+    const toolCallBody = {
+      id: 'chatcmpl-tool-with-text',
+      choices: [{
+        index: 0,
+        finish_reason: 'tool_calls',
+        message: {
+          role: 'assistant',
+          content: 'I will inspect the current document first.',
+          tool_calls: [{
+            id: 'call-current-document-with-text',
+            type: 'function',
+            function: { name: 'get_current_document', arguments: '{}' },
+          }],
+        },
+      }],
+    }
+    const finalBody = openAiChatBody(agentMessage('The final answer.'))
+    let callCount = 0
+    const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => jsonResponse(callCount++ === 0 ? toolCallBody : finalBody))
+
+    const result = await runOpenAiCompatibleProvider({
+      ...baseBuildInput(),
+      fetch: fetchMock,
+      currentDocument: createDocument(),
+    })
+
+    expect(result.conversationText).toBe('I will inspect the current document first.\n\nProvider message\n\nThe final answer.')
+    expect(result.rawText).toContain('I will inspect the current document first.')
+    expect(result.rawText).toContain('The final answer.')
+  })
+
   it('runs OpenAI-compatible tool calling loop and returns tool results to the model', async () => {
     const toolCallBody = {
       id: 'chatcmpl-tool',
@@ -476,7 +547,7 @@ describe('openAiCompatibleProvider', () => {
     expect(result.toolTrace).toEqual([expect.objectContaining({ toolName: 'check_blueprint_format', issueCount: 1 })])
   })
 
-  it('rejects final blueprints only when the final local hard format check still fails', async () => {
+  it('returns final blueprints with diagnostics when the final local hard format check still fails', async () => {
     const hardFormatToolCallBody = {
       id: 'chatcmpl-hard-format-still-failing',
       choices: [
@@ -513,17 +584,17 @@ describe('openAiCompatibleProvider', () => {
     let callCount = 0
     const fetchMock = vi.fn<OpenAiCompatibleFetch>(async () => jsonResponse(callCount++ === 0 ? hardFormatToolCallBody : finalBody))
 
-    await expect(
-      runOpenAiCompatibleProvider({
-        ...baseBuildInput(),
-        fetch: fetchMock,
-        currentDocument: createDocument(),
-        maxToolIterations: 1,
-      }),
-    ).rejects.toMatchObject({
-      code: 'AGENT_PROVIDER_PROTOCOL_ERROR',
-      message: expect.stringContaining('final blueprint hard format check still found'),
+    const result = await runOpenAiCompatibleProvider({
+      ...baseBuildInput(),
+      fetch: fetchMock,
+      currentDocument: createDocument(),
+      maxToolIterations: 1,
     })
+
+    expect(result.response.kind).toBe('blueprints')
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.stringContaining('final blueprint hard format check still found'),
+    ]))
   })
 
   it('lets the model revise and check again after tool issues before final blueprints', async () => {
@@ -935,7 +1006,7 @@ describe('openAiCompatibleProvider', () => {
     expectNoApiKey(result.metadata)
   })
 
-  it('accepts prose before a single trailing AgentResponse JSON object but rejects text after it', () => {
+  it('accepts prose around structured output without erasing received text', () => {
     const response = agentMessage('Trailing JSON accepted')
     const prefixed = openAiChatBody(`Here is the final JSON:\n${JSON.stringify(response)}`)
     expect(parseOpenAiCompatibleResponse({ responseBody: prefixed }).response).toMatchObject({ kind: 'message', markdown: 'Trailing JSON accepted' })
@@ -943,11 +1014,13 @@ describe('openAiCompatibleProvider', () => {
     const fenced = openAiChatBody(`\`\`\`json\n${JSON.stringify(response)}\n\`\`\``)
     expect(parseOpenAiCompatibleResponse({ responseBody: fenced }).response).toMatchObject({ kind: 'message', markdown: 'Trailing JSON accepted' })
 
-    const suffixed = openAiChatBody(`${JSON.stringify(response)}\nThis extra explanation should keep the response invalid.`)
-    expect(() => parseOpenAiCompatibleResponse({ responseBody: suffixed })).toThrow(/invalid AgentResponse/i)
+    const suffixedText = `${JSON.stringify(response)}\nThis extra explanation remains visible.`
+    const suffixed = parseOpenAiCompatibleResponse({ responseBody: openAiChatBody(suffixedText) })
+    expect(suffixed.response).toMatchObject({ kind: 'message', markdown: suffixedText })
+    expect(suffixed.diagnostics).toEqual(expect.arrayContaining([expect.stringContaining('preserved the provider text')]))
   })
 
-  it('parses non-JSON assistant prose as a plain message but still rejects malformed JSON attempts', () => {
+  it('parses non-JSON assistant prose and preserves malformed JSON attempts', () => {
     expect(parseOpenAiCompatibleResponse({ responseBody: openAiChatBody('你好，需要我帮你检查电路吗？') }).response).toMatchObject({
       kind: 'message',
       markdown: '你好，需要我帮你检查电路吗？',
@@ -965,8 +1038,31 @@ describe('openAiCompatibleProvider', () => {
       markdown: '你好，我在。',
     })
 
-    expect(() => parseOpenAiCompatibleResponse({ responseBody: openAiChatBody('{"schemaVersion":"agent-response-v1"') }))
-      .toThrow(/invalid AgentResponse/i)
+    const malformed = '{"schemaVersion":"agent-response-v1"'
+    expect(parseOpenAiCompatibleResponse({ responseBody: openAiChatBody(malformed) })).toMatchObject({
+      response: { kind: 'message', markdown: malformed },
+      conversationText: malformed,
+    })
+  })
+
+  it('preserves text from multipart OpenAI-compatible assistant content', () => {
+    const result = parseOpenAiCompatibleResponse({
+      responseBody: openAiChatBody('unused'),
+    })
+    const multipartBody = openAiChatBody('unused')
+    multipartBody.choices[0].message.content = [
+      { type: 'text', text: 'first part' },
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,x' } },
+      { type: 'text', text: ' and second part' },
+    ] as unknown as string
+
+    const multipart = parseOpenAiCompatibleResponse({ responseBody: multipartBody })
+    expect(result.response.kind).toBe('message')
+    expect(multipart).toMatchObject({
+      conversationText: 'first part and second part',
+      response: { kind: 'message', markdown: 'first part and second part' },
+    })
+    expect(multipart.diagnostics).toEqual(expect.arrayContaining([expect.stringContaining('unsupported OpenAI-compatible')]))
   })
 
   it('reports missing or empty choices/content as readable protocol errors without mutating the main document', () => {
@@ -1083,7 +1179,7 @@ describe('openAiCompatibleProvider', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled()
   })
 
-  it('maps invalid HTTP JSON, protocol issues, and AgentResponse schema failures to parse/schema errors', async () => {
+  it('maps invalid HTTP JSON and protocol issues to errors while preserving AgentResponse schema failures as text', async () => {
     const invalidJsonFetch = vi.fn<OpenAiCompatibleFetch>(
       async () => new Response(`{ "error": "not-json", "apiKey": "${apiKey}"`, { status: 200 }),
     )
@@ -1108,10 +1204,9 @@ describe('openAiCompatibleProvider', () => {
         }),
       ),
     )
-    await expect(runOpenAiCompatibleProvider({ ...baseBuildInput(), fetch: schemaFailureFetch })).rejects.toMatchObject({
-      code: 'AGENT_PROVIDER_SCHEMA_ERROR',
-      retryable: false,
-    })
+    const schemaFailure = await runOpenAiCompatibleProvider({ ...baseBuildInput(), fetch: schemaFailureFetch })
+    expect(schemaFailure.response).toMatchObject({ kind: 'message', markdown: expect.stringContaining('agent-response-v0') })
+    expect(schemaFailure.diagnostics).toEqual(expect.arrayContaining([expect.stringContaining('Unsupported AgentResponse schemaVersion')]))
 
     await expect(
       runOpenAiCompatibleProvider({

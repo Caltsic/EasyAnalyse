@@ -3,6 +3,7 @@ export type AppThemeMode = 'system' | 'light' | 'dark'
 export type AppLocalePreference = 'system' | 'zh-CN' | 'en-US'
 
 export type AgentProviderKind = 'openai-compatible' | 'anthropic' | 'deepseek'
+export type AgentRuntimePreference = 'legacy' | 'pi'
 
 export interface AgentProviderPublicConfig {
   id: string
@@ -30,6 +31,7 @@ export interface AppSettings {
     theme: AppThemeMode
   }
   agent: {
+    runtime: AgentRuntimePreference
     providers: AgentProviderPublicConfig[]
     selectedProviderId?: string
     selectedModelId?: string

@@ -3,6 +3,7 @@ import type {
   AgentCorrectnessReviewerConfig,
   AgentProviderKind,
   AgentProviderPublicConfig,
+  AgentRuntimePreference,
   AppLocalePreference,
   AppSettings,
   AppThemeMode,
@@ -13,7 +14,7 @@ export const APP_SETTINGS_STORAGE_KEY = 'easyanalyse.appSettings.v1'
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   basic: { locale: 'system' },
   appearance: { theme: 'system' },
-  agent: { providers: [], correctnessReviewer: { mode: 'inherit-main' } },
+  agent: { runtime: 'legacy', providers: [], correctnessReviewer: { mode: 'inherit-main' } },
 }
 
 export interface AppSettingsNormalizationResult {
@@ -30,6 +31,7 @@ export interface AppSettingsStorage {
 const VALID_THEMES = new Set<AppThemeMode>(['system', 'light', 'dark'])
 const VALID_LOCALES = new Set<AppLocalePreference>(['system', 'zh-CN', 'en-US'])
 const VALID_PROVIDER_KINDS = new Set<AgentProviderKind>(['openai-compatible', 'anthropic', 'deepseek'])
+const VALID_AGENT_RUNTIMES = new Set<AgentRuntimePreference>(['legacy', 'pi'])
 
 function nonEmptyString(value: unknown): string | undefined {
   if (typeof value !== 'string') {
@@ -195,6 +197,17 @@ function normalizeProviders(input: unknown, warnings: string[]): AgentProviderPu
   return providers
 }
 
+function normalizeAgentRuntime(input: unknown, warnings: string[]): AgentRuntimePreference {
+  const agentInput = isRecord(input) && isRecord(input.agent) ? input.agent : {}
+  if (typeof agentInput.runtime === 'string' && VALID_AGENT_RUNTIMES.has(agentInput.runtime as AgentRuntimePreference)) {
+    return agentInput.runtime as AgentRuntimePreference
+  }
+  if (agentInput.runtime !== undefined) {
+    warnings.push('Ignored invalid agent.runtime; using legacy runtime.')
+  }
+  return DEFAULT_APP_SETTINGS.agent.runtime
+}
+
 function normalizeSelection(input: unknown, providers: AgentProviderPublicConfig[], warnings: string[]): Pick<AppSettings['agent'], 'selectedProviderId' | 'selectedModelId'> {
   if (providers.length === 0) {
     return {}
@@ -278,6 +291,7 @@ export function normalizeAppSettings(input: unknown): AppSettingsNormalizationRe
   const locale = normalizeLocale(input, warnings)
   const theme = normalizeTheme(input, warnings)
   const providers = normalizeProviders(input, warnings)
+  const runtime = normalizeAgentRuntime(input, warnings)
   const selection = normalizeSelection(input, providers, warnings)
   const correctnessReviewer = normalizeCorrectnessReviewer(input, providers, warnings)
 
@@ -286,6 +300,7 @@ export function normalizeAppSettings(input: unknown): AppSettingsNormalizationRe
       basic: { locale },
       appearance: { theme },
       agent: {
+        runtime,
         providers,
         ...selection,
         correctnessReviewer,

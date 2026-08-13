@@ -17,6 +17,8 @@
     "tauri:build": "node scripts/close-running-app.mjs && tauri build"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "0.84.1",
+    "@earendil-works/pi-ai": "0.84.1",
     "@fontsource/cormorant-garamond": "^5.2.11",
     "@fontsource/manrope": "^5.2.8",
     "@tauri-apps/api": "^2.10.1",

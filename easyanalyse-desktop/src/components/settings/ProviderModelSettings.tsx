@@ -86,6 +86,7 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
   const clearProviderApiKey = useSettingsStore((state) => state.clearProviderApiKey)
   const selectProvider = useSettingsStore((state) => state.selectProvider)
   const selectModel = useSettingsStore((state) => state.selectModel)
+  const setAgentRuntime = useSettingsStore((state) => state.setAgentRuntime)
   const setCorrectnessReviewer = useSettingsStore((state) => state.setCorrectnessReviewer)
   const [draft, setDraft] = useState<ProviderDraft>(EMPTY_DRAFT)
   const [secretStatus, setSecretStatus] = useState<SecretStoreSecurityStatus | null>(null)
@@ -269,6 +270,18 @@ export function ProviderModelSettings({ secretStore = defaultSecretStore }: Prov
       {operationError && <div className="settings-panel__warnings" role="alert"><p>{operationError}</p></div>}
 
       <div className="settings-panel__section">
+        <label>
+          {t('agentRuntime')}
+          <select
+            name="agentRuntime"
+            value={settings.agent.runtime}
+            onChange={(event) => setAgentRuntime(event.target.value === 'pi' ? 'pi' : 'legacy')}
+          >
+            <option value="legacy">{t('agentRuntimeLegacy')}</option>
+            <option value="pi">{t('agentRuntimePi')}</option>
+          </select>
+        </label>
+
         <label>
           {t('activeProvider')}
           <select

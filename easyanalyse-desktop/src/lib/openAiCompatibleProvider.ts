@@ -1,4 +1,4 @@
-import { AGENT_RESPONSE_SCHEMA_VERSION, AGENT_RESPONSE_SEMANTIC_VERSION, parseAgentResponse } from './agentResponse'
+import { extractAgentResponseText } from './agentResponseText'
 import { getAgentToolSchemas, runAgentTool } from './agentTools'
 import { getErrorMessage as errorMessage } from './errors'
 import { isRecord } from './guards'
@@ -88,6 +88,10 @@ export interface ProviderParseInput {
 
 export interface ProviderParseResult extends AgentResponseParseResult {
   metadata: ProviderResponseMetadata
+  rawText?: string
+  conversationText?: string
+  conversationStatus?: 'complete' | 'partial'
+  diagnostics?: string[]
   toolTrace?: AgentToolTraceEntry[]
   repairTrace?: import('../types/agentTools').AgentRepairTraceEntry[]
 }
@@ -272,34 +276,11 @@ export function buildOpenAiCompatiblePayload(input: ProviderBuildInput): Provide
 export function parseOpenAiCompatibleResponse(input: ProviderParseInput): ProviderParseResult {
   const root = parseOpenAiRoot(input.responseBody, input)
   const firstChoice = getFirstChoice(root, input)
-  const content = getAssistantContent(firstChoice, input)
+  const extracted = getAssistantContent(firstChoice, input)
   const metadata = buildResponseMetadata(root, firstChoice, input)
 
-  try {
-    const parsed = parseAgentResponse(content, { mainDocument: input.mainDocument ?? null })
-    return { ...parsed, metadata }
-  } catch (error) {
-    const fenced = parseFencedAgentResponse(content, input)
-    if (fenced) return { ...fenced, metadata }
-    const embedded = parseTrailingAgentResponse(content, input)
-    if (embedded) return { ...embedded, metadata }
-    const lenientMessage = parseLenientAgentMessage(content)
-    if (lenientMessage) return { ...lenientMessage, metadata }
-    const plainText = parsePlainTextAgentMessage(content)
-    if (plainText) return { ...plainText, metadata }
-    const message = errorMessage(error)
-    const code: AgentProviderErrorCode = /json/i.test(message)
-      ? 'AGENT_PROVIDER_PARSE_ERROR'
-      : 'AGENT_PROVIDER_SCHEMA_ERROR'
-    throw createError({
-      code,
-      message: `OpenAI-compatible provider returned an invalid AgentResponse: ${message}`,
-      retryable: false,
-      status: input.status,
-      provider: input.provider,
-      model: input.model,
-    })
-  }
+  const parsed = extractAgentResponseText(extracted.text, { mainDocument: input.mainDocument ?? null })
+  return { ...parsed, metadata, diagnostics: [...parsed.diagnostics, ...extracted.diagnostics] }
 }
 
 export async function runOpenAiCompatibleProvider(input: OpenAiCompatibleRunInput): Promise<ProviderParseResult> {
@@ -342,6 +323,9 @@ export async function runOpenAiCompatibleProvider(input: OpenAiCompatibleRunInpu
   let finalizationAttempts = 0
   let lastHardFormatIssueCount: number | null = null
   const replayReasoningContent = shouldReplayReasoningContent(input.provider, input.model)
+  const receivedAssistantTexts: string[] = []
+  const receivedContentDiagnostics: string[] = []
+  let lastResponseMetadata: ProviderResponseMetadata | undefined
 
   for (let step = 0; step <= maxToolIterations + MAX_FINALIZATION_ATTEMPTS; step += 1) {
     const allowTools = toolIterations < maxToolIterations && finalizationAttempts === 0
@@ -371,14 +355,33 @@ export async function runOpenAiCompatibleProvider(input: OpenAiCompatibleRunInpu
         : `Sending final JSON request ${step + 1}.`,
       detail: { step: step + 1, toolsEnabled: allowTools, toolIterations, finalizationAttempts },
     })
-    const response = await performOpenAiRequest(input, request)
-    const root = parseOpenAiRoot(response.body, { responseBody: response.body, provider: input.provider, model: input.model, status: response.status })
-    const choice = getFirstChoice(root, { responseBody: response.body, provider: input.provider, model: input.model, status: response.status })
+    let response: Awaited<ReturnType<typeof performOpenAiRequest>>
+    let root: JsonRecord
+    let choice: JsonRecord
+    try {
+      response = await performOpenAiRequest(input, request)
+      root = parseOpenAiRoot(response.body, { responseBody: response.body, provider: input.provider, model: input.model, status: response.status })
+      choice = getFirstChoice(root, { responseBody: response.body, provider: input.provider, model: input.model, status: response.status })
+      lastResponseMetadata = buildResponseMetadata(root, choice, {
+        responseBody: response.body,
+        provider: input.provider,
+        model: input.model,
+        status: response.status,
+      })
+    } catch (error) {
+      const fallback = buildReceivedTextFallback(receivedAssistantTexts, error, input, toolTrace, lastResponseMetadata)
+      if (fallback) return fallback
+      throw error
+    }
     const assistantMessage = isRecord(choice.message) ? choice.message : null
+    const assistantContent = assistantMessage ? extractAssistantContent(assistantMessage.content) : { text: '', diagnostics: [] }
+    const assistantText = assistantContent.text.trim()
+    if (assistantText) receivedAssistantTexts.push(assistantText)
+    receivedContentDiagnostics.push(...assistantContent.diagnostics)
     const toolCalls = Array.isArray(assistantMessage?.tool_calls) ? assistantMessage.tool_calls : []
     emitProgress(input.progress, describeOpenAiResponseProgress(choice, assistantMessage, toolCalls, response.status))
     if (toolCalls.length > 0 && !allowTools) {
-      throw createError({
+      const error = createError({
         code: 'AGENT_PROVIDER_PROTOCOL_ERROR',
         message: `OpenAI-compatible provider requested tool calls after the configured tool iteration limit (${maxToolIterations}). Increase the limit or ask for a simpler blueprint.`,
         retryable: false,
@@ -386,6 +389,9 @@ export async function runOpenAiCompatibleProvider(input: OpenAiCompatibleRunInpu
         provider: input.provider,
         model: input.model,
       })
+      const fallback = buildReceivedTextFallback(receivedAssistantTexts, error, input, toolTrace, lastResponseMetadata)
+      if (fallback) return fallback
+      throw error
     }
     if (toolCalls.length > 0) {
       messages.push(buildAssistantReplayMessage(assistantMessage, {
@@ -473,7 +479,7 @@ export async function runOpenAiCompatibleProvider(input: OpenAiCompatibleRunInpu
         continue
       }
       if (hasMissingAssistantContent(assistantMessage)) {
-        throw createError({
+        const error = createError({
           code: 'AGENT_PROVIDER_PROTOCOL_ERROR',
           message: `OpenAI-compatible provider did not return final AgentResponse content after ${MAX_FINALIZATION_ATTEMPTS} finalization attempt(s). ${describeAssistantContentState(assistantMessage, choice)}`,
           retryable: false,
@@ -481,27 +487,88 @@ export async function runOpenAiCompatibleProvider(input: OpenAiCompatibleRunInpu
           provider: input.provider,
           model: input.model,
         })
+        const fallback = buildReceivedTextFallback(receivedAssistantTexts, error, input, toolTrace, lastResponseMetadata)
+        if (fallback) return fallback
+        throw error
       }
+      const fallback = buildReceivedTextFallback(receivedAssistantTexts, error, input, toolTrace, lastResponseMetadata)
+      if (fallback) return fallback
       throw error
     }
-    await assertNoKnownHardFormatFailure(parsed, {
+    const finalHardFormatDiagnostics = await collectKnownHardFormatFailureDiagnostics(parsed, {
       lastHardFormatIssueCount,
       status: response.status,
       provider: input.provider,
       model: input.model,
       input,
     })
-    emitProgress(input.progress, { phase: 'complete', message: 'Provider returned a valid AgentResponse.', detail: { kind: parsed.response.kind } })
-    return { ...parsed, toolTrace }
+    emitProgress(input.progress, { phase: 'complete', message: 'Provider response completed.', detail: { kind: parsed.response.kind } })
+    return {
+      ...parsed,
+      rawText: receivedAssistantTexts.length > 1 ? receivedAssistantTexts.join('\n\n') : parsed.rawText,
+      conversationText: mergeVisibleAssistantTexts(receivedAssistantTexts, parsed.conversationText ?? ''),
+      diagnostics: uniqueDiagnostics([
+        ...(parsed.diagnostics ?? []),
+        ...receivedContentDiagnostics,
+        ...finalHardFormatDiagnostics,
+      ]),
+      toolTrace,
+    }
   }
 
-  throw createError({
+  const error = createError({
     code: 'AGENT_PROVIDER_PROTOCOL_ERROR',
     message: 'OpenAI-compatible provider did not return final AgentResponse content after tool calling iterations.',
     retryable: false,
     provider: input.provider,
     model: input.model,
   })
+  const fallback = buildReceivedTextFallback(receivedAssistantTexts, error, input, toolTrace, lastResponseMetadata)
+  if (fallback) return fallback
+  throw error
+}
+
+function uniqueDiagnostics(messages: string[]): string[] {
+  return [...new Set(messages.filter(Boolean))]
+}
+
+function buildReceivedTextFallback(
+  receivedAssistantTexts: string[],
+  error: unknown,
+  input: OpenAiCompatibleRunInput,
+  toolTrace: AgentToolTraceEntry[],
+  metadata?: ProviderResponseMetadata,
+): ProviderParseResult | null {
+  const text = receivedAssistantTexts.filter((item) => item.trim()).join('\n\n').trim()
+  if (!text) return null
+  const message = errorMessage(error)
+  emitProgress(input.progress, {
+    phase: 'complete',
+    message: 'Provider run ended after returning assistant text; preserving the received text as a partial response.',
+    detail: { partial: true, error: message },
+  })
+  return {
+    ok: true,
+    response: {
+      schemaVersion: 'agent-response-v1',
+      semanticVersion: 'easyanalyse-semantic-v4',
+      kind: 'message',
+      summary: 'Partial provider response',
+      markdown: text,
+    },
+    issues: [],
+    metadata: metadata ?? {
+      adapterId: OPENAI_COMPATIBLE_ADAPTER_ID,
+      requestFormat: OPENAI_CHAT_COMPLETIONS_REQUEST_FORMAT,
+      providerId: input.provider.id,
+      modelId: input.model.id,
+    },
+    rawText: text,
+    conversationText: text,
+    conversationStatus: 'partial',
+    diagnostics: [`Provider execution did not finish normally; preserved all received assistant text. ${message}`],
+    toolTrace,
+  }
 }
 
 function applyOpenAiCompatibleGenerationOptions(
@@ -547,6 +614,8 @@ function buildToolRuntimeContext(input: OpenAiCompatibleRunInput): AgentToolRunt
     ...(input.getCurrentSelection ? { getCurrentSelection: input.getCurrentSelection } : {}),
     ...(input.getEditorFocus ? { getEditorFocus: input.getEditorFocus } : {}),
     ...(input.getEasyAnalyseFormatRules ? { getEasyAnalyseFormatRules: input.getEasyAnalyseFormatRules } : {}),
+    ...(input.userRequest !== undefined ? { userRequest: input.userRequest } : {}),
+    ...(input.reviewCircuitCorrectness ? { reviewCircuitCorrectness: input.reviewCircuitCorrectness } : {}),
     ...(input.validateDocument ? { validateDocument: input.validateDocument } : {}),
     ...(input.createBlueprintCandidate ? { createBlueprintCandidate: input.createBlueprintCandidate } : {}),
   }
@@ -789,7 +858,7 @@ function oneLine(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
 }
 
-async function assertNoKnownHardFormatFailure(
+async function collectKnownHardFormatFailureDiagnostics(
   parsed: ProviderParseResult,
   state: {
     lastHardFormatIssueCount: number | null
@@ -798,25 +867,18 @@ async function assertNoKnownHardFormatFailure(
     model: AgentModelConfig
     input: OpenAiCompatibleRunInput
   },
-): Promise<void> {
-  if (parsed.response.kind !== 'blueprints' || state.lastHardFormatIssueCount === null || state.lastHardFormatIssueCount === 0) return
+): Promise<string[]> {
+  if (parsed.response.kind !== 'blueprints' || state.lastHardFormatIssueCount === null || state.lastHardFormatIssueCount === 0) return []
   const finalHardFormatIssues = await collectFinalBlueprintHardFormatIssues(parsed, state.input)
-  if (finalHardFormatIssues.length === 0) return
+  if (finalHardFormatIssues.length === 0) return []
 
   const issueSummary = summarizeIssueCodes(finalHardFormatIssues)
   const issueLines = finalHardFormatIssues.slice(0, 8).map(formatIssueLine)
-  throw createError({
-    code: 'AGENT_PROVIDER_PROTOCOL_ERROR',
-    message: [
+  return [[
       `OpenAI-compatible provider returned blueprints after a hard format tool reported ${state.lastHardFormatIssueCount} unresolved issue(s), and the final blueprint hard format check still found ${finalHardFormatIssues.length} issue(s).`,
       issueSummary ? `Issue groups: ${issueSummary}.` : '',
       issueLines.length > 0 ? `First issues: ${issueLines.join(' | ')}` : '',
-    ].filter(Boolean).join(' '),
-    retryable: false,
-    status: state.status,
-    provider: state.provider,
-    model: state.model,
-  })
+    ].filter(Boolean).join(' ')]
 }
 
 async function collectFinalBlueprintHardFormatIssues(
@@ -955,177 +1017,6 @@ function parseToolArguments(value: string): { ok: true; value: unknown } | { ok:
   }
 }
 
-function parseFencedAgentResponse(text: string, input: ProviderParseInput): AgentResponseParseResult | null {
-  const match = text.trim().match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
-  if (!match) return null
-  try {
-    return parseAgentResponse(match[1]!.trim(), { mainDocument: input.mainDocument ?? null })
-  } catch {
-    return null
-  }
-}
-
-function parseTrailingAgentResponse(text: string, input: ProviderParseInput): AgentResponseParseResult | null {
-  const trimmedEnd = text.trimEnd().length
-  for (let start = text.lastIndexOf('{'); start >= 0;) {
-    const candidate = extractJsonObjectStringAt(text, start)
-    if (candidate) {
-      const end = start + candidate.length
-      if (end === trimmedEnd) {
-        try {
-          return parseAgentResponse(candidate, { mainDocument: input.mainDocument ?? null })
-        } catch {
-          return null
-        }
-      }
-    }
-    if (start === 0) break
-    start = text.lastIndexOf('{', start - 1)
-  }
-  return null
-}
-
-function parseLenientAgentMessage(text: string): AgentResponseParseResult | null {
-  const root = parseLooseJsonObject(text)
-  if (!root) return null
-
-  const kind = typeof root.kind === 'string' ? root.kind : undefined
-  if (kind === 'blueprints' || Array.isArray(root.blueprints)) return null
-  if (kind !== undefined && kind !== 'message' && kind !== 'question' && kind !== 'error') return null
-  if (typeof root.schemaVersion === 'string' && root.schemaVersion !== AGENT_RESPONSE_SCHEMA_VERSION) return null
-  if (typeof root.semanticVersion === 'string' && root.semanticVersion !== AGENT_RESPONSE_SEMANTIC_VERSION) return null
-
-  const markdown = extractMessageText(root)
-  if (!markdown) return null
-
-  return {
-    ok: true,
-    response: {
-      schemaVersion: AGENT_RESPONSE_SCHEMA_VERSION,
-      semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
-      kind: 'message',
-      ...(typeof root.summary === 'string' && root.summary.trim() ? { summary: root.summary.trim() } : { summary: 'Provider message' }),
-      markdown,
-    },
-    issues: [],
-  }
-}
-
-function parseLooseJsonObject(text: string): JsonRecord | null {
-  const trimmed = text.trim()
-  if (!trimmed.startsWith('{')) return null
-
-  try {
-    const parsed = JSON.parse(trimmed)
-    return isRecord(parsed) ? parsed : null
-  } catch {
-    return null
-  }
-}
-
-function extractMessageText(root: JsonRecord): string | null {
-  const direct = [
-    root.markdown,
-    root.message,
-    root.content,
-    root.text,
-    root.answer,
-    root.response,
-    root.summary,
-  ].map(stringFromMessageValue).find((value): value is string => value !== null)
-  if (direct) return direct
-
-  if (root.kind === 'question') return stringFromMessageValue(root.question)
-  if (root.kind === 'error') return stringFromMessageValue(root.message)
-  return null
-}
-
-function stringFromMessageValue(value: unknown): string | null {
-  if (typeof value === 'string') {
-    const trimmed = value.trim()
-    return trimmed.length > 0 ? trimmed : null
-  }
-
-  if (Array.isArray(value)) {
-    const parts = value.map(stringFromMessageValue).filter((part): part is string => part !== null)
-    return parts.length > 0 ? parts.join('\n') : null
-  }
-
-  if (isRecord(value)) {
-    const nested = [
-      value.markdown,
-      value.message,
-      value.content,
-      value.text,
-      value.answer,
-      value.response,
-      value.summary,
-    ].map(stringFromMessageValue).find((part): part is string => part !== null)
-    if (nested) return nested
-
-    const serialized = safeStringify(value)
-    return serialized && serialized !== '{}' ? serialized : null
-  }
-
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-  return null
-}
-
-function parsePlainTextAgentMessage(text: string): AgentResponseParseResult | null {
-  const markdown = text.trim()
-  if (!markdown || looksLikeAgentResponseAttempt(markdown)) return null
-
-  return {
-    ok: true,
-    response: {
-      schemaVersion: AGENT_RESPONSE_SCHEMA_VERSION,
-      semanticVersion: AGENT_RESPONSE_SEMANTIC_VERSION,
-      kind: 'message',
-      summary: 'Provider message',
-      markdown,
-    },
-    issues: [],
-  }
-}
-
-function looksLikeAgentResponseAttempt(text: string): boolean {
-  const trimmed = text.trimStart()
-  return trimmed.startsWith('{')
-    || trimmed.startsWith('[')
-    || trimmed.startsWith('```')
-    || text.includes(AGENT_RESPONSE_SCHEMA_VERSION)
-    || text.includes('"schemaVersion"')
-    || text.includes("'schemaVersion'")
-}
-
-function extractJsonObjectStringAt(text: string, start: number): string | null {
-  let depth = 0
-  let inString = false
-  let escaped = false
-  for (let index = start; index < text.length; index += 1) {
-    const char = text[index]
-    if (escaped) {
-      escaped = false
-      continue
-    }
-    if (char === '\\') {
-      escaped = true
-      continue
-    }
-    if (char === '"') {
-      inString = !inString
-      continue
-    }
-    if (inString) continue
-    if (char === '{') depth += 1
-    if (char === '}') {
-      depth -= 1
-      if (depth === 0) return text.slice(start, index + 1)
-    }
-  }
-  return null
-}
-
 export function supportsOpenAiCompatibleProvider(config: AgentProviderConfig, model: AgentModelConfig): boolean {
   if (config.kind !== 'openai-compatible' && config.kind !== 'deepseek') return false
   const baseUrl = config.baseUrl.trim()
@@ -1180,15 +1071,46 @@ function getFirstChoice(root: JsonRecord, input: ProviderParseInput): JsonRecord
   return firstChoice
 }
 
-function getAssistantContent(choice: JsonRecord, input: ProviderParseInput): string {
+function getAssistantContent(choice: JsonRecord, input: ProviderParseInput): { text: string; diagnostics: string[] } {
   if (!isRecord(choice.message)) {
     throw protocolError('OpenAI-compatible provider response did not include choices[0].message.content.', input)
   }
-  const content = choice.message.content
-  if (typeof content !== 'string' || content.trim().length === 0) {
+  const extracted = extractAssistantContent(choice.message.content)
+  if (!extracted.text.trim()) {
     throw protocolError('OpenAI-compatible provider response did not include a non-empty choices[0].message.content string.', input)
   }
-  return content
+  return extracted
+}
+
+function extractAssistantContent(content: unknown): { text: string; diagnostics: string[] } {
+  if (typeof content === 'string') return { text: content, diagnostics: [] }
+  if (!Array.isArray(content)) return { text: '', diagnostics: [] }
+  const chunks: string[] = []
+  let ignoredCount = 0
+  for (const part of content) {
+    if (typeof part === 'string') {
+      chunks.push(part)
+      continue
+    }
+    if (isRecord(part) && part.type === 'text' && typeof part.text === 'string') {
+      chunks.push(part.text)
+      continue
+    }
+    ignoredCount += 1
+  }
+  return {
+    text: chunks.join(''),
+    diagnostics: ignoredCount > 0
+      ? [`Ignored ${ignoredCount} unsupported OpenAI-compatible assistant content block(s) while preserving text blocks.`]
+      : [],
+  }
+}
+
+function mergeVisibleAssistantTexts(received: string[], finalText: string): string {
+  const texts = received.map((item) => item.trim()).filter(Boolean)
+  if (texts.length <= 1) return finalText
+  const prior = texts.slice(0, -1)
+  return [...prior, finalText].filter(Boolean).join('\n\n')
 }
 
 function protocolError(message: string, input: ProviderParseInput): AgentProviderError {

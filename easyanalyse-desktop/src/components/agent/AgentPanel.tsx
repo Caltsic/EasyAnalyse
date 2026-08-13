@@ -16,10 +16,15 @@ import {
   Wrench,
 } from 'lucide-react'
 import { runMockAgentProvider } from '../../lib/agentMockProvider'
+import { runCircuitCorrectnessReviewer } from '../../lib/agentCircuitReviewer'
 import { runConfiguredAgentProvider } from '../../lib/agentProviderClient'
 import type { AgentProviderProgressEvent } from '../../lib/agentProviderClient'
+import { conversationTextFromAgentResponse } from '../../lib/agentResponseText'
+import { diagnosticFromMessage } from '../../lib/agentRuntime'
+import type { AgentRuntimeDiagnostic, AgentRuntimeEvent, AgentRuntimeResult } from '../../lib/agentRuntime'
 import { getErrorMessage } from '../../lib/errors'
 import { translate, type TranslationKey } from '../../lib/i18n'
+import { runPiAgent } from '../../lib/piAgentRuntime'
 import { defaultSecretStore, isManagedSecretRef, type SecretStore } from '../../lib/secretStore'
 import { useAgentThreadStore } from '../../store/agentThreadStore'
 import { useBlueprintStore } from '../../store/blueprintStore'
@@ -31,7 +36,7 @@ import type {
   AgentResponseParseIssue,
   AgentResponseParseResult,
 } from '../../types/agent'
-import type { AgentRepairTraceEntry, AgentToolTraceEntry } from '../../types/agentTools'
+import type { AgentCircuitCorrectnessReviewInput, AgentRepairTraceEntry, AgentToolTraceEntry } from '../../types/agentTools'
 import type { AgentThread, AgentThreadMessage } from '../../types/agentThread'
 import type { DocumentFile } from '../../types/document'
 import type { AgentProviderPublicConfig } from '../../types/settings'
@@ -47,7 +52,7 @@ interface AgentActivityEntry {
 }
 
 interface AgentRunState {
-  status: 'idle' | 'running' | 'complete' | 'cancelled' | 'error'
+  status: 'idle' | 'running' | 'complete' | 'partial' | 'cancelled' | 'error'
   response: AgentResponse | null
   issues: AgentResponseParseIssue[]
   toolTrace: AgentToolTraceEntry[]
@@ -82,6 +87,7 @@ export interface AgentPanelProps {
   secretStore?: Pick<SecretStore, 'readSecret'>
   runProvider?: typeof runConfiguredAgentProvider
   runMockProvider?: typeof runMockAgentProvider
+  runPiProvider?: typeof runPiAgent
   threads?: AgentThreadSummary[]
   activeThreadId?: string
   onThreadChange?: (threadId: string) => void
@@ -95,10 +101,27 @@ function selectedProviderFromSettings(): { provider: AgentProviderPublicConfig |
   return { provider, modelId }
 }
 
+function correctnessReviewerFromSettings(
+  activeProvider: AgentProviderPublicConfig,
+  activeModelId: string,
+): { provider: AgentProviderPublicConfig; modelId: string; inheritsMain: boolean } {
+  const settings = useSettingsStore.getState().settings
+  const reviewer = settings.agent.correctnessReviewer
+  if (reviewer.mode === 'custom-provider' && reviewer.providerId) {
+    const provider = settings.agent.providers.find((item) => item.id === reviewer.providerId)
+    const modelId = reviewer.modelId ?? provider?.defaultModel ?? provider?.models[0]
+    if (provider && modelId && provider.models.includes(modelId)) {
+      return { provider, modelId, inheritsMain: false }
+    }
+  }
+  return { provider: activeProvider, modelId: activeModelId, inheritsMain: true }
+}
+
 export function AgentPanel({
   secretStore = defaultSecretStore,
   runProvider = runConfiguredAgentProvider,
   runMockProvider = runMockAgentProvider,
+  runPiProvider = runPiAgent,
   threads,
   activeThreadId,
   onThreadChange,
@@ -142,6 +165,7 @@ export function AgentPanel({
   const activeRunThreadRef = useRef(DEFAULT_THREAD_ID)
   const activeAssistantMessageRef = useRef<{ threadId: string; messageId: string } | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const streamedTextRef = useRef('')
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
   const running = runState.status === 'running'
@@ -310,6 +334,71 @@ export function AgentPanel({
     })
   }
 
+  function handleRuntimeEvent(runId: number, startedAtMs: number, event: AgentRuntimeEvent) {
+    if (activeRunRef.current !== runId) return
+    const elapsedMs = Math.max(0, Date.now() - startedAtMs)
+    if (event.type === 'assistant-delta') {
+      streamedTextRef.current += event.text
+      if (streamedTextRef.current.trim()) {
+        updateActiveAssistantMessage({
+          title: t('aiChat'),
+          content: streamedTextRef.current,
+          meta: formatElapsed(elapsedMs),
+          tone: 'running',
+        })
+      }
+      return
+    }
+    if (event.type === 'assistant-final') {
+      streamedTextRef.current = event.text || streamedTextRef.current
+      return
+    }
+    if (event.type === 'tool-started') {
+      appendRunToolMessage(runId, {
+        title: event.toolName,
+        content: `Running tool ${event.toolName}.`,
+        meta: formatElapsed(elapsedMs),
+        tone: 'running',
+      })
+      return
+    }
+    if (event.type === 'tool-finished') {
+      if (event.toolName === 'create_blueprint_candidate' && event.ok) return
+      appendRunToolMessage(runId, {
+        title: event.toolName,
+        content: event.summary,
+        meta: `${event.issueCount} issue${event.issueCount === 1 ? '' : 's'}`,
+        tone: event.ok ? 'success' : 'error',
+      }, true)
+      return
+    }
+    if (event.type === 'artifact-created') return
+    if (event.type === 'artifact-rejected') {
+      appendRunToolMessage(runId, {
+        title: 'blueprint rejected',
+        content: event.summary,
+        tone: 'warning',
+      }, true)
+      return
+    }
+    if (event.type === 'diagnostic') {
+      appendRuntimeDiagnostic(runId, elapsedMs, event.diagnostic)
+      return
+    }
+    if (event.type === 'run-error') {
+      appendRuntimeDiagnostic(runId, elapsedMs, diagnosticFromMessage('runtime', event.message, 'error', 'agent_runtime.run_error'))
+    }
+  }
+
+  function appendRuntimeDiagnostic(runId: number, elapsedMs: number, diagnostic: AgentRuntimeDiagnostic) {
+    appendRunToolMessage(runId, {
+      title: diagnostic.code ?? `${diagnostic.source} diagnostic`,
+      content: diagnostic.message,
+      meta: formatElapsed(elapsedMs),
+      tone: diagnostic.severity === 'error' ? 'error' : diagnostic.severity === 'warning' ? 'warning' : 'neutral',
+    }, true)
+  }
+
   async function sendPrompt() {
     const trimmedPrompt = prompt.trim()
     if (!trimmedPrompt || running) return
@@ -334,6 +423,7 @@ export function AgentPanel({
     const requestId = `agent-panel-${runId}`
     const startedAtMs = Date.now()
     activityIdRef.current = 1
+    streamedTextRef.current = ''
 
     setPrompt('')
     touchLocalThread(threadId, trimmedPrompt)
@@ -388,7 +478,7 @@ export function AgentPanel({
     })
 
     try {
-      const result = await runSelectedProvider({
+      const result = await runSelectedAgentRuntime({
         prompt: trimmedPrompt,
         currentDocument: documentAtStart,
         filePath: filePathAtStart,
@@ -399,6 +489,7 @@ export function AgentPanel({
         secretStore,
         runProvider,
         runMockProvider,
+        runPiProvider,
         storeBlueprintCandidates: async (candidates, options) => {
           const insertedIds = await addAgentBlueprintCandidatesToCurrentThread(
             candidates,
@@ -423,64 +514,70 @@ export function AgentPanel({
           return insertedIds
         },
         onProgress: (progressEvent) => appendActivity(runId, startedAtMs, progressEvent),
+        onEvent: (event) => handleRuntimeEvent(runId, startedAtMs, event),
       })
       if (activeRunRef.current !== runId) return
 
       const latestEditor = useEditorStore.getState()
-      const toolTrace = (result as { toolTrace?: AgentToolTraceEntry[] }).toolTrace ?? []
-      const repairTrace = (result as { repairTrace?: AgentRepairTraceEntry[] }).repairTrace ?? []
-      if (latestEditor.document !== documentAtStart || latestEditor.filePath !== filePathAtStart) {
-        const elapsedMs = Math.max(0, Date.now() - startedAtMs)
-        setRunState((state) => ({
-          ...state,
-          status: 'cancelled',
-          response: result.response,
-          issues: result.issues,
-          toolTrace,
-          repairTrace,
-          insertedCount: 0,
-          error: t('resultIgnoredBecauseDocumentChanged'),
-          elapsedMs,
-        }))
-        updateActiveAssistantMessage({
-          title: t('resultIgnored'),
-          content: t('resultIgnoredBecauseDocumentChanged'),
-          meta: formatElapsed(elapsedMs),
-          tone: 'warning',
-        })
-        if (!externalThreads) {
-          appendAgentAssistantMessage(t('resultIgnoredBecauseDocumentChanged'), { threadId })
-        }
-        return
-      }
+      const toolTrace = result.toolTrace
+      const repairTrace = result.repairTrace
+      const documentChanged = latestEditor.document !== documentAtStart || latestEditor.filePath !== filePathAtStart
 
       let insertedCount = 0
-      if (result.response.kind === 'blueprints') {
-        const inserted = await addAgentBlueprintCandidatesToCurrentThread(
-          result.response.blueprints,
-          {
-            mainDocument: documentAtStart,
-            filePath: filePathAtStart,
-            issues: result.issues,
-          },
-          {
-            threadId,
-            toolName: 'final_blueprints',
-            summary: t('finalBlueprintsStored', { count: result.response.blueprints.length }),
-          },
-        )
-        if (activeRunRef.current !== runId) return
-        insertedCount = inserted.length
-        if (insertedCount === 0 && result.response.blueprints.length > 0) {
-          throw new Error(t('generatedButNotStored'))
+      if (documentChanged && result.response?.kind === 'blueprints' && !result.artifactsStoredByTools) {
+        appendRuntimeDiagnostic(runId, Math.max(0, Date.now() - startedAtMs), diagnosticFromMessage(
+          'artifact',
+          t('resultIgnoredBecauseDocumentChanged'),
+          'warning',
+          'agent_runtime.stale_artifact',
+        ))
+      } else if (result.response?.kind === 'blueprints' && !result.artifactsStoredByTools) {
+        try {
+          const inserted = await addAgentBlueprintCandidatesToCurrentThread(
+            result.response.blueprints,
+            {
+              mainDocument: documentAtStart,
+              filePath: filePathAtStart,
+              issues: result.issues,
+            },
+            {
+              threadId,
+              toolName: 'final_blueprints',
+              summary: t('finalBlueprintsStored', { count: result.response.blueprints.length }),
+            },
+          )
+          if (activeRunRef.current !== runId) return
+          insertedCount = inserted.length
+          if (insertedCount === 0 && result.response.blueprints.length > 0) {
+            appendRuntimeDiagnostic(runId, Math.max(0, Date.now() - startedAtMs), diagnosticFromMessage(
+              'artifact',
+              t('generatedButNotStored'),
+              'error',
+              'agent_runtime.blueprint_not_stored',
+            ))
+          }
+        } catch (error) {
+          appendRuntimeDiagnostic(runId, Math.max(0, Date.now() - startedAtMs), diagnosticFromMessage(
+            'artifact',
+            getErrorMessage(error),
+            'error',
+            'agent_runtime.blueprint_storage_failed',
+          ))
         }
       }
 
       const elapsedMs = Math.max(0, Date.now() - startedAtMs)
+      const finalStatus = result.conversation.status === 'cancelled'
+        ? 'cancelled'
+        : result.conversation.status === 'partial'
+          ? 'partial'
+        : result.conversation.status === 'error'
+          ? 'error'
+          : 'complete'
       setRunState((state) => ({
         ...state,
-        status: 'complete',
-        response: result.response,
+        status: finalStatus,
+        response: result.response ?? null,
         issues: result.issues,
         toolTrace,
         repairTrace,
@@ -488,15 +585,23 @@ export function AgentPanel({
         error: null,
         elapsedMs,
       }))
-      const assistantContent = formatResponseMessage(result.response, insertedCount, t)
+      const assistantContent = formatRuntimeConversation(result, insertedCount, documentChanged, t)
+        || streamedTextRef.current.trim()
+      const persistedAssistantContent = assistantContent || t('noModelResponse')
       updateActiveAssistantMessage({
-        title: assistantTitleFromResponse(result.response, t),
-        content: assistantContent,
+        title: result.response ? assistantTitleFromResponse(result.response, t) : t('aiChat'),
+        content: persistedAssistantContent,
         meta: formatElapsed(elapsedMs),
-        tone: result.response.kind === 'error' ? 'error' : 'success',
+        tone: result.conversation.status === 'error'
+          ? 'error'
+          : result.conversation.status === 'cancelled' || result.conversation.status === 'partial'
+            ? 'warning'
+            : result.response?.kind === 'error'
+              ? 'error'
+              : 'success',
       })
-      if (!externalThreads) {
-        appendAgentAssistantMessage(assistantContent, { threadId })
+      if (!externalThreads && assistantContent) {
+        appendAgentAssistantMessage(assistantContent, { threadId, providerText: result.providerText })
       }
       if (toolTrace.length > 0 || repairTrace.length > 0) {
         appendRunToolMessage(runId, {
@@ -518,9 +623,10 @@ export function AgentPanel({
       if (activeRunRef.current !== runId) return
       const elapsedMs = Math.max(0, Date.now() - startedAtMs)
       const message = getErrorMessage(error)
+      const partialText = streamedTextRef.current.trim()
       setRunState((state) => ({
         ...state,
-        status: 'error',
+        status: partialText ? 'partial' : 'error',
         response: null,
         issues: [],
         toolTrace: [],
@@ -530,14 +636,15 @@ export function AgentPanel({
         elapsedMs,
       }))
       updateActiveAssistantMessage({
-        title: t('providerError'),
-        content: message,
+        title: partialText ? t('aiChat') : t('providerError'),
+        content: partialText || t('noModelResponse'),
         meta: formatElapsed(elapsedMs),
-        tone: 'error',
+        tone: partialText ? 'warning' : 'error',
       })
-      if (!externalThreads) {
-        appendAgentAssistantMessage(message, { threadId })
+      if (!externalThreads && partialText) {
+        appendAgentAssistantMessage(partialText, { threadId })
       }
+      appendRuntimeDiagnostic(runId, elapsedMs, diagnosticFromMessage('runtime', message, 'error', 'agent_runtime.exception'))
     } finally {
       if (activeRunRef.current === runId) {
         abortControllerRef.current = null
@@ -579,15 +686,16 @@ export function AgentPanel({
         activity: [...state.activity, entry].slice(-MAX_ACTIVITY_ENTRIES),
       }
     })
+    const partialText = streamedTextRef.current.trim()
     updateActiveAssistantMessage({
       title: t('cancelled'),
-      content: t('agentRunCancelled'),
+      content: partialText || t('agentRunCancelled'),
       meta: formatElapsed(elapsedMs),
       tone: 'warning',
     })
     const threadId = activeRunThreadRef.current
     if (!externalThreads) {
-      appendAgentAssistantMessage(t('agentRunCancelled'), { threadId })
+      appendAgentAssistantMessage(partialText || t('agentRunCancelled'), { threadId })
     }
     appendThreadMessage(threadId, {
       id: nextMessageId('tool'),
@@ -909,7 +1017,7 @@ function AgentMessageView({
   )
 }
 
-async function runSelectedProvider(input: {
+async function runSelectedAgentRuntime(input: {
   prompt: string
   currentDocument: DocumentFile
   filePath: string | null
@@ -920,6 +1028,7 @@ async function runSelectedProvider(input: {
   secretStore: Pick<SecretStore, 'readSecret'>
   runProvider: typeof runConfiguredAgentProvider
   runMockProvider: typeof runMockAgentProvider
+  runPiProvider: typeof runPiAgent
   storeBlueprintCandidates: (
     candidates: AgentBlueprintCandidate[],
     options?: {
@@ -930,15 +1039,18 @@ async function runSelectedProvider(input: {
     },
   ) => Promise<string[]>
   onProgress?: (event: AgentProviderProgressEvent) => void
-}): Promise<AgentResponseParseResult> {
+  onEvent?: (event: AgentRuntimeEvent) => void
+}): Promise<AgentRuntimeResult> {
+  const runtime = useSettingsStore.getState().settings.agent.runtime
   const { provider, modelId } = selectedProviderFromSettings()
   if (!provider) {
     input.onProgress?.({ phase: 'request', message: 'Running local mock provider.' })
-    return input.runMockProvider({
+    const mockResult = await input.runMockProvider({
       prompt: input.prompt,
       currentDocument: input.currentDocument,
       requestId: input.requestId,
     })
+    return legacyRuntimeResult(mockResult)
   }
   if (!modelId) {
     throw new Error(`Provider ${provider.name} has no selected model.`)
@@ -955,7 +1067,7 @@ async function runSelectedProvider(input: {
     throw new Error(`Saved API key for provider ${provider.name} was not found.`)
   }
   input.onProgress?.({ phase: 'preparing', message: `Saved API key loaded for ${provider.name}.` })
-  return input.runProvider({
+  const sharedInput = {
     provider,
     modelId,
     apiKey,
@@ -975,7 +1087,37 @@ async function runSelectedProvider(input: {
         focusedNetworkLineId: state.focusedNetworkLineId,
       }
     },
-    createBlueprintCandidate: async (candidate) => {
+    reviewCircuitCorrectness: async (reviewInput: AgentCircuitCorrectnessReviewInput) => {
+      const reviewer = correctnessReviewerFromSettings(provider, modelId)
+      let reviewerApiKey = apiKey
+      if (!reviewer.inheritsMain) {
+        if (!reviewer.provider.apiKeyRef) {
+          throw new Error(`Reviewer provider ${reviewer.provider.name} has no saved API key.`)
+        }
+        if (!isManagedSecretRef(reviewer.provider.apiKeyRef)) {
+          throw new Error(`Reviewer provider ${reviewer.provider.name} uses an unsupported legacy API key reference. Please re-save the API key in Settings.`)
+        }
+        input.onProgress?.({ phase: 'preparing', message: `Reading saved API key for reviewer ${reviewer.provider.name}.` })
+        const saved = await input.secretStore.readSecret(reviewer.provider.apiKeyRef)
+        if (!saved?.trim()) {
+          throw new Error(`Saved API key for reviewer provider ${reviewer.provider.name} was not found.`)
+        }
+        reviewerApiKey = saved
+      }
+      input.onProgress?.({
+        phase: 'tool',
+        message: `Running strict circuit reviewer with ${reviewer.provider.name} / ${reviewer.modelId}.`,
+      })
+      return runCircuitCorrectnessReviewer({
+        ...reviewInput,
+        provider: reviewer.provider,
+        modelId: reviewer.modelId,
+        apiKey: reviewerApiKey,
+        fetchImpl: getBrowserFetch(),
+        signal: input.signal,
+      })
+    },
+    createBlueprintCandidate: async (candidate: AgentBlueprintCandidate) => {
       const latestEditor = useEditorStore.getState()
       if (latestEditor.document !== input.currentDocument || latestEditor.filePath !== input.filePath) {
         return {
@@ -1003,8 +1145,53 @@ async function runSelectedProvider(input: {
     },
     requestId: input.requestId,
     signal: input.signal,
+  }
+  if (runtime === 'pi') {
+    return input.runPiProvider({
+      ...sharedInput,
+      onEvent: input.onEvent,
+      fetchImpl: getBrowserFetch(),
+    })
+  }
+  const result = await input.runProvider({
+    ...sharedInput,
     progress: input.onProgress,
   })
+  for (const message of result.diagnostics ?? []) {
+    input.onEvent?.({
+      type: 'diagnostic',
+      diagnostic: diagnosticFromMessage('parse', message, 'warning', 'agent_runtime.legacy_diagnostic'),
+    })
+  }
+  input.onEvent?.({ type: 'assistant-final', text: legacyConversationText(result), status: result.conversationStatus ?? 'complete' })
+  return legacyRuntimeResult(result)
+}
+
+function legacyRuntimeResult(result: Awaited<ReturnType<typeof runConfiguredAgentProvider>> | AgentResponseParseResult): AgentRuntimeResult {
+  const providerResult = result as Awaited<ReturnType<typeof runConfiguredAgentProvider>>
+  const text = legacyConversationText(result)
+  const diagnostics = (providerResult.diagnostics ?? []).map((message) => (
+    diagnosticFromMessage('parse', message, 'warning', 'agent_runtime.legacy_diagnostic')
+  ))
+  return {
+    runtime: 'legacy',
+    conversation: { text, status: text ? (providerResult.conversationStatus ?? 'complete') : 'error' },
+    providerText: providerResult.rawText,
+    response: result.response,
+    issues: result.issues,
+    diagnostics,
+    metadata: providerResult.metadata,
+    toolTrace: providerResult.toolTrace ?? [],
+    repairTrace: providerResult.repairTrace ?? [],
+    artifactsStoredByTools: (providerResult.toolTrace ?? []).some((entry) => (
+      entry.toolName === 'create_blueprint_candidate' && entry.ok
+    )),
+  }
+}
+
+function legacyConversationText(result: Awaited<ReturnType<typeof runConfiguredAgentProvider>> | AgentResponseParseResult): string {
+  const providerResult = result as Awaited<ReturnType<typeof runConfiguredAgentProvider>>
+  return providerResult.conversationText?.trim() || conversationTextFromAgentResponse(result.response)
 }
 
 function assistantTitleFromResponse(
@@ -1018,38 +1205,30 @@ function assistantTitleFromResponse(
   return response.summary ?? t('message')
 }
 
-function formatResponseMessage(
-  response: AgentResponse,
+function formatRuntimeConversation(
+  result: AgentRuntimeResult,
   insertedCount: number,
+  documentChanged: boolean,
   t: (key: TranslationKey, params?: Record<string, string | number>) => string,
 ): string {
-  if (response.kind === 'message') {
-    return response.summary ? `${response.summary}\n\n${response.markdown}` : response.markdown
+  const text = result.conversation.text.trim()
+  if (
+    result.runtime !== 'legacy'
+    || result.response?.kind !== 'blueprints'
+    || result.artifactsStoredByTools
+    || documentChanged
+  ) {
+    return text
   }
-
-  if (response.kind === 'question') {
-    return response.options?.length
-      ? `${response.question}\n\n${t('optionsLabel')}: ${response.options.join(', ')}`
-      : response.question
-  }
-
-  if (response.kind === 'error') {
-    return `${response.message}\n\n${response.recoverable ? t('recoverable') : t('notRecoverable')}`
-  }
-
-  if (response.kind === 'blueprints') {
-    const candidateLines = response.blueprints.map((candidate) => (
-      `- ${candidate.title}: ${candidate.issues.length} issue${candidate.issues.length === 1 ? '' : 's'}`
-    ))
-    return [
-      response.summary,
-      '',
-      t('storedBlueprintCandidates', { count: insertedCount }),
-      ...candidateLines,
-    ].join('\n')
-  }
-
-  return response.message
+  const candidateLines = result.response.blueprints.map((candidate) => (
+    `- ${candidate.title}: ${candidate.issues.length} issue${candidate.issues.length === 1 ? '' : 's'}`
+  ))
+  return [
+    text,
+    '',
+    t('storedBlueprintCandidates', { count: insertedCount }),
+    ...candidateLines,
+  ].filter((line, index, lines) => line || (index > 0 && lines[index - 1])).join('\n')
 }
 
 function formatToolTrace(toolTrace: AgentToolTraceEntry[], repairTrace: AgentRepairTraceEntry[]): string {
@@ -1062,4 +1241,11 @@ function formatToolTrace(toolTrace: AgentToolTraceEntry[], repairTrace: AgentRep
 
 function formatParseIssues(issues: AgentResponseParseIssue[]): string {
   return issues.map((issue) => `${issue.severity}: ${issue.message}`).join('\n')
+}
+
+function getBrowserFetch() {
+  if (typeof window === 'undefined' || typeof window.fetch !== 'function') {
+    throw new Error('Reviewer requests require a browser fetch implementation.')
+  }
+  return window.fetch.bind(window)
 }

@@ -356,6 +356,30 @@ describe('anthropicProvider', () => {
     }
   })
 
+  it('preserves valid Anthropic text blocks when sibling blocks are malformed', () => {
+    const result = parseAnthropicResponse({
+      responseBody: anthropicMessagesBody('visible text'),
+    })
+    const mixedBody = anthropicMessagesBody('unused') as { content: unknown[] }
+    mixedBody.content = [
+      { type: 'text', text: 'visible ' },
+      null,
+      { type: 'text', text: 123 },
+      { type: 'text', text: 'answer' },
+    ]
+
+    const mixed = parseAnthropicResponse({ responseBody: mixedBody })
+    expect(result.response.kind).toBe('message')
+    expect(mixed).toMatchObject({
+      conversationText: 'visible answer',
+      response: { kind: 'message', markdown: 'visible answer' },
+    })
+    expect(mixed.diagnostics).toEqual(expect.arrayContaining([
+      expect.stringContaining('malformed Anthropic content block'),
+      expect.stringContaining('non-string text'),
+    ]))
+  })
+
   it('maps HTTP provider errors to stable readable codes without leaking the API key', async () => {
     const cases = [
       [401, { type: 'error', error: { message: `bad key ${apiKey}`, type: 'authentication_error' } }, 'AGENT_PROVIDER_AUTH_FAILED', false],
@@ -475,7 +499,7 @@ describe('anthropicProvider', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled()
   })
 
-  it('maps invalid HTTP JSON, protocol issues, and AgentResponse parse/schema failures to provider errors', async () => {
+  it('maps invalid HTTP JSON and protocol issues to errors while preserving AgentResponse parse/schema failures', async () => {
     const invalidJsonFetch = vi.fn<AnthropicFetch>(
       async () => new Response(`{ "error": "not-json", "apiKey": "${apiKey}"`, { status: 200 }),
     )
@@ -493,10 +517,9 @@ describe('anthropicProvider', () => {
     const agentJsonParseFailureFetch = vi.fn<AnthropicFetch>(async () =>
       jsonResponse(anthropicMessagesBody('{ "schemaVersion": "agent-response-v1",')),
     )
-    await expect(runAnthropicProvider({ ...baseBuildInput(), fetch: agentJsonParseFailureFetch })).rejects.toMatchObject({
-      code: 'AGENT_PROVIDER_PARSE_ERROR',
-      retryable: false,
-    })
+    const malformedText = await runAnthropicProvider({ ...baseBuildInput(), fetch: agentJsonParseFailureFetch })
+    expect(malformedText.response).toMatchObject({ kind: 'message', markdown: '{ "schemaVersion": "agent-response-v1",' })
+    expect(malformedText.diagnostics).toEqual(expect.arrayContaining([expect.stringContaining('preserved the provider text')]))
 
     const schemaFailureFetch = vi.fn<AnthropicFetch>(async () =>
       jsonResponse(
@@ -508,10 +531,9 @@ describe('anthropicProvider', () => {
         }),
       ),
     )
-    await expect(runAnthropicProvider({ ...baseBuildInput(), fetch: schemaFailureFetch })).rejects.toMatchObject({
-      code: 'AGENT_PROVIDER_SCHEMA_ERROR',
-      retryable: false,
-    })
+    const schemaFailure = await runAnthropicProvider({ ...baseBuildInput(), fetch: schemaFailureFetch })
+    expect(schemaFailure.response).toMatchObject({ kind: 'message', markdown: expect.stringContaining('agent-response-v0') })
+    expect(schemaFailure.diagnostics).toEqual(expect.arrayContaining([expect.stringContaining('Unsupported AgentResponse schemaVersion')]))
 
     await expect(
       runAnthropicProvider({

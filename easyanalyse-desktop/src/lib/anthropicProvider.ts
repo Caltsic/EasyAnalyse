@@ -1,5 +1,4 @@
-import { parseAgentResponse } from './agentResponse'
-import type { AgentResponseParseResult } from '../types/agent'
+import { extractAgentResponseText } from './agentResponseText'
 import type { DocumentFile } from '../types/document'
 import { getErrorMessage as errorMessage } from './errors'
 import { isRecord } from './guards'
@@ -103,26 +102,11 @@ export function buildAnthropicPayload(input: ProviderBuildInput): ProviderHttpRe
 
 export function parseAnthropicResponse(input: ProviderParseInput): ProviderParseResult {
   const root = parseAnthropicRoot(input.responseBody, input)
-  const content = getTextContent(root, input)
+  const extracted = getTextContent(root, input)
   const metadata = buildResponseMetadata(root, input)
 
-  try {
-    const parsed: AgentResponseParseResult = parseAgentResponse(content, { mainDocument: input.mainDocument ?? null })
-    return { ...parsed, metadata }
-  } catch (error) {
-    const message = errorMessage(error)
-    const code: AgentProviderErrorCode = /json/i.test(message)
-      ? 'AGENT_PROVIDER_PARSE_ERROR'
-      : 'AGENT_PROVIDER_SCHEMA_ERROR'
-    throw createError({
-      code,
-      message: `Anthropic provider returned an invalid AgentResponse: ${message}`,
-      retryable: false,
-      status: input.status,
-      provider: input.provider,
-      model: input.model,
-    })
-  }
+  const parsed = extractAgentResponseText(extracted.text, { mainDocument: input.mainDocument ?? null })
+  return { ...parsed, metadata, diagnostics: [...parsed.diagnostics, ...extracted.diagnostics] }
 }
 
 export async function runAnthropicProvider(input: AnthropicRunInput): Promise<ProviderParseResult> {
@@ -209,19 +193,22 @@ function parseAnthropicRoot(value: unknown, input: ProviderParseInput): JsonReco
   return value
 }
 
-function getTextContent(root: JsonRecord, input: ProviderParseInput): string {
+function getTextContent(root: JsonRecord, input: ProviderParseInput): { text: string; diagnostics: string[] } {
   if (!Array.isArray(root.content)) {
     throw protocolError('Anthropic provider response did not include a content array of text blocks.', input)
   }
 
   const chunks: string[] = []
+  const diagnostics: string[] = []
   for (const block of root.content) {
     if (!isRecord(block)) {
-      throw protocolError('Anthropic provider response content blocks must be objects with text content.', input)
+      diagnostics.push('Ignored a malformed Anthropic content block while preserving valid text blocks.')
+      continue
     }
     if (block.type !== 'text') continue
     if (typeof block.text !== 'string') {
-      throw protocolError('Anthropic provider response text content blocks must include a text string.', input)
+      diagnostics.push('Ignored an Anthropic text block with non-string text while preserving valid text blocks.')
+      continue
     }
     chunks.push(block.text)
   }
@@ -230,7 +217,7 @@ function getTextContent(root: JsonRecord, input: ProviderParseInput): string {
   if (content.trim().length === 0) {
     throw protocolError('Anthropic provider response content array did not include any non-empty text blocks.', input)
   }
-  return content
+  return { text: content, diagnostics }
 }
 
 function protocolError(message: string, input: ProviderParseInput): AgentProviderError {

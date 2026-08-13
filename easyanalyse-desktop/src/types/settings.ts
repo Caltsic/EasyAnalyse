@@ -3,6 +3,7 @@ export type AppThemeMode = 'system' | 'light' | 'dark'
 export type AppLocalePreference = 'system' | 'zh-CN' | 'en-US'
 
 export type AgentProviderKind = 'openai-compatible' | 'anthropic' | 'deepseek'
+export type AgentRuntimePreference = 'legacy' | 'pi'
 
 export interface AgentProviderPublicConfig {
   id: string
@@ -14,6 +15,14 @@ export interface AgentProviderPublicConfig {
   apiKeyRef?: string
 }
 
+export type AgentCorrectnessReviewerMode = 'inherit-main' | 'custom-provider'
+
+export interface AgentCorrectnessReviewerConfig {
+  mode: AgentCorrectnessReviewerMode
+  providerId?: string
+  modelId?: string
+}
+
 export interface AppSettings {
   basic: {
     locale: AppLocalePreference
@@ -22,8 +31,10 @@ export interface AppSettings {
     theme: AppThemeMode
   }
   agent: {
+    runtime: AgentRuntimePreference
     providers: AgentProviderPublicConfig[]
     selectedProviderId?: string
     selectedModelId?: string
+    correctnessReviewer: AgentCorrectnessReviewerConfig
   }
 }
